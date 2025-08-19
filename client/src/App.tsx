@@ -1,9 +1,12 @@
 import ProxyBuilderPage from "./pages/ProxyBuilderPage";
+import { PageSettingsProvider as PageSettingsProvider } from "./providers/PageSettings";
 
 function App() {
   return (
     <div className="bg-gray-300">
-      <ProxyBuilderPage />
+      <PageSettingsProvider>
+        <ProxyBuilderPage />
+      </PageSettingsProvider>
     </div>
   );
 }

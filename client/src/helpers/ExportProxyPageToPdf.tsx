@@ -3,6 +3,7 @@ import type { CardOption } from "../types/Card";
 import { API_BASE } from "../constants";
 
 const DPI = 600;
+// eslint-disable-next-line react-refresh/only-export-components
 const IN = (inches: number) => Math.round(inches * DPI);
 const MM_TO_IN = (mm: number) => mm / 25.4;
 const MM_TO_PX = (mm: number) => IN(MM_TO_IN(mm));
@@ -21,7 +22,9 @@ function preferPng(url: string) {
       u.pathname = u.pathname.replace(/\.(jpg|jpeg)$/i, ".png");
       return u.toString();
     }
-  } catch { }
+  } catch (e) {
+    console.error("Error in preferPng:", e);
+  }
   return url;
 }
 
@@ -100,7 +103,7 @@ function drawEdgeStubs(
   pageH: number,
   startX: number,
   startY: number,
-  cols: number,
+  columns: number,
   rows: number,
   contentW: number,
   contentH: number,
@@ -111,7 +114,7 @@ function drawEdgeStubs(
 ) {
   // All vertical cut x-positions
   const xCuts: number[] = [];
-  for (let c = 0; c < cols; c++) {
+  for (let c = 0; c < columns; c++) {
     const cellLeft = startX + c * cardW;
     xCuts.push(cellLeft + bleedPx);
     xCuts.push(cellLeft + bleedPx + contentW);
@@ -529,7 +532,7 @@ export async function exportProxyPagesToPdf(opts: {
   pageWidthInches: number;
   pageHeightInches: number;
   pdfPageColor?: string;
-  cols: number;
+  columns: number;
   rows: number;
 }) {
   const {
@@ -542,7 +545,7 @@ export async function exportProxyPagesToPdf(opts: {
     pageWidthInches,
     pageHeightInches,
     pdfPageColor = "#FFFFFF",
-    cols,
+    columns,
     rows,
   } = opts;
 
@@ -558,13 +561,13 @@ export async function exportProxyPagesToPdf(opts: {
   const cardH = contentH + 2 * bleedPx;
 
   // Grid + centering
-  const perPage = Math.max(1, cols * rows);
-  const gridW = cols * cardW;
+  const perPage = Math.max(1, columns * rows);
+  const gridW = columns * cardW;
   const gridH = rows * cardH;
   const startX = Math.round((pageW - gridW) / 2);
   const startY = Math.round((pageH - gridH) / 2);
 
-  // Chunk into pages of size cols*rows
+  // Chunk into pages of size columns*rows
   const pages: CardOption[][] = [];
   for (let i = 0; i < cards.length; i += perPage) {
     pages.push(cards.slice(i, i + perPage));
@@ -592,8 +595,8 @@ export async function exportProxyPagesToPdf(opts: {
 
     for (let idx = 0; idx < pageCards.length; idx++) {
       const card = pageCards[idx];
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
+      const col = idx % columns;
+      const row = Math.floor(idx / columns);
       const x = startX + col * cardW;
       const y = startY + row * cardH;
 
@@ -627,7 +630,7 @@ export async function exportProxyPagesToPdf(opts: {
           pageH,
           startX,
           startY,
-          cols,
+          columns,
           rows,
           contentW,
           contentH,

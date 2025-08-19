@@ -1,6 +1,7 @@
-import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { CardOption } from "../types/Card";
+import { usePageSettings } from "../providers/PageSettings";
 
 type SortableCardProps = {
   card: CardOption;
@@ -9,10 +10,7 @@ type SortableCardProps = {
   imageSrc: string;
   totalCardWidth: number;
   totalCardHeight: number;
-  bleedEdge: boolean;
   guideOffset: number | string;
-  guideWidth: number;
-  guideColor: string;
   setContextMenu: (menu: {
     visible: boolean;
     x: number;
@@ -31,17 +29,16 @@ export default function SortableCard({
   imageSrc,
   totalCardWidth,
   totalCardHeight,
-  bleedEdge,
   guideOffset,
-  guideWidth,
-  guideColor,
   setContextMenu,
   setModalCard,
   setModalIndex,
   setIsModalOpen,
 }: SortableCardProps) {
+  const { bleedEdge, guideWidth, guideColor } = usePageSettings();
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: card.uuid });
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -56,11 +53,15 @@ export default function SortableCard({
       key={`${card.uuid}-${index}`}
       className="bg-black relative group"
       style={style}
+      onClick={() => {
+        setModalCard(card);
+        setModalIndex(globalIndex);
+        setIsModalOpen(true);
+      }}
     >
       <img
         src={imageSrc}
-        className="cursor-pointer block w-full h-full p-0 m-0"
-        style={{ display: "block", lineHeight: 0 }}
+        className="cursor-pointer block"
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({
@@ -70,18 +71,12 @@ export default function SortableCard({
             cardIndex: globalIndex,
           });
         }}
-        onClick={() => {
-          setModalCard(card);
-          setModalIndex(globalIndex);
-          setIsModalOpen(true);
-        }}
       />
 
       {/* ⠿ Drag Handle */}
       <div
         {...listeners}
-        style={{ right: "4px", top: "4px", position: "absolute" }}
-        className="w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50"
+        className="absolute right-[4px] top-1 w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50"
         title="Drag"
       >
         ⠿
