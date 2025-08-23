@@ -22,7 +22,6 @@ export function ArtworkModal() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const isModalOpen = useArtworkModalStore((state) => state.open);
-  console.log({ isModalOpen });
 
   const modalCard = useArtworkModalStore((state) => state.card);
   const modalIndex = useArtworkModalStore((state) => state.index);
