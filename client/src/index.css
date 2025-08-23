@@ -1,5 +1,4 @@
-@import 'flowbite' layer(utilities);
-@import 'tailwindcss/utilities' layer(utilities);
+@import "tailwindcss";
 
 @plugin 'flowbite-react/plugin/tailwindcss';
 
