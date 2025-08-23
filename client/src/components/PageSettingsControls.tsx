@@ -4,12 +4,11 @@ import { exportProxyPagesToPdf } from "@/helpers/ExportProxyPageToPdf";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
 import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
 import { Button, Checkbox, Label, TextInput } from "flowbite-react";
+import { ZoomIn, ZoomOut } from "lucide-react";
 import Donate from "./Donate";
 import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
-import { ZoomIn, ZoomOut } from "lucide-react";
 
 const unit = "mm";
-const pdfPageColor = "#FFFFFF";
 
 export function PageSettingsControls() {
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
@@ -65,7 +64,6 @@ export function PageSettingsControls() {
       guideWidthPx: guideWidth,
       pageWidthInches: pageWidthIn,
       pageHeightInches: pageHeightIn,
-      pdfPageColor,
       columns,
       rows,
     });

@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import { API_BASE } from "../constants";
 import type { CardOption } from "../types/Card";
 
+const PDF_PAGE_COLOR = "#FFFFFF";
 const DPI = 600;
 // eslint-disable-next-line react-refresh/only-export-components
 const IN = (inches: number) => Math.round(inches * DPI);
@@ -556,7 +557,6 @@ export async function exportProxyPagesToPdf(opts: {
   guideWidthPx: number;
   pageWidthInches: number;
   pageHeightInches: number;
-  pdfPageColor?: string;
   columns: number;
   rows: number;
 }) {
@@ -569,7 +569,6 @@ export async function exportProxyPagesToPdf(opts: {
     guideWidthPx,
     pageWidthInches,
     pageHeightInches,
-    pdfPageColor = "#FFFFFF",
     columns,
     rows,
   } = opts;
@@ -612,7 +611,7 @@ export async function exportProxyPagesToPdf(opts: {
     canvas.width = pageW;
     canvas.height = pageH;
     const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = pdfPageColor;
+    ctx.fillStyle = PDF_PAGE_COLOR;
     ctx.fillRect(0, 0, pageW, pageH);
 
     for (let idx = 0; idx < pageCards.length; idx++) {
