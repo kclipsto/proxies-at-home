@@ -243,7 +243,7 @@ export function PageView() {
             {chunkCards(cards, pageCapacity).map((page, pageIndex) => (
               <div
                 key={pageIndex}
-                className="proxy-page relative bg-white dark:bg-gray-700"
+                className="proxy-page relative bg-white"
                 style={{
                   zoom: zoom,
                   width: `${pageWidth}${pageSizeUnit}`,

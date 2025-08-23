@@ -361,7 +361,7 @@ export function UploadSection() {
       <div className="flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4">
         <div className="flex flex-col gap-4">
           <div className="space-y-1">
-            <h6 className="font-medium dark:text-gray-300">
+            <h6 className="font-medium dark:text-white">
               Upload MPC Images (
               <a
                 href="https://mpcfill.com"
@@ -393,7 +393,7 @@ export function UploadSection() {
           </div>
 
           <div className="space-y-1">
-            <h6 className="font-medium dark:text-gray-300">
+            <h6 className="font-medium dark:text-white">
               Import MPC Text (XML)
             </h6>
 
@@ -414,9 +414,7 @@ export function UploadSection() {
           </div>
 
           <div className="space-y-1">
-            <h6 className="font-medium dark:text-gray-300">
-              Upload Other Images
-            </h6>
+            <h6 className="font-medium dark:text-white">Upload Other Images</h6>
             <label
               htmlFor="upload-standard"
               className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
@@ -438,11 +436,11 @@ export function UploadSection() {
           </div>
         </div>
 
-        <HR className="my-0 dark:bg-gray-400" />
+        <HR className="my-0 dark:bg-gray-500" />
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <h6 className="font-medium dark:text-gray-300">
+            <h6 className="font-medium dark:text-white">
               Add Cards (
               <a
                 href="https://scryfall.com"
@@ -478,9 +476,9 @@ or Repurposing Bay (dft) 380`}
           </div>
 
           <div>
-            <h6 className="font-medium dark:text-gray-300">Tips:</h6>
+            <h6 className="font-medium dark:text-white">Tips:</h6>
 
-            <List className="text-sm">
+            <List className="text-sm dark:text-white/60">
               <ListItem>To change a card art - click it</ListItem>
               <ListItem>
                 To move a card - drag from the box at the top right
@@ -492,7 +490,7 @@ or Repurposing Bay (dft) 380`}
           </div>
         </div>
 
-        <HR className="my-0 dark:bg-gray-400" />
+        <HR className="my-0 dark:bg-gray-500" />
 
         <Button
           color="purple"

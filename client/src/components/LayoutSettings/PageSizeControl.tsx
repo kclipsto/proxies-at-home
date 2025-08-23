@@ -65,11 +65,11 @@ export function PageSizeControl() {
         <Label>Page height ({pageSizeUnit})</Label>
 
         <TextInput disabled value={pageWidthIn} />
-        <div>×</div>
+        <div className="text-white">×</div>
         <TextInput disabled value={pageHeightIn} />
       </div>
 
-      <Button className="w-full" color="gray" onClick={swapPageOrientation}>
+      <Button className="w-full" color="blue" onClick={swapPageOrientation}>
         <RefreshCw className="size-4 mr-2" />
         Swap Orientation
       </Button>

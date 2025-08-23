@@ -3,7 +3,7 @@ import { ExportImagesZip } from "@/helpers/ExportImagesZip";
 import { exportProxyPagesToPdf } from "@/helpers/ExportProxyPageToPdf";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
 import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
-import { Button, Checkbox, Label, TextInput } from "flowbite-react";
+import { Button, Checkbox, HR, Label, TextInput } from "flowbite-react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import Donate from "./Donate";
 import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
@@ -73,7 +73,7 @@ export function PageSettingsControls() {
 
   return (
     <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
-      <h2 className="text-2xl font-semibold dark:text-gray-300">Settings</h2>
+      <h2 className="text-2xl font-semibold dark:text-white">Settings</h2>
 
       <div className="space-y-4">
         <PageSizeControl />
@@ -172,7 +172,7 @@ export function PageSettingsControls() {
             <Button
               size="xs"
               className="w-full"
-              color="gray"
+              color="blue"
               onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
             >
               <ZoomOut className="size-4" />
@@ -181,13 +181,15 @@ export function PageSettingsControls() {
             <Button
               size="xs"
               className="w-full"
-              color="gray"
+              color="blue"
               onClick={() => setZoom(zoom + 0.1)}
             >
               <ZoomIn className="size-4" />
             </Button>
           </div>
         </div>
+
+        <HR className="dark:bg-gray-500" />
 
         <div className="flex flex-col gap-2">
           <Button color="green" onClick={handleExport}>
