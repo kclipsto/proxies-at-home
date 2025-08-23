@@ -52,11 +52,6 @@ export default function SortableCard({
       className="bg-black relative group"
       style={style}
       onClick={() => {
-        console.log("Card clicked:", {
-          card,
-          index: globalIndex,
-        });
-
         openArtworkModal({ card, index: globalIndex });
       }}
     >

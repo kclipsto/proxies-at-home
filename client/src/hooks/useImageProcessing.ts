@@ -5,7 +5,7 @@ import {
   trimBleedEdge,
   urlToDataUrl,
 } from "../helpers/ImageHelper";
-import { useCardsStore } from "../store/cards";
+import { useCardsStore } from "../store";
 import type { CardOption } from "../types/Card";
 
 export function useImageProcessing({
