@@ -1,5 +1,9 @@
-@import "flowbite";
-@tailwind utilities;
+@import 'flowbite' layer(utilities);
+@import 'tailwindcss/utilities' layer(utilities);
+
+@plugin 'flowbite-react/plugin/tailwindcss';
+
+@source '../.flowbite-react/class-list.json';
 
 button {
   cursor: pointer;
