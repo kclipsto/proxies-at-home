@@ -149,7 +149,8 @@ export function ArtworkModal() {
               })}
             </div>
             <Button
-              className="bg-blue-800 w-full"
+              className="w-full"
+              color="blue"
               onClick={getMoreCards}
               disabled={isGettingMore}
             >

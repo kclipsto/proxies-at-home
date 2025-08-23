@@ -12,6 +12,7 @@ import {
   SortableContext,
 } from "@dnd-kit/sortable";
 import { Button, Label } from "flowbite-react";
+import { Copy, Trash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import fullLogo from "../assets/fullLogo.png";
 import CardCellLazy from "../components/CardCellLazy";
@@ -175,7 +176,7 @@ export function PageView() {
       <div ref={pageRef} className="flex flex-col gap-[1rem]">
         {contextMenu.visible && contextMenu.cardIndex !== null && (
           <div
-            className="absolute bg-white border border-gray-300 rounded shadow-md z-50 text-sm space-y-1"
+            className="absolute bg-white border rounded-xl border-gray-300 shadow-md z-50 text-sm flex flex-col gap-1"
             style={{
               top: contextMenu.y,
               left: contextMenu.x,
@@ -186,21 +187,24 @@ export function PageView() {
             }
           >
             <Button
-              className="bg-gray-400 hover:bg-gray-500 w-full"
+              size="xs"
               onClick={() => {
                 duplicateCard(contextMenu.cardIndex!);
                 setContextMenu({ ...contextMenu, visible: false });
               }}
             >
+              <Copy className="size-3 mr-1" />
               Duplicate
             </Button>
             <Button
-              className="bg-red-700 hover:bg-red-800 w-full"
+              size="xs"
+              color="red"
               onClick={() => {
                 deleteCard(contextMenu.cardIndex!);
                 setContextMenu({ ...contextMenu, visible: false });
               }}
             >
+              <Trash className="size-3 mr-1" />
               Delete
             </Button>
           </div>
