@@ -2,10 +2,6 @@ import React from "react";
 import { useSettingsStore } from "../store";
 
 type Props = {
-  pageWidthIn: number;
-  pageHeightIn: number;
-  columns: number;
-  rows: number;
   totalCardWidthMm: number;
   totalCardHeightMm: number;
   baseCardWidthMm: number;
@@ -14,10 +10,6 @@ type Props = {
 };
 
 const EdgeCutLines = ({
-  pageWidthIn,
-  pageHeightIn,
-  columns,
-  rows,
   totalCardWidthMm,
   totalCardHeightMm,
   baseCardWidthMm,
@@ -26,11 +18,16 @@ const EdgeCutLines = ({
 }: Props) => {
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
+  const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
+  const pageWidth = useSettingsStore((state) => state.pageWidth);
+  const pageHeight = useSettingsStore((state) => state.pageHeight);
+  const columns = useSettingsStore((state) => state.columns);
+  const rows = useSettingsStore((state) => state.rows);
 
   if (!bleedEdge) return null;
 
-  const pageWidthMm = pageWidthIn * 25.4;
-  const pageHeightMm = pageHeightIn * 25.4;
+  const pageWidthMm = pageSizeUnit === "mm" ? pageWidth : pageWidth * 25.4;
+  const pageHeightMm = pageSizeUnit === "mm" ? pageHeight : pageHeight * 25.4;
 
   const gridWidthMm = columns * totalCardWidthMm;
   const gridHeightMm = rows * totalCardHeightMm;

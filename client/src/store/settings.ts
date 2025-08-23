@@ -1,11 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid";
+export type PageOrientation = "portrait" | "landscape";
+
 type Store = {
-  pageWidthIn: number;
-  setPageWidthIn: (value: number) => void;
-  pageHeightIn: number;
-  setPageHeightIn: (value: number) => void;
+  pageSizeUnit: "mm" | "in";
+  pageOrientation: PageOrientation;
+  pageSizePreset: LayoutPreset;
+  setPageSizePreset: (value: LayoutPreset) => void;
+  pageWidth: number;
+  pageHeight: number;
   swapPageOrientation: () => void;
   columns: number;
   setColumns: (value: number) => void;
@@ -25,8 +30,11 @@ type Store = {
 };
 
 const defaultPageSettings = {
-  pageWidthIn: 8.5,
-  pageHeightIn: 11,
+  pageSizeUnit: "in",
+  pageOrientation: "portrait",
+  pageSizePreset: "Letter",
+  pageWidth: 8.5,
+  pageHeight: 11,
   columns: 3,
   rows: 3,
   bleedEdgeWidth: 1,
@@ -34,6 +42,16 @@ const defaultPageSettings = {
   guideColor: "#39FF14",
   guideWidth: 0.5,
   zoom: 1,
+} as Store;
+
+const layoutPresetsSizes: Record<
+  LayoutPreset,
+  { pageWidth: number; pageHeight: number; pageSizeUnit: "in" | "mm" }
+> = {
+  Letter: { pageWidth: 8.5, pageHeight: 11, pageSizeUnit: "in" },
+  Tabloid: { pageWidth: 11, pageHeight: 17, pageSizeUnit: "in" },
+  A4: { pageWidth: 210, pageHeight: 297, pageSizeUnit: "mm" },
+  A3: { pageWidth: 297, pageHeight: 420, pageSizeUnit: "mm" },
 };
 
 export const useSettingsStore = create<Store>()(
@@ -41,12 +59,14 @@ export const useSettingsStore = create<Store>()(
     (set) => ({
       ...defaultPageSettings,
 
-      setPageWidthIn: (value) => set({ pageWidthIn: value }),
-      setPageHeightIn: (value) => set({ pageHeightIn: value }),
+      setPageSizePreset: (value) =>
+        set({ pageSizePreset: value, ...layoutPresetsSizes[value] }),
       swapPageOrientation: () =>
         set((state) => ({
-          pageWidthIn: state.pageHeightIn,
-          pageHeightIn: state.pageWidthIn,
+          pageOrientation:
+            state.pageOrientation === "portrait" ? "landscape" : "portrait",
+          pageWidth: state.pageHeight,
+          pageHeight: state.pageWidth,
         })),
       setColumns: (columns) => set({ columns }),
       setRows: (rows) => set({ rows }),

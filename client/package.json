@@ -25,6 +25,7 @@
     "html2pdf.js": "^0.10.3",
     "jspdf": "^3.0.1",
     "jszip": "^3.10.1",
+    "lucide-react": "^0.541.0",
     "node-fetch": "^3.3.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

@@ -32,8 +32,9 @@ const baseCardWidthMm = 63;
 const baseCardHeightMm = 88;
 
 export function PageView() {
-  const pageWidthIn = useSettingsStore((state) => state.pageWidthIn);
-  const pageHeightIn = useSettingsStore((state) => state.pageHeightIn);
+  const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
+  const pageWidth = useSettingsStore((state) => state.pageWidth);
+  const pageHeight = useSettingsStore((state) => state.pageHeight);
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
@@ -241,8 +242,8 @@ export function PageView() {
                 className="proxy-page relative bg-white dark:bg-gray-700"
                 style={{
                   zoom: zoom,
-                  width: `${pageWidthIn}in`,
-                  height: `${pageHeightIn}in`,
+                  width: `${pageWidth}${pageSizeUnit}`,
+                  height: `${pageHeight}${pageSizeUnit}`,
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "center",
@@ -332,10 +333,6 @@ export function PageView() {
                 </div>
 
                 <EdgeCutLines
-                  pageWidthIn={pageWidthIn}
-                  pageHeightIn={pageHeightIn}
-                  columns={columns}
-                  rows={rows}
                   totalCardWidthMm={totalCardWidth}
                   totalCardHeightMm={totalCardHeight}
                   baseCardWidthMm={baseCardWidthMm}

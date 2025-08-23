@@ -1,11 +1,12 @@
+import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
+import { ExportImagesZip } from "@/helpers/ExportImagesZip";
+import { exportProxyPagesToPdf } from "@/helpers/ExportProxyPageToPdf";
+import { useImageProcessing } from "@/hooks/useImageProcessing";
+import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
 import { Button, Checkbox, Label, TextInput } from "flowbite-react";
-import { buildDecklist, downloadDecklist } from "../helpers/DecklistHelper";
-import { ExportImagesZip } from "../helpers/ExportImagesZip";
-import { exportProxyPagesToPdf } from "../helpers/ExportProxyPageToPdf";
-import { useImageProcessing } from "../hooks/useImageProcessing";
-import { useLoadingStore, useSettingsStore } from "../store";
-import { useCardsStore } from "../store/cards";
 import Donate from "./Donate";
+import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
+import { ZoomIn, ZoomOut } from "lucide-react";
 
 const unit = "mm";
 const pdfPageColor = "#FFFFFF";
@@ -16,8 +17,8 @@ export function PageSettingsControls() {
   const originalSelectedImages = useCardsStore(
     (state) => state.originalSelectedImages
   );
-  const pageWidthIn = useSettingsStore((state) => state.pageWidthIn);
-  const pageHeightIn = useSettingsStore((state) => state.pageHeightIn);
+  const pageWidthIn = useSettingsStore((state) => state.pageWidth);
+  const pageHeightIn = useSettingsStore((state) => state.pageHeight);
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
@@ -26,11 +27,6 @@ export function PageSettingsControls() {
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const zoom = useSettingsStore((state) => state.zoom);
 
-  const setPageWidthIn = useSettingsStore((state) => state.setPageWidthIn);
-  const setPageHeightIn = useSettingsStore((state) => state.setPageHeightIn);
-  const swapPageOrientation = useSettingsStore(
-    (state) => state.swapPageOrientation
-  );
   const setColumns = useSettingsStore((state) => state.setColumns);
   const setRows = useSettingsStore((state) => state.setRows);
   const setBleedEdgeWidth = useSettingsStore(
@@ -57,6 +53,7 @@ export function PageSettingsControls() {
     const date = new Date().toISOString().slice(0, 10);
     downloadDecklist(`decklist_${date}.txt`, text);
   };
+
   const handleExport = async () => {
     setLoadingTask("Generating PDF");
     await exportProxyPagesToPdf({
@@ -81,43 +78,7 @@ export function PageSettingsControls() {
       <h2 className="text-2xl font-semibold dark:text-gray-300">Settings</h2>
 
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Page Width (in)</Label>
-            <TextInput
-              className="w-full"
-              type="number"
-              step="0.1"
-              min="1"
-              value={pageWidthIn}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                if (!isNaN(v) && v > 0) setPageWidthIn(v);
-              }}
-            />
-          </div>
-          <div>
-            <Label>Page Height (in)</Label>
-            <TextInput
-              className="w-full"
-              type="number"
-              step="0.1"
-              min="1"
-              value={pageHeightIn}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                if (!isNaN(v) && v > 0) setPageHeightIn(v);
-              }}
-            />
-          </div>
-        </div>
-
-        <Button
-          className="bg-gray-300 text-gray-900 w-full"
-          onClick={swapPageOrientation}
-        >
-          Swap Orientation
-        </Button>
+        <PageSizeControl />
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -212,43 +173,47 @@ export function PageSettingsControls() {
           <div className="flex items-center gap-2 justify-between w-full">
             <Button
               size="xs"
-              className="bg-gray-300 text-gray-900 w-full focus:ring-0"
+              className="w-full"
+              color="gray"
               onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
             >
-              -
+              <ZoomOut className="size-4" />
             </Button>
             <Label className="w-full text-center">{zoom.toFixed(1)}x</Label>
             <Button
               size="xs"
-              className="bg-gray-300 text-gray-900 w-full focus:ring-0"
+              className="w-full"
+              color="gray"
               onClick={() => setZoom(zoom + 0.1)}
             >
-              +
+              <ZoomIn className="size-4" />
             </Button>
           </div>
         </div>
 
-        <Button className="bg-green-700 w-full" onClick={handleExport}>
-          Export to PDF
-        </Button>
-        <Button
-          className="bg-indigo-700 w-full"
-          onClick={() =>
-            ExportImagesZip({
-              cards,
-              originalSelectedImages,
-              fileBaseName: "card_images",
-            })
-          }
-        >
-          Export Card Images (.zip)
-        </Button>
-        <Button className="bg-blue-700 w-full" onClick={handleCopyDecklist}>
-          Copy Decklist
-        </Button>
-        <Button className="bg-blue-500 w-full" onClick={handleDownloadDecklist}>
-          Download Decklist (.txt)
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button color="green" onClick={handleExport}>
+            Export to PDF
+          </Button>
+          <Button
+            color="indigo"
+            onClick={() =>
+              ExportImagesZip({
+                cards,
+                originalSelectedImages,
+                fileBaseName: "card_images",
+              })
+            }
+          >
+            Export Card Images (.zip)
+          </Button>
+          <Button color="cyan" onClick={handleCopyDecklist}>
+            Copy Decklist
+          </Button>
+          <Button color="blue" onClick={handleDownloadDecklist}>
+            Download Decklist (.txt)
+          </Button>
+        </div>
       </div>
 
       <div className="w-full flex justify-center">
