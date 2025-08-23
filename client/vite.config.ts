@@ -6,5 +6,6 @@ export default defineConfig({
   css: {
     postcss: path.resolve(__dirname, "../../postcss.config.js"),
   },
+  server: { host: true, port: 5173 },
   plugins: [tailwindcss()],
 });

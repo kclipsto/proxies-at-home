@@ -50,7 +50,7 @@ export const useCardsStore = create<Store>()(
         })),
     }),
     {
-      name: "selected-cards",
+      name: "proxxied:selected-cards:v1",
       partialize: (state) => ({
         cards: state.cards,
         originalSelectedImages: state.originalSelectedImages,

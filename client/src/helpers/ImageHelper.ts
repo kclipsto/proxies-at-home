@@ -35,27 +35,27 @@ export function pngToNormal(pngUrl: string) {
 }
 
 export function trimBleedEdge(dataUrl: string): Promise<string> {
-    return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            let bleedTrim = 76;
-            const canvas = document.createElement("canvas");
-console.log(img.height)
-            if(img.height >= 2220 && img.height < 2960){
-              bleedTrim = 78;
-            }
-            if(img.height >= 2960 && img.height < 4440){
-              bleedTrim = 104;
-            }
-            if(img.height >= 4440){
-              bleedTrim = 156;
-            }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let bleedTrim = 76;
+      const canvas = document.createElement("canvas");
+      console.log(img.height);
+      if (img.height >= 2220 && img.height < 2960) {
+        bleedTrim = 78;
+      }
+      if (img.height >= 2960 && img.height < 4440) {
+        bleedTrim = 104;
+      }
+      if (img.height >= 4440) {
+        bleedTrim = 156;
+      }
 
-            const height = img.height - bleedTrim * 2;
-            const width = img.width - bleedTrim * 2;
-              
-            canvas.width = width;
-            canvas.height = height;
+      const height = img.height - bleedTrim * 2;
+      const width = img.width - bleedTrim * 2;
+
+      canvas.width = width;
+      canvas.height = height;
 
       const ctx = canvas.getContext("2d");
       if (ctx) {
@@ -131,8 +131,8 @@ export async function addBleedEdge(
   console.log("Adding bleed edge:", bleedOverride, opts);
 
   return new Promise<string>((resolve) => {
-    const targetCardWidth = 750;
-    const targetCardHeight = 1050;
+    const targetCardWidth = 744;
+    const targetCardHeight = 1040;
     const bleed = Math.round(
       getBleedInPixels(
         bleedOverride ?? opts?.bleedEdgeWidth ?? 0,

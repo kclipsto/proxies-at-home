@@ -58,7 +58,7 @@ export const useSettingsStore = create<Store>()(
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {
-      name: "page-settings",
+      name: "proxxied:layout-settings:v1",
     }
   )
 );
