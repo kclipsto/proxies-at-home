@@ -1,29 +1,36 @@
-import axios from "axios";
-import { Button, Label, Textarea } from "flowbite-react";
-import React, { useState } from "react";
-import cardBack from "../assets/cardBack.png";
-import fullLogo from "../assets/fullLogo.png";
-import { API_BASE } from "../constants";
+import cardBack from "@/assets/cardBack.png";
+import fullLogo from "@/assets/fullLogo.png";
+import { API_BASE } from "@/constants";
 import {
   cardKey,
   parseDeckToInfos,
   type CardInfo,
-} from "../helpers/CardInfoHelper";
+} from "@/helpers/CardInfoHelper";
 import {
   addBleedEdge,
   getLocalBleedImageUrl,
   trimBleedEdge,
   urlToDataUrl,
-} from "../helpers/ImageHelper";
+} from "@/helpers/ImageHelper";
 import {
   getMpcImageUrl,
   inferCardNameFromFilename,
   parseMpcText,
   tryParseMpcSchemaXml,
-} from "../helpers/Mpc";
-import { useLoadingStore, useSettingsStore } from "../store";
-import { useCardsStore } from "../store/cards";
-import type { CardOption } from "../types/Card";
+} from "@/helpers/Mpc";
+import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
+import type { CardOption } from "@/types/Card";
+import axios from "axios";
+import {
+  Button,
+  HelperText,
+  HR,
+  List,
+  ListItem,
+  Textarea,
+} from "flowbite-react";
+import { ExternalLink } from "lucide-react";
+import React, { useState } from "react";
 
 async function readText(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -351,119 +358,145 @@ export function UploadSection() {
     <div className="w-1/5 dark:bg-gray-700 bg-gray-100 flex flex-col">
       <img src={fullLogo} alt="Proxxied Logo" />
 
-      <div className="flex-1 overflow-y-auto space-y-4 px-4 pb-4">
-        <div className="space-y-2">
-          {/* MPC Fill */}
-          <Label className="block text-gray-700 dark:text-gray-300">
-            Upload MPC Images (
-            <a
-              href="https://mpcfill.com"
-              target="_blank"
-              rel="noreferrer"
-              className="underline hover:text-blue-600 dark:hover:text-blue-400"
+      <div className="flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4">
+        <div className="flex flex-col gap-4">
+          <div className="space-y-1">
+            <h6 className="font-medium dark:text-gray-300">
+              Upload MPC Images (
+              <a
+                href="https://mpcfill.com"
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-blue-600 dark:hover:text-blue-400"
+              >
+                MPC Autofill
+                <ExternalLink className="inline-block size-4 ml-1" />
+              </a>
+              )
+            </h6>
+
+            <label
+              htmlFor="upload-mpc"
+              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
             >
-              MPC Autofill
-            </a>
-            )
-          </Label>
+              Choose Files
+            </label>
+            <input
+              id="upload-mpc"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleUploadMpcFill}
+              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+              className="hidden"
+            />
+          </div>
 
-          <label
-            htmlFor="upload-mpc"
-            className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-          >
-            Choose Files
-          </label>
-          <input
-            id="upload-mpc"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleUploadMpcFill}
-            onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-            className="hidden"
-          />
+          <div className="space-y-1">
+            <h6 className="font-medium dark:text-gray-300">
+              Import MPC Text (XML)
+            </h6>
 
-          <Label className="block text-gray-700 dark:text-gray-300">
-            Import MPC Text (XML)
-          </Label>
-          <label
-            htmlFor="import-mpc-xml"
-            className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-          >
-            Choose File
-          </label>
-          <input
-            id="import-mpc-xml"
-            type="file"
-            accept=".xml,.txt,.csv,.log,text/xml,text/plain"
-            onChange={handleImportMpcXml}
-            onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-            className="hidden"
-          />
+            <label
+              htmlFor="import-mpc-xml"
+              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
+            >
+              Choose File
+            </label>
+            <input
+              id="import-mpc-xml"
+              type="file"
+              accept=".xml,.txt,.csv,.log,text/xml,text/plain"
+              onChange={handleImportMpcXml}
+              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+              className="hidden"
+            />
+          </div>
 
-          {/* Standard */}
-          <Label className="block text-gray-700 dark:text-gray-300">
-            Upload Other Images (mtgcardsmith, custom designs, etc.)
-          </Label>
-          <label
-            htmlFor="upload-standard"
-            className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-          >
-            Choose Files
-          </label>
-          <input
-            id="upload-standard"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleUploadStandard}
-            onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-            className="hidden"
-          />
+          <div className="space-y-1">
+            <h6 className="font-medium dark:text-gray-300">
+              Upload Other Images
+            </h6>
+            <label
+              htmlFor="upload-standard"
+              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
+            >
+              Choose Files
+            </label>
+            <input
+              id="upload-standard"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleUploadStandard}
+              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+              className="hidden"
+            />
+            <HelperText>
+              You can upload images from mtgcardsmith, custom designs, etc.
+            </HelperText>
+          </div>
         </div>
-        <Label className="block text-gray-700 dark:text-gray-300">
-          Add Cards (
-          <a
-            href="https://scryfall.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-blue-600 dark:hover:text-blue-400"
-          >
-            Scryfall
-          </a>
-          )
-        </Label>
-        <Textarea
-          className="h-64"
-          placeholder={`1x Sol Ring
+
+        <HR className="my-0 dark:bg-gray-400" />
+
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h6 className="font-medium dark:text-gray-300">
+              Add Cards (
+              <a
+                href="https://scryfall.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-blue-600 dark:hover:text-blue-400"
+              >
+                Scryfall
+                <ExternalLink className="inline-block size-4 ml-1" />
+              </a>
+              )
+            </h6>
+
+            <Textarea
+              className="h-64"
+              placeholder={`1x Sol Ring
 2x Counterspell
 For specific art include set / CN
 eg. Strionic Resonator (lcc)
 or Repurposing Bay (dft) 380`}
-          value={deckText}
-          onChange={(e) => setDeckText(e.target.value)}
-        />
-        <Button className="bg-blue-800 w-full" onClick={handleSubmit}>
-          Fetch Cards
-        </Button>
+              value={deckText}
+              onChange={(e) => setDeckText(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button color="blue" onClick={handleSubmit}>
+              Fetch Cards
+            </Button>
+            <Button color="red" onClick={handleClear}>
+              Clear Cards
+            </Button>
+          </div>
+
+          <div>
+            <h6 className="font-medium dark:text-gray-300">Tips:</h6>
+
+            <List className="text-sm">
+              <ListItem>To change a card art - click it</ListItem>
+              <ListItem>
+                To move a card - drag from the box at the top right
+              </ListItem>
+              <ListItem>
+                To duplicate or delete a card - right click it
+              </ListItem>
+            </List>
+          </div>
+        </div>
+
+        <HR className="my-0 dark:bg-gray-400" />
+
         <Button
-          className="bg-red-700 hover:bg-red-700 w-full"
-          onClick={handleClear}
-        >
-          Clear Cards
-        </Button>
-        <Label className="block text-gray-700 dark:text-gray-300">Tips:</Label>
-        <Label className="block text-gray-700 dark:text-gray-300">
-          To change a card art - click it
-        </Label>
-        <Label className="block text-gray-700 dark:text-gray-300">
-          To move a card - drag from the box at the top right
-        </Label>
-        <Label className="block text-gray-700 dark:text-gray-300">
-          To duplicate or delete a card - right click it
-        </Label>
-        <Button
-          className="bg-purple-700 w-full mt-[2rem]"
+          color="purple"
+          className="flex-shrink-0"
           onClick={addCardBackPage}
         >
           Add Card Backs
