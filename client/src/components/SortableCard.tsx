@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useArtworkModalStore, useSettingsStore } from "../store";
 import type { CardOption } from "../types/Card";
-import { usePageSettings } from "../providers/PageSettings";
 
 type SortableCardProps = {
   card: CardOption;
@@ -17,9 +17,6 @@ type SortableCardProps = {
     y: number;
     cardIndex: number;
   }) => void;
-  setModalCard: (card: CardOption) => void;
-  setModalIndex: (index: number) => void;
-  setIsModalOpen: (open: boolean) => void;
 };
 
 export default function SortableCard({
@@ -31,13 +28,14 @@ export default function SortableCard({
   totalCardHeight,
   guideOffset,
   setContextMenu,
-  setModalCard,
-  setModalIndex,
-  setIsModalOpen,
 }: SortableCardProps) {
-  const { bleedEdge, guideWidth, guideColor } = usePageSettings();
+  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  const guideWidth = useSettingsStore((state) => state.guideWidth);
+  const guideColor = useSettingsStore((state) => state.guideColor);
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: card.uuid });
+
+  const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -54,9 +52,12 @@ export default function SortableCard({
       className="bg-black relative group"
       style={style}
       onClick={() => {
-        setModalCard(card);
-        setModalIndex(globalIndex);
-        setIsModalOpen(true);
+        console.log("Card clicked:", {
+          card,
+          index: globalIndex,
+        });
+
+        openArtworkModal({ card, index: globalIndex });
       }}
     >
       <img

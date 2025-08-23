@@ -21,8 +21,8 @@ import {
   parseMpcText,
   tryParseMpcSchemaXml,
 } from "../helpers/Mpc";
-import type { LoadingTask } from "../pages/ProxyBuilderPage";
-import { usePageSettings } from "../providers/PageSettings";
+import { useLoadingStore, useSettingsStore } from "../store";
+import { useCardsStore } from "../store/cards";
 import type { CardOption } from "../types/Card";
 
 async function readText(file: File): Promise<string> {
@@ -33,27 +33,24 @@ async function readText(file: File): Promise<string> {
   });
 }
 
-export function UploadSection({
-  cards,
-  setCards,
-  setLoadingTask,
-  setIsLoading,
-  setOriginalSelectedImages,
-  setSelectedImages,
-}: {
-  cards: CardOption[];
-  setCards: React.Dispatch<React.SetStateAction<CardOption[]>>;
-  setLoadingTask: React.Dispatch<React.SetStateAction<LoadingTask>>;
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setOriginalSelectedImages: React.Dispatch<
-    React.SetStateAction<Record<string, string>>
-  >;
-  setSelectedImages: React.Dispatch<
-    React.SetStateAction<Record<string, string>>
-  >;
-}) {
+export function UploadSection() {
   const [deckText, setDeckText] = useState("");
-  const { bleedEdgeWidth } = usePageSettings();
+  const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const cards = useCardsStore((state) => state.cards);
+
+  const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
+  const appendCards = useCardsStore((state) => state.appendCards);
+  const setCards = useCardsStore((state) => state.setCards);
+  const setSelectedImages = useCardsStore((state) => state.setSelectedImages);
+  const appendSelectedImages = useCardsStore(
+    (state) => state.appendSelectedImages
+  );
+  const setOriginalSelectedImages = useCardsStore(
+    (state) => state.setOriginalSelectedImages
+  );
+  const appendOriginalSelectedImages = useCardsStore(
+    (state) => state.appendOriginalSelectedImages
+  );
 
   async function processToWithBleed(
     srcBase64: string,
@@ -87,7 +84,7 @@ export function UploadSection({
       hasBakedBleed: opts.hasBakedBleed,
     }));
 
-    setCards((prev) => [...prev, ...newCards]);
+    appendCards(newCards);
 
     const originalsUpdate: Record<string, string> = {};
     const processedUpdate: Record<string, string> = {};
@@ -111,15 +108,15 @@ export function UploadSection({
       })
     );
 
-    setOriginalSelectedImages((prev) => ({ ...prev, ...originalsUpdate }));
-    setSelectedImages((prev) => ({ ...prev, ...processedUpdate }));
+    appendOriginalSelectedImages(originalsUpdate);
+    appendSelectedImages(processedUpdate);
   }
 
   const handleUploadMpcFill = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     setLoadingTask("Uploading Images");
-    setIsLoading(true);
+
     try {
       const files = e.target.files;
       if (files && files.length) {
@@ -127,7 +124,7 @@ export function UploadSection({
       }
     } finally {
       if (e.target) e.target.value = "";
-      setIsLoading(false);
+
       setLoadingTask(null);
     }
   };
@@ -136,7 +133,6 @@ export function UploadSection({
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     setLoadingTask("Uploading Images");
-    setIsLoading(true);
     try {
       const files = e.target.files;
       if (!files || !files.length) return;
@@ -154,7 +150,7 @@ export function UploadSection({
 
       console.log(newCards);
 
-      setCards((prev) => [...prev, ...newCards]);
+      appendCards(newCards);
 
       const base64s = await Promise.all(
         fileArray.map(
@@ -182,11 +178,10 @@ export function UploadSection({
         processed[uuid] = bleedImage;
       }
 
-      setOriginalSelectedImages((prev) => ({ ...prev, ...newOriginals }));
-      setSelectedImages((prev) => ({ ...prev, ...processed }));
+      appendOriginalSelectedImages(newOriginals);
+      appendSelectedImages(processed);
     } finally {
       if (e.target) e.target.value = "";
-      setIsLoading(false);
       setLoadingTask(null);
     }
   };
@@ -228,9 +223,9 @@ export function UploadSection({
         }
       }
 
-      setCards((prev) => [...prev, ...newCards]);
+      appendCards(newCards);
       if (Object.keys(newOriginals).length) {
-        setOriginalSelectedImages((prev) => ({ ...prev, ...newOriginals }));
+        appendOriginalSelectedImages(newOriginals);
       }
     } finally {
       if (e.target) e.target.value = "";
@@ -239,7 +234,6 @@ export function UploadSection({
 
   const handleSubmit = async () => {
     setLoadingTask("Fetching cards");
-    setIsLoading(true);
 
     const infos = parseDeckToInfos(deckText);
 
@@ -278,7 +272,7 @@ export function UploadSection({
       };
     });
 
-    setCards((prev) => [...prev, ...expandedCards]);
+    appendCards(expandedCards);
 
     const newOriginals: Record<string, string> = {};
     for (const card of expandedCards) {
@@ -286,7 +280,7 @@ export function UploadSection({
         newOriginals[card.uuid] = card.imageUrls[0];
       }
     }
-    setOriginalSelectedImages((prev) => ({ ...prev, ...newOriginals }));
+    appendOriginalSelectedImages(newOriginals);
 
     setLoadingTask("Processing Images");
 
@@ -297,26 +291,25 @@ export function UploadSection({
       processed[uuid] = bleedImage;
     }
 
-    setSelectedImages((prev) => ({ ...prev, ...processed }));
-    setIsLoading(false);
+    appendSelectedImages(processed);
     setLoadingTask(null);
     setDeckText("");
   };
 
   const handleClear = async () => {
     setLoadingTask("Clearing Images");
-    setIsLoading(true);
+
     await axios.delete(`${API_BASE}/api/cards/images`);
     setCards([]);
     setSelectedImages({});
     setOriginalSelectedImages({});
-    setIsLoading(false);
+
     setLoadingTask(null);
   };
 
   const addCardBackPage = async () => {
     setLoadingTask("Uploading Images");
-    setIsLoading(true);
+
     try {
       const base64 = await urlToDataUrl(cardBack);
       const trimmed = await trimBleedEdge(base64);
@@ -329,20 +322,27 @@ export function UploadSection({
         isUserUpload: true,
       }));
 
-      setCards((prev) => [...prev, ...newCards]);
+      appendCards(newCards);
 
-      setOriginalSelectedImages((prev) => {
-        const next = { ...prev };
-        for (const c of newCards) next[c.uuid] = base64;
-        return next;
-      });
-      setSelectedImages((prev) => {
-        const next = { ...prev };
-        for (const c of newCards) next[c.uuid] = withBleed;
-        return next;
-      });
+      appendOriginalSelectedImages(
+        newCards.reduce(
+          (acc, c) => {
+            acc[c.uuid] = base64;
+            return acc;
+          },
+          {} as Record<string, string>
+        )
+      );
+      appendSelectedImages(
+        newCards.reduce(
+          (acc, c) => {
+            acc[c.uuid] = withBleed;
+            return acc;
+          },
+          {} as Record<string, string>
+        )
+      );
     } finally {
-      setIsLoading(false);
       setLoadingTask(null);
     }
   };

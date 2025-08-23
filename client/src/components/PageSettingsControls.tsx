@@ -3,63 +3,48 @@ import { buildDecklist, downloadDecklist } from "../helpers/DecklistHelper";
 import { ExportImagesZip } from "../helpers/ExportImagesZip";
 import { exportProxyPagesToPdf } from "../helpers/ExportProxyPageToPdf";
 import { useImageProcessing } from "../hooks/useImageProcessing";
-import type { LoadingTask } from "../pages/ProxyBuilderPage";
-import { usePageSettings } from "../providers/PageSettings";
-import type { CardOption } from "../types/Card";
+import { useLoadingStore, useSettingsStore } from "../store";
+import { useCardsStore } from "../store/cards";
 import Donate from "./Donate";
 
 const unit = "mm";
 const pdfPageColor = "#FFFFFF";
 
-export function PageSettingsControls({
-  cards,
-  originalSelectedImages,
-  setLoadingTask,
-  setIsLoading,
-  setOriginalSelectedImages,
-  selectedImages,
-  setSelectedImages,
-}: {
-  cards: CardOption[];
-  originalSelectedImages: Record<string, string>;
-  setLoadingTask: React.Dispatch<React.SetStateAction<LoadingTask>>;
-  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setOriginalSelectedImages: React.Dispatch<
-    React.SetStateAction<Record<string, string>>
-  >;
-  selectedImages: Record<string, string>;
-  setSelectedImages: React.Dispatch<
-    React.SetStateAction<Record<string, string>>
-  >;
-}) {
-  const {
-    pageWidthIn,
-    setPageWidthIn,
-    pageHeightIn,
-    setPageHeightIn,
-    columns,
-    setColumns,
-    rows,
-    setRows,
-    bleedEdgeWidth,
-    setBleedEdgeWidth,
-    bleedEdge,
-    setBleedEdge,
-    guideColor,
-    setGuideColor,
-    guideWidth,
-    setGuideWidth,
-    zoom,
-    setZoom,
-  } = usePageSettings();
+export function PageSettingsControls() {
+  const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
+  const cards = useCardsStore((state) => state.cards);
+  const originalSelectedImages = useCardsStore(
+    (state) => state.originalSelectedImages
+  );
+  const pageWidthIn = useSettingsStore((state) => state.pageWidthIn);
+  const pageHeightIn = useSettingsStore((state) => state.pageHeightIn);
+  const columns = useSettingsStore((state) => state.columns);
+  const rows = useSettingsStore((state) => state.rows);
+  const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  const guideColor = useSettingsStore((state) => state.guideColor);
+  const guideWidth = useSettingsStore((state) => state.guideWidth);
+  const zoom = useSettingsStore((state) => state.zoom);
+
+  const setPageWidthIn = useSettingsStore((state) => state.setPageWidthIn);
+  const setPageHeightIn = useSettingsStore((state) => state.setPageHeightIn);
+  const swapPageOrientation = useSettingsStore(
+    (state) => state.swapPageOrientation
+  );
+  const setColumns = useSettingsStore((state) => state.setColumns);
+  const setRows = useSettingsStore((state) => state.setRows);
+  const setBleedEdgeWidth = useSettingsStore(
+    (state) => state.setBleedEdgeWidth
+  );
+  const setBleedEdge = useSettingsStore((state) => state.setBleedEdge);
+  const setGuideColor = useSettingsStore((state) => state.setGuideColor);
+  const setGuideWidth = useSettingsStore((state) => state.setGuideWidth);
+  const setZoom = useSettingsStore((state) => state.setZoom);
+  const resetSettings = useSettingsStore((state) => state.resetSettings);
 
   const { reprocessSelectedImages } = useImageProcessing({
     unit, // "mm" | "in"
     bleedEdgeWidth, // number
-    selectedImages,
-    setSelectedImages,
-    originalSelectedImages,
-    setOriginalSelectedImages,
   });
 
   const handleCopyDecklist = async () => {
@@ -74,7 +59,6 @@ export function PageSettingsControls({
   };
   const handleExport = async () => {
     setLoadingTask("Generating PDF");
-    setIsLoading(true);
     await exportProxyPagesToPdf({
       cards,
       originalSelectedImages,
@@ -88,12 +72,12 @@ export function PageSettingsControls({
       columns,
       rows,
     });
-    setIsLoading(false);
+
     setLoadingTask(null);
   };
 
   return (
-    <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col overflow-y-auto">
+    <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
       <Label className="text-lg font-semibold dark:text-gray-300">
         Settings
       </Label>
@@ -132,10 +116,7 @@ export function PageSettingsControls({
 
         <Button
           className="bg-gray-300 text-gray-900 w-full"
-          onClick={() => {
-            setPageWidthIn(pageHeightIn);
-            setPageHeightIn(pageWidthIn);
-          }}
+          onClick={swapPageOrientation}
         >
           Swap Orientation
         </Button>
@@ -277,6 +258,15 @@ export function PageSettingsControls({
         >
           Download Decklist (.txt)
         </Button>
+      </div>
+
+      <div className="w-full flex justify-center">
+        <span
+          className="text-gray-400 hover:underline cursor-pointer text-sm font-medium"
+          onClick={resetSettings}
+        >
+          Reset Settings
+        </span>
       </div>
 
       <div className="mt-auto space-y-3 pt-4">

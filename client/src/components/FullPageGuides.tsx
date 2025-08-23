@@ -1,34 +1,38 @@
 import React from "react";
+import { useSettingsStore } from "../store";
 
 type Props = {
   pageWidthIn: number;
   pageHeightIn: number;
-  cols?: number;
-  rows?: number;
+  columns: number;
+  rows: number;
   totalCardWidthMm: number;
   totalCardHeightMm: number;
   baseCardWidthMm: number;
   baseCardHeightMm: number;
   bleedEdgeWidthMm: number;
-  guideWidthPx: number;
 };
 
-const EdgeCutLines: React.FC<Props> = ({
+const EdgeCutLines = ({
   pageWidthIn,
   pageHeightIn,
-  cols = 3,
-  rows = 3,
+  columns,
+  rows,
   totalCardWidthMm,
   totalCardHeightMm,
   baseCardWidthMm,
   baseCardHeightMm,
   bleedEdgeWidthMm,
-  guideWidthPx,
-}) => {
+}: Props) => {
+  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  const guideWidth = useSettingsStore((state) => state.guideWidth);
+
+  if (!bleedEdge) return null;
+
   const pageWidthMm = pageWidthIn * 25.4;
   const pageHeightMm = pageHeightIn * 25.4;
 
-  const gridWidthMm = cols * totalCardWidthMm;
+  const gridWidthMm = columns * totalCardWidthMm;
   const gridHeightMm = rows * totalCardHeightMm;
 
   const startXmm = (pageWidthMm - gridWidthMm) / 2;
@@ -41,7 +45,7 @@ const EdgeCutLines: React.FC<Props> = ({
 
   // Collect all vertical/horizontal cut positions
   const xCuts = new Set<number>();
-  for (let c = 0; c < cols; c++) {
+  for (let c = 0; c < columns; c++) {
     const cellLeft = startXmm + c * totalCardWidthMm;
     xCuts.add(cellLeft + cutInX);
     xCuts.add(cellLeft + cutOutX);
@@ -67,7 +71,7 @@ const EdgeCutLines: React.FC<Props> = ({
           position: "absolute",
           left: `${x}mm`,
           top: 0,
-          width: `${guideWidthPx}px`,
+          width: `${guideWidth}px`,
           height: `${stubH}mm`,
           backgroundColor: "black",
           pointerEvents: "none",
@@ -79,7 +83,7 @@ const EdgeCutLines: React.FC<Props> = ({
           position: "absolute",
           left: `${x}mm`,
           top: `${pageHeightMm - stubH}mm`,
-          width: `${guideWidthPx}px`,
+          width: `${guideWidth}px`,
           height: `${stubH}mm`,
           backgroundColor: "black",
           pointerEvents: "none",
@@ -98,7 +102,7 @@ const EdgeCutLines: React.FC<Props> = ({
           position: "absolute",
           top: `${y}mm`,
           left: 0,
-          height: `${guideWidthPx}px`,
+          height: `${guideWidth}px`,
           width: `${stubW}mm`,
           backgroundColor: "black",
           pointerEvents: "none",
@@ -110,7 +114,7 @@ const EdgeCutLines: React.FC<Props> = ({
           position: "absolute",
           top: `${y}mm`,
           left: `${pageWidthMm - stubW}mm`,
-          height: `${guideWidthPx}px`,
+          height: `${guideWidth}px`,
           width: `${stubW}mm`,
           backgroundColor: "black",
           pointerEvents: "none",

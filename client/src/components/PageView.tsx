@@ -19,49 +19,48 @@ import EdgeCutLines from "../components/FullPageGuides";
 import SortableCard from "../components/SortableCard";
 import { getBleedInPixels } from "../helpers/ImageHelper";
 import { useImageProcessing } from "../hooks/useImageProcessing";
-import { usePageSettings } from "../providers/PageSettings";
+import {
+  useArtworkModalStore,
+  useCardsStore,
+  useSettingsStore,
+} from "../store";
 import type { CardOption } from "../types/Card";
+import { ArtworkModal } from "./ArtworkModal";
 
 const unit = "mm";
 const baseCardWidthMm = 63;
 const baseCardHeightMm = 88;
 
-export function PageView({
-  cards,
-  setCards,
-  selectedImages,
-  setSelectedImages,
-  originalSelectedImages,
-  setOriginalSelectedImages,
-  setModalCard,
-  setModalIndex,
-  setIsModalOpen,
-}: {
-  cards: CardOption[];
-  setCards: (cards: CardOption[]) => void;
-  selectedImages: Record<string, string>;
-  setSelectedImages: React.Dispatch<
-    React.SetStateAction<Record<string, string>>
-  >;
-  originalSelectedImages: Record<string, string>;
-  setOriginalSelectedImages: React.Dispatch<
-    React.SetStateAction<Record<string, string>>
-  >;
-  setModalCard: React.Dispatch<React.SetStateAction<CardOption | null>>;
-  setModalIndex: React.Dispatch<React.SetStateAction<number | null>>;
-  setIsModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}) {
-  const {
-    pageWidthIn,
-    pageHeightIn,
-    columns,
-    rows,
-    bleedEdgeWidth,
-    bleedEdge,
-    guideWidth,
-    zoom,
-  } = usePageSettings();
+export function PageView() {
+  const pageWidthIn = useSettingsStore((state) => state.pageWidthIn);
+  const pageHeightIn = useSettingsStore((state) => state.pageHeightIn);
+  const columns = useSettingsStore((state) => state.columns);
+  const rows = useSettingsStore((state) => state.rows);
+  const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const zoom = useSettingsStore((state) => state.zoom);
+
+  // const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  // const guideWidth = useSettingsStore((state) => state.guideWidth);
+
   const pageRef = useRef<HTMLDivElement>(null);
+  const cards = useCardsStore((state) => state.cards);
+  const selectedImages = useCardsStore((state) => state.selectedImages);
+  const originalSelectedImages = useCardsStore(
+    (state) => state.originalSelectedImages
+  );
+  const openArtworkModal = useArtworkModalStore((state) => state.openModal);
+
+  const setCards = useCardsStore((state) => state.setCards);
+  const setSelectedImages = useCardsStore((state) => state.setSelectedImages);
+  const setOriginalSelectedImages = useCardsStore(
+    (state) => state.setOriginalSelectedImages
+  );
+  const appendSelectedImages = useCardsStore(
+    (state) => state.appendSelectedImages
+  );
+  const appendOriginalSelectedImages = useCardsStore(
+    (state) => state.appendOriginalSelectedImages
+  );
 
   const bleedPixels = getBleedInPixels(bleedEdgeWidth, unit);
   const guideOffset = `${(bleedPixels * (25.4 / 300)).toFixed(3)}mm`;
@@ -96,15 +95,13 @@ export function PageView({
     const original = originalSelectedImages[cardToCopy.uuid];
     const processed = selectedImages[cardToCopy.uuid];
 
-    setOriginalSelectedImages((prev) => ({
-      ...prev,
+    appendOriginalSelectedImages({
       [newCard.uuid]: original,
-    }));
+    });
 
-    setSelectedImages((prev) => ({
-      ...prev,
+    appendSelectedImages({
       [newCard.uuid]: processed,
-    }));
+    });
   }
 
   function deleteCard(index: number) {
@@ -152,10 +149,6 @@ export function PageView({
   const { loadingMap, ensureProcessed } = useImageProcessing({
     unit, // "mm" | "in"
     bleedEdgeWidth, // number
-    selectedImages,
-    setSelectedImages,
-    originalSelectedImages,
-    setOriginalSelectedImages,
   });
 
   return (
@@ -292,9 +285,10 @@ export function PageView({
                             });
                           }}
                           onClick={() => {
-                            setModalCard(card);
-                            setModalIndex(globalIndex);
-                            setIsModalOpen(true);
+                            openArtworkModal({
+                              card,
+                              index: globalIndex,
+                            });
                           }}
                           className="flex items-center justify-center border-2 border-dashed border-red-500 bg-gray-50 text-center p-2 select-none"
                           style={{
@@ -331,33 +325,30 @@ export function PageView({
                           totalCardHeight={totalCardHeight}
                           guideOffset={guideOffset}
                           setContextMenu={setContextMenu}
-                          setModalCard={setModalCard}
-                          setModalIndex={setModalIndex}
-                          setIsModalOpen={setIsModalOpen}
                         />
                       </CardCellLazy>
                     );
                   })}
                 </div>
-                {bleedEdge && (
-                  <EdgeCutLines
-                    pageWidthIn={pageWidthIn}
-                    pageHeightIn={pageHeightIn}
-                    cols={columns}
-                    rows={rows}
-                    totalCardWidthMm={totalCardWidth}
-                    totalCardHeightMm={totalCardHeight}
-                    baseCardWidthMm={baseCardWidthMm}
-                    baseCardHeightMm={baseCardHeightMm}
-                    bleedEdgeWidthMm={bleedEdgeWidth}
-                    guideWidthPx={guideWidth}
-                  />
-                )}
+
+                <EdgeCutLines
+                  pageWidthIn={pageWidthIn}
+                  pageHeightIn={pageHeightIn}
+                  columns={columns}
+                  rows={rows}
+                  totalCardWidthMm={totalCardWidth}
+                  totalCardHeightMm={totalCardHeight}
+                  baseCardWidthMm={baseCardWidthMm}
+                  baseCardHeightMm={baseCardHeightMm}
+                  bleedEdgeWidthMm={bleedEdgeWidth}
+                />
               </div>
             ))}
           </SortableContext>
         </DndContext>
       </div>
+
+      <ArtworkModal />
     </div>
   );
 }
