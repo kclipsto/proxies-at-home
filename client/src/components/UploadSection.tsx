@@ -360,7 +360,7 @@ export function UploadSection() {
               href="https://mpcfill.com"
               target="_blank"
               rel="noreferrer"
-              className="underline"
+              className="underline hover:text-blue-600 dark:hover:text-blue-400"
             >
               MPC Autofill
             </a>

@@ -12,7 +12,7 @@ export function inferCardNameFromFilename(filename: string): string {
   const noExt = filename.replace(/\.[a-z0-9]+$/i, "");
   const beforeParen = noExt.split("(")[0];
   const cleaned = beforeParen
-    .replace(/[_\-]+/g, " ")
+    .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned;
@@ -39,7 +39,10 @@ export function extractDriveId(
       if (qid && DRIVE_ID_RE.test(qid)) return qid;
       const last = u.pathname.split("/").filter(Boolean).pop();
       if (last && DRIVE_ID_RE.test(last)) return last;
-    } catch {}
+    } catch (e) {
+      console.error("Error in extractDriveId:", e);
+      return undefined;
+    }
   }
 
   return undefined;

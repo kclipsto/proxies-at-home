@@ -78,9 +78,7 @@ export function PageSettingsControls() {
 
   return (
     <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
-      <Label className="text-lg font-semibold dark:text-gray-300">
-        Settings
-      </Label>
+      <h2 className="text-2xl font-semibold dark:text-gray-300">Settings</h2>
 
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -230,11 +228,7 @@ export function PageSettingsControls() {
           </div>
         </div>
 
-        <Button
-          className="bg-green-700 w-full"
-          color="success"
-          onClick={handleExport}
-        >
+        <Button className="bg-green-700 w-full" onClick={handleExport}>
           Export to PDF
         </Button>
         <Button
@@ -252,10 +246,7 @@ export function PageSettingsControls() {
         <Button className="bg-blue-700 w-full" onClick={handleCopyDecklist}>
           Copy Decklist
         </Button>
-        <Button
-          className="bg-blue-500 w-full mt-2"
-          onClick={handleDownloadDecklist}
-        >
+        <Button className="bg-blue-500 w-full" onClick={handleDownloadDecklist}>
           Download Decklist (.txt)
         </Button>
       </div>
