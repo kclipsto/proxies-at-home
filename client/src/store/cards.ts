@@ -53,7 +53,6 @@ export const useCardsStore = create<Store>()(
       name: "selected-cards",
       partialize: (state) => ({
         cards: state.cards,
-        selectedImages: state.selectedImages,
         originalSelectedImages: state.originalSelectedImages,
       }),
     }
