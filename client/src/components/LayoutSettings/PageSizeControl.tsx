@@ -43,7 +43,7 @@ export function PageSizeControl() {
 
   return (
     <div className="space-y-4">
-      <Label>Page size</Label>
+      <Label className="block mb-1">Page size</Label>
 
       <Select
         value={pageSizePreset}
