@@ -53,7 +53,7 @@ export function PageSizeControl() {
         }}
       >
         {layoutPresets.map((preset) => (
-          <option value={preset.name}>
+          <option key={preset.name} value={preset.name}>
             {getPresetLabel(preset, pageOrientation)}
           </option>
         ))}

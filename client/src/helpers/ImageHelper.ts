@@ -229,7 +229,7 @@ export async function addBleedEdge(
       const temp = document.createElement("canvas");
       temp.width = targetCardWidth;
       temp.height = targetCardHeight;
-      const tempCtx = temp.getContext("2d")!;
+      const tempCtx = temp.getContext("2d", { willReadFrequently: true })!;
       tempCtx.drawImage(img, -offsetX, -offsetY, drawWidth, drawHeight);
 
       const cornerSize = 30; // how big the corner fix area is

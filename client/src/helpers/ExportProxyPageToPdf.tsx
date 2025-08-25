@@ -1,6 +1,7 @@
+import { API_BASE } from "@/constants";
+import type { LayoutPreset } from "@/store/settings";
+import type { CardOption } from "@/types/Card";
 import jsPDF from "jspdf";
-import { API_BASE } from "../constants";
-import type { CardOption } from "../types/Card";
 import { getPatchNearCorner } from "./ImageHelper";
 
 const PDF_PAGE_COLOR = "#FFFFFF";
@@ -10,7 +11,7 @@ const IN = (inches: number) => Math.round(inches * DPI);
 const MM_TO_IN = (mm: number) => mm / 25.4;
 const MM_TO_PX = (mm: number) => IN(MM_TO_IN(mm));
 
-function getLocalBleedImageUrl(originalUrl: string): string {
+function getLocalBleedImageUrl(originalUrl: string) {
   return `${API_BASE}/api/cards/images/proxy?url=${encodeURIComponent(originalUrl)}`;
 }
 
@@ -30,13 +31,13 @@ function preferPng(url: string) {
   return url;
 }
 
-function bucketDpiFromHeight(h: number): 300 | 600 | 800 | 1200 {
+function bucketDpiFromHeight(h: number) {
   if (h >= 4440) return 1200;
   if (h >= 2960) return 800;
   if (h >= 2220) return 600;
   return 300;
 }
-function calibratedBleedTrimPxForHeight(h: number): number {
+function calibratedBleedTrimPxForHeight(h: number) {
   const dpi = bucketDpiFromHeight(h);
   if (dpi === 300) return 72;
   if (dpi === 600) return 78;
@@ -44,8 +45,8 @@ function calibratedBleedTrimPxForHeight(h: number): number {
   return 156;
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
@@ -54,10 +55,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-async function trimExistingBleedIfAny(
-  src: string,
-  bleedTrimPx?: number
-): Promise<HTMLImageElement> {
+async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number) {
   const img = await loadImage(src);
   const trim = bleedTrimPx ?? calibratedBleedTrimPxForHeight(img.height);
 
@@ -169,7 +167,7 @@ async function buildCardWithBleed(
   src: string,
   bleedPx: number,
   opts: { isUserUpload: boolean; hasBakedBleed?: boolean }
-): Promise<HTMLCanvasElement> {
+) {
   const contentW = MM_TO_PX(63);
   const contentH = MM_TO_PX(89);
   const finalW = contentW + bleedPx * 2;
@@ -200,7 +198,7 @@ async function buildCardWithBleed(
   const base = document.createElement("canvas");
   base.width = contentW;
   base.height = contentH;
-  const bctx = base.getContext("2d")!;
+  const bctx = base.getContext("2d", { willReadFrequently: true })!;
   bctx.imageSmoothingEnabled = true;
   bctx.imageSmoothingQuality = "high";
   bctx.drawImage(baseImg, -offX, -offY, drawW, drawH);
@@ -525,7 +523,7 @@ function scaleGuideWidthForDPI(
   screenPx: number,
   screenPPI = 96,
   targetDPI = DPI
-): number {
+) {
   return Math.round((screenPx / screenPPI) * targetDPI);
 }
 
@@ -584,59 +582,72 @@ function drawCornerGuides(
 }
 
 // POST EXPORT — matches preview layout exactly
-export async function exportProxyPagesToPdf(opts: {
+export async function exportProxyPagesToPdf({
+  cards,
+  originalSelectedImages,
+  bleedEdge,
+  bleedEdgeWidthMm,
+  guideColor,
+  guideWidthPx,
+  pageSizeUnit,
+  pageOrientation,
+  pageSizePreset,
+  pageWidth,
+  pageHeight,
+  columns,
+  rows,
+}: {
   cards: CardOption[];
   originalSelectedImages: Record<string, string>;
   bleedEdge: boolean;
   bleedEdgeWidthMm: number;
   guideColor: string;
   guideWidthPx: number;
-  pageWidthInches: number;
-  pageHeightInches: number;
+  pageOrientation: "portrait" | "landscape";
+  pageSizePreset: LayoutPreset;
+  pageSizeUnit: "mm" | "in";
+  pageWidth: number;
+  pageHeight: number;
   columns: number;
   rows: number;
 }) {
-  const {
-    cards,
-    originalSelectedImages,
-    bleedEdge,
-    bleedEdgeWidthMm,
-    guideColor,
-    guideWidthPx,
-    pageWidthInches,
-    pageHeightInches,
-    columns,
-    rows,
-  } = opts;
+  if (!cards.length) return;
 
   // Canvas size (pixels at DPI) — used for high-res page render
-  const pageW = IN(pageWidthInches);
-  const pageH = IN(pageHeightInches);
+  const pageWidthPx =
+    pageSizeUnit === "in" ? IN(pageWidth) : MM_TO_PX(pageWidth);
+  const pageHeightPx =
+    pageSizeUnit === "in" ? IN(pageHeight) : MM_TO_PX(pageHeight);
 
   // Card + bleed in pixels (at DPI)
-  const contentW = MM_TO_PX(63);
-  const contentH = MM_TO_PX(88);
+  const contentWidthInPx = MM_TO_PX(63);
+  const contentHeightInPx = MM_TO_PX(88);
   const bleedPx = bleedEdge ? MM_TO_PX(bleedEdgeWidthMm) : 0;
-  const cardW = contentW + 2 * bleedPx;
-  const cardH = contentH + 2 * bleedPx;
+  const cardWidthPx = contentWidthInPx + 2 * bleedPx;
+  const cardHeightPx = contentHeightInPx + 2 * bleedPx;
 
   // Grid + centering
   const perPage = Math.max(1, columns * rows);
-  const gridW = columns * cardW;
-  const gridH = rows * cardH;
-  const startX = Math.round((pageW - gridW) / 2);
-  const startY = Math.round((pageH - gridH) / 2);
+  const gridWidthPx = columns * cardWidthPx;
+  const gridHeightPx = rows * cardHeightPx;
+  const startX = Math.round((pageWidthPx - gridWidthPx) / 2);
+  const startY = Math.round((pageHeightPx - gridHeightPx) / 2);
 
   const pages: CardOption[][] = [];
+
   for (let i = 0; i < cards.length; i += perPage) {
     pages.push(cards.slice(i, i + perPage));
   }
+
   if (pages.length === 0) pages.push([]);
 
+  const pdfWidth = pageSizeUnit === "in" ? pageWidth * 25.4 : pageWidth;
+  const pdfHeight = pageSizeUnit === "in" ? pageHeight * 25.4 : pageHeight;
+
   const pdf = new jsPDF({
-    orientation: pageW >= pageH ? "landscape" : "portrait",
+    orientation: pageOrientation,
     unit: "mm",
-    format: [pageWidthInches * 25.4, pageHeightInches * 25.4],
+    format: pageSizePreset,
     compress: true,
   });
 
@@ -644,18 +655,18 @@ export async function exportProxyPagesToPdf(opts: {
     const pageCards = pages[pageIndex];
 
     const canvas = document.createElement("canvas");
-    canvas.width = pageW;
-    canvas.height = pageH;
+    canvas.width = pageWidthPx;
+    canvas.height = pageHeightPx;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = PDF_PAGE_COLOR;
-    ctx.fillRect(0, 0, pageW, pageH);
+    ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
     for (let idx = 0; idx < pageCards.length; idx++) {
       const card = pageCards[idx];
       const col = idx % columns;
       const row = Math.floor(idx / columns);
-      const x = startX + col * cardW;
-      const y = startY + row * cardH;
+      const x = startX + col * cardWidthPx;
+      const y = startY + row * cardHeightPx;
 
       let src = originalSelectedImages[card.uuid] ?? card.imageUrls?.[0] ?? "";
       if (!card.isUserUpload) src = getLocalBleedImageUrl(preferPng(src));
@@ -672,24 +683,24 @@ export async function exportProxyPagesToPdf(opts: {
           ctx,
           x,
           y,
-          contentW,
-          contentH,
+          contentWidthInPx,
+          contentHeightInPx,
           bleedPx,
           guideColor,
           scaledGuideWidth
         );
         drawEdgeStubs(
           ctx,
-          pageW,
-          pageH,
+          pageWidthPx,
+          pageHeightPx,
           startX,
           startY,
           columns,
           rows,
-          contentW,
-          contentH,
-          cardW,
-          cardH,
+          contentWidthInPx,
+          contentHeightInPx,
+          cardWidthPx,
+          cardHeightPx,
           bleedPx,
           scaledGuideWidth
         );
@@ -698,14 +709,7 @@ export async function exportProxyPagesToPdf(opts: {
 
     const pageImg = canvas.toDataURL("image/jpeg", 0.95);
     if (pageIndex > 0) pdf.addPage();
-    pdf.addImage(
-      pageImg,
-      "JPEG",
-      0,
-      0,
-      pageWidthInches * 25.4,
-      pageHeightInches * 25.4
-    );
+    pdf.addImage(pageImg, "JPEG", 0, 0, pdfWidth, pdfHeight);
   }
 
   pdf.save(`proxxies_${new Date().toISOString().slice(0, 10)}.pdf`);

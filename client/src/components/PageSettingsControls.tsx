@@ -1,23 +1,16 @@
-import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
-import { ExportImagesZip } from "@/helpers/ExportImagesZip";
-import { exportProxyPagesToPdf } from "@/helpers/ExportProxyPageToPdf";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
-import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
+import { useCardsStore, useSettingsStore } from "@/store";
 import { Button, Checkbox, HR, Label, TextInput } from "flowbite-react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import Donate from "./Donate";
+import { ExportActions } from "./LayoutSettings/ExportActions";
 import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
 
 const unit = "mm";
 
 export function PageSettingsControls() {
-  const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const cards = useCardsStore((state) => state.cards);
-  const originalSelectedImages = useCardsStore(
-    (state) => state.originalSelectedImages
-  );
-  const pageWidthIn = useSettingsStore((state) => state.pageWidth);
-  const pageHeightIn = useSettingsStore((state) => state.pageHeight);
+
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
@@ -41,35 +34,6 @@ export function PageSettingsControls() {
     unit, // "mm" | "in"
     bleedEdgeWidth, // number
   });
-
-  const handleCopyDecklist = async () => {
-    const text = buildDecklist(cards, { style: "withSetNum", sort: "alpha" });
-    await navigator.clipboard.writeText(text);
-  };
-
-  const handleDownloadDecklist = () => {
-    const text = buildDecklist(cards, { style: "withSetNum", sort: "alpha" });
-    const date = new Date().toISOString().slice(0, 10);
-    downloadDecklist(`decklist_${date}.txt`, text);
-  };
-
-  const handleExport = async () => {
-    setLoadingTask("Generating PDF");
-    await exportProxyPagesToPdf({
-      cards,
-      originalSelectedImages,
-      bleedEdge,
-      bleedEdgeWidthMm: bleedEdgeWidth,
-      guideColor,
-      guideWidthPx: guideWidth,
-      pageWidthInches: pageWidthIn,
-      pageHeightInches: pageHeightIn,
-      columns,
-      rows,
-    });
-
-    setLoadingTask(null);
-  };
 
   return (
     <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
@@ -191,29 +155,7 @@ export function PageSettingsControls() {
 
         <HR className="dark:bg-gray-500" />
 
-        <div className="flex flex-col gap-2">
-          <Button color="green" onClick={handleExport}>
-            Export to PDF
-          </Button>
-          <Button
-            color="indigo"
-            onClick={() =>
-              ExportImagesZip({
-                cards,
-                originalSelectedImages,
-                fileBaseName: "card_images",
-              })
-            }
-          >
-            Export Card Images (.zip)
-          </Button>
-          <Button color="cyan" onClick={handleCopyDecklist}>
-            Copy Decklist
-          </Button>
-          <Button color="blue" onClick={handleDownloadDecklist}>
-            Download Decklist (.txt)
-          </Button>
-        </div>
+        <ExportActions />
       </div>
 
       <div className="w-full flex justify-center">
