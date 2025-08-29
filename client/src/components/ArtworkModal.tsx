@@ -1,6 +1,8 @@
 import axios from "axios";
 import {
   Button,
+  Checkbox,
+  Label,
   Modal,
   ModalBody,
   ModalHeader,
@@ -20,6 +22,7 @@ import type { CardOption } from "../types/Card";
 export function ArtworkModal() {
   const [isGettingMore, setIsGettingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [applyToAll, setApplyToAll] = useState(false);
 
   const isModalOpen = useArtworkModalStore((state) => state.open);
 
@@ -28,6 +31,7 @@ export function ArtworkModal() {
   const closeArtworkModal = useArtworkModalStore((state) => state.closeModal);
   const updateArtworkCard = useArtworkModalStore((state) => state.updateCard);
 
+  const cards = useCardsStore((state) => state.cards);
   const updateCard = useCardsStore((state) => state.updateCard);
   const originalSelectedImages = useCardsStore(
     (state) => state.originalSelectedImages
@@ -114,6 +118,16 @@ export function ArtworkModal() {
         </div>
         {modalCard && (
           <>
+            <div className="flex items-center gap-2 mb-4">
+              <Checkbox
+                id="apply-to-all"
+                checked={applyToAll}
+                onChange={(e) => setApplyToAll(e.target.checked)}
+              />
+              <Label htmlFor="apply-to-all">
+                Apply to all cards named "{modalCard?.name}"
+              </Label>
+            </div>
             <div className="grid grid-cols-3 md:grid-cols-3 gap-4">
               {modalCard.imageUrls.map((pngUrl, i) => {
                 const thumbUrl = pngToNormal(pngUrl);
@@ -134,13 +148,33 @@ export function ArtworkModal() {
                       const proxiedUrl = getLocalBleedImageUrl(pngUrl);
                       const processed = await addBleedEdge(proxiedUrl);
 
-                      appendSelectedImages({
-                        [modalCard.uuid]: processed,
-                      });
+                      if (applyToAll) {
+                        const newSelectedImages: Record<string, string> = {};
+                        const newOriginalSelectedImages: Record<
+                          string,
+                          string
+                        > = {};
 
-                      appendOriginalSelectedImages({
-                        [modalCard.uuid]: pngUrl,
-                      });
+                        cards.forEach((card) => {
+                          if (card.name === modalCard.name) {
+                            newSelectedImages[card.uuid] = processed;
+                            newOriginalSelectedImages[card.uuid] = pngUrl;
+                          }
+                        });
+
+                        appendSelectedImages(newSelectedImages);
+appendOriginalSelectedImages(
+                          newOriginalSelectedImages
+                        );
+                      } else {
+                        appendSelectedImages({
+                          [modalCard.uuid]: processed,
+                        });
+
+                        appendOriginalSelectedImages({
+                          [modalCard.uuid]: pngUrl,
+                        });
+                      }
 
                       closeArtworkModal();
                     }}
