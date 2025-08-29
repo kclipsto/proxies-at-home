@@ -17,6 +17,8 @@ type Store = {
   selectedImages: Record<string, string>;
   setSelectedImages: (images: Record<string, string>) => void;
   appendSelectedImages: (newImages: Record<string, string>) => void;
+  clearSelectedImage: (uuid: string) => void;
+  clearManySelectedImages: (uuids: string[]) => void;
 
   originalSelectedImages: Record<string, string>;
   setOriginalSelectedImages: (images: Record<string, string>) => void;
@@ -64,6 +66,20 @@ export const useCardsStore = create<Store>()(
         set((state) => ({
           selectedImages: { ...state.selectedImages, ...newImages },
         })),
+      clearSelectedImage: (uuid) =>
+        set((state) => {
+          const newSelected = { ...state.selectedImages };
+          delete newSelected[uuid];
+          return { selectedImages: newSelected };
+        }),
+      clearManySelectedImages: (uuids) =>
+        set((state) => {
+          const newSelected = { ...state.selectedImages };
+          for (const uuid of uuids) {
+            delete newSelected[uuid];
+          }
+          return { selectedImages: newSelected };
+        }),
 
       originalSelectedImages: {},
       setOriginalSelectedImages: (images) =>

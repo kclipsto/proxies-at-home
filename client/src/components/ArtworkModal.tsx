@@ -42,6 +42,10 @@ export function ArtworkModal() {
   const appendOriginalSelectedImages = useCardsStore(
     (state) => state.appendOriginalSelectedImages
   );
+  const clearSelectedImage = useCardsStore((state) => state.clearSelectedImage);
+  const clearManySelectedImages = useCardsStore(
+    (state) => state.clearManySelectedImages
+  );
 
   async function getMoreCards() {
     if (!modalCard) return;
@@ -88,8 +92,6 @@ export function ArtworkModal() {
               if (!newCard.imageUrls?.length) return;
 
               const newUuid = crypto.randomUUID();
-              const proxiedUrl = getLocalBleedImageUrl(newCard.imageUrls[0]);
-              const processed = await addBleedEdge(proxiedUrl);
 
               updateCard(modalIndex, {
                 uuid: newUuid,
@@ -105,9 +107,6 @@ export function ArtworkModal() {
                 isUserUpload: false,
               });
 
-              appendSelectedImages({
-                [newUuid]: processed,
-              });
               appendOriginalSelectedImages({
                 [newUuid]: newCard.imageUrls[0],
               });
@@ -145,35 +144,29 @@ export function ArtworkModal() {
                         : "border-transparent"
                     }`}
                     onClick={async () => {
-                      const proxiedUrl = getLocalBleedImageUrl(pngUrl);
-                      const processed = await addBleedEdge(proxiedUrl);
-
                       if (applyToAll) {
-                        const newSelectedImages: Record<string, string> = {};
                         const newOriginalSelectedImages: Record<
                           string,
                           string
                         > = {};
+                        const uuidsToClear: string[] = [];
 
                         cards.forEach((card) => {
                           if (card.name === modalCard.name) {
-                            newSelectedImages[card.uuid] = processed;
                             newOriginalSelectedImages[card.uuid] = pngUrl;
+                            uuidsToClear.push(card.uuid);
                           }
                         });
 
-                        appendSelectedImages(newSelectedImages);
-appendOriginalSelectedImages(
+                        appendOriginalSelectedImages(
                           newOriginalSelectedImages
                         );
+                        clearManySelectedImages(uuidsToClear);
                       } else {
-                        appendSelectedImages({
-                          [modalCard.uuid]: processed,
-                        });
-
                         appendOriginalSelectedImages({
                           [modalCard.uuid]: pngUrl,
                         });
+                        clearSelectedImage(modalCard.uuid);
                       }
 
                       closeArtworkModal();
