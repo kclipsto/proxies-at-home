@@ -44,7 +44,12 @@ The site is hosted at https://proxxied.com
 - **Dark & Light Mode** — Layout preview matches your system theme.
 - **PDF Always White** — Exports on a white background to avoid color contamination.
 
----
+## 📄 Usage
+- Enter your decklist in the left panel.
+- Choose alternate artworks or upload custom images.
+- Adjust bleed edge, guide color, and page size in the Settings panel.
+- Drag cards to reorder in the central 3×3 grid.
+- Click Export PDF to download a high-quality, print-ready sheet.
 
 ## Tech Stack
 
@@ -53,8 +58,6 @@ The site is hosted at https://proxxied.com
 - **Image Processing:** Canvas API (client-side bleed edge, scaling, guides)
 - **PDF Generation:** jsPDF (custom placement & scaling logic)
 - **Drag & Drop:** @dnd-kit/core
-
----
 
 ## Getting Started
 
@@ -70,29 +73,43 @@ The site is hosted at https://proxxied.com
 # Clone repository
 git clone https://github.com/your-username/mtg-proxxied.git
 cd mtg-proxxied
+```
 
-# Install dependencies
+There is a `./client` and `./server` component and they can be run with [`concurrently`](https://www.npmjs.com/package/concurrently) via the `npm run dev` command from the root `./package.json`
+
+```bash
+# Install root dependencies (for concurrently)
 npm install
 
-# Start development server
-npm run dev
-Backend Setup
+# Install client dependencies
+cd client
+npm install
+cd ..
+
+# Install server dependencies
 cd server
 npm install
-npm run dev
-The backend handles image fetching, caching, and proxying for higher-quality assets.
-📄 Usage
-Enter your decklist in the left panel.
-Choose alternate artworks or upload custom images.
-Adjust bleed edge, guide color, and page size in the Settings panel.
-Drag cards to reorder in the central 3×3 grid.
-Click Export PDF to download a high-quality, print-ready sheet.
+cd ..
 
-License
+# Start development server (run client and server)
+npm run dev
+```
+
+Alternatively, with PowerShell
+
+```pwsh
+./proxxied.ps1 install
+./proxxied.ps1 dev
+```
+
+The the client and server will be running on:
+- Client: `http://localhost:5173/`
+- Server: `http://localhost:3001/`
+
+## License
 MIT — feel free to use, modify, and contribute.
 
-Credits
-alex-taxiera/proxy-print — Original project inspiration
-Scryfall API — Card image & data source
-MPCFill — Community art resource
-```
+## Credits
+- [alex-taxiera/proxy-print](https://github.com/alex-taxiera/proxy-print) — Original project inspiration
+- [Scryfall API](https://scryfall.com/docs/api) — Card image & data source
+- [MPCFill](https://mpcfill.com/) — Community art resource
