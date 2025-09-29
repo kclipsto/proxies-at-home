@@ -32,6 +32,9 @@ export function PageSettingsControls() {
   const pageUnit = useSettingsStore((s) => s.pageSizeUnit);
 
   const cardSpacingMm = useSettingsStore((s) => s.cardSpacingMm);
+  const horizontalSpacingMm = useSettingsStore((s) => s.horizontalSpacingMm);
+  const verticalSpacingMm = useSettingsStore((s) => s.verticalSpacingMm);
+  const symmetricSpacing = useSettingsStore((s) => s.symmetricSpacing);
 
   const setColumns = useSettingsStore((state) => state.setColumns);
   const setRows = useSettingsStore((state) => state.setRows);
@@ -42,6 +45,9 @@ export function PageSettingsControls() {
   const setZoom = useSettingsStore((state) => state.setZoom);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const setCardSpacingMm = useSettingsStore((s) => s.setCardSpacingMm);
+  const setHorizontalSpacingMm = useSettingsStore((s) => s.setHorizontalSpacingMm);
+  const setVerticalSpacingMm = useSettingsStore((s) => s.setVerticalSpacingMm);
+  const setSymmetricSpacing = useSettingsStore((s) => s.setSymmetricSpacing);
 
   const { reprocessSelectedImages } = useImageProcessing({
     unit: "mm",
@@ -65,6 +71,19 @@ export function PageSettingsControls() {
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     };
   }, []);
+
+  // Handle syncing spacing values when switching between symmetric and asymmetric modes
+  useEffect(() => {
+    if (symmetricSpacing) {
+      // When switching to symmetric, use the average of horizontal and vertical
+      const avgSpacing = Math.round((horizontalSpacingMm + verticalSpacingMm) / 2);
+      setCardSpacingMm(avgSpacing);
+    } else {
+      // When switching to asymmetric, set both to the current symmetric value
+      setHorizontalSpacingMm(cardSpacingMm);
+      setVerticalSpacingMm(cardSpacingMm);
+    }
+  }, [symmetricSpacing]);
 
   // ----- Spacing math (work in mm for a single formula) -----
   const pageWmm = pageUnit === "mm" ? pageWidth : inToMm(pageWidth);
@@ -156,17 +175,61 @@ export function PageSettingsControls() {
           <Label htmlFor="bleed-edge">Enable Bleed Edge</Label>
         </div>
 
-        {/* NEW: Card-to-card spacing */}
+        {/* Card-to-card spacing */}
         <div>
-          <Label>Distance between cards (mm)</Label>
-          <TextInput
-            className="w-full"
-            type="number"
-            min={0}
-            step={0.5}
-            value={cardSpacingMm}
-            onChange={(e) => handleSpacingChange(e.target.value)}
-          />
+          <div className="flex items-center gap-2 mb-2">
+            <Checkbox
+              id="symmetric-spacing"
+              checked={symmetricSpacing}
+              onChange={(e) => setSymmetricSpacing(e.target.checked)}
+            />
+            <Label htmlFor="symmetric-spacing">Use symmetric spacing</Label>
+          </div>
+          
+          {symmetricSpacing ? (
+            <>
+              <Label>Distance between cards (mm)</Label>
+              <TextInput
+                className="w-full"
+                type="number"
+                min={0}
+                step={0.5}
+                value={cardSpacingMm}
+                onChange={(e) => handleSpacingChange(e.target.value)}
+              />
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div>
+                <Label>Horizontal spacing (mm)</Label>
+                <TextInput
+                  className="w-full"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={horizontalSpacingMm}
+                  onChange={(e) => {
+                    const mm = Math.max(0, Number(e.target.value) || 0);
+                    setHorizontalSpacingMm(Math.min(mm, maxSpacingMm));
+                  }}
+                />
+              </div>
+              <div>
+                <Label>Vertical spacing (mm)</Label>
+                <TextInput
+                  className="w-full"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={verticalSpacingMm}
+                  onChange={(e) => {
+                    const mm = Math.max(0, Number(e.target.value) || 0);
+                    setVerticalSpacingMm(Math.min(mm, maxSpacingMm));
+                  }}
+                />
+              </div>
+            </div>
+          )}
           <HelperText>
             Max that fits with current layout: <b>{maxSpacingMm} mm</b>.
           </HelperText>
