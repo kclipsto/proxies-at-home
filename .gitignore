@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+**/node_modules/
 /.pnp
 .pnp.js
 
@@ -23,8 +23,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # IDE
-.idea/
-.vscode/
+**/.idea/
+**/.vscode/
 *.swp
 *.swo
 
