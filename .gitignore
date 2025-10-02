@@ -1,2 +1,42 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/build
+/dist
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
 server/src/cached-images/*
+!server/src/cached-images/.gitkeep
 server/src/uploaded-images/*
+!server/src/uploaded-images/.gitkeep
+
+# TypeScript
+*.tsbuildinfo
