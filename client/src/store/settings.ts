@@ -29,6 +29,12 @@ type Store = {
   resetSettings: () => void;
   cardSpacingMm: number;
   setCardSpacingMm: (mm: number) => void;
+  horizontalSpacingMm: number;
+  setHorizontalSpacingMm: (mm: number) => void;
+  verticalSpacingMm: number;
+  setVerticalSpacingMm: (mm: number) => void;
+  symmetricSpacing: boolean;
+  setSymmetricSpacing: (value: boolean) => void;
 };
 
 const defaultPageSettings = {
@@ -44,7 +50,10 @@ const defaultPageSettings = {
   guideColor: "#39FF14",
   guideWidth: 0.5,
   cardSpacingMm: 0,
+  horizontalSpacingMm: 0,
+  verticalSpacingMm: 0,
   zoom: 1,
+  symmetricSpacing: true,
 } as Store;
 
 const layoutPresetsSizes: Record<
@@ -96,6 +105,9 @@ export const useSettingsStore = create<Store>()(
       setGuideWidth: (value) => set({ guideWidth: value }),
       setZoom: (value) => set({ zoom: value }),
       setCardSpacingMm: (mm) => set({ cardSpacingMm: Math.max(0, mm) }),
+      setHorizontalSpacingMm: (mm) => set({ horizontalSpacingMm: Math.max(0, mm) }),
+      setVerticalSpacingMm: (mm) => set({ verticalSpacingMm: Math.max(0, mm) }),
+      setSymmetricSpacing: (value) => set({ symmetricSpacing: value }),
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {

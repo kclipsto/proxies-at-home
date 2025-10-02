@@ -1,0 +1,21 @@
+FROM node:24-alpine
+
+WORKDIR /app
+
+# Install nodemon globally for development hot-reload
+RUN npm install -g nodemon
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Set NODE_ENV to development
+ENV NODE_ENV=development
+
+# Expose the port the app runs on
+EXPOSE 5000
+
+# Use nodemon for hot-reload in development
+CMD ["nodemon", "--watch", "src", "--ext", "ts,js", "--exec", "ts-node", "src/index.ts"]

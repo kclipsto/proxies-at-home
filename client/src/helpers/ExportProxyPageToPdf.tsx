@@ -205,18 +205,18 @@ function drawEdgeStubs(
   cardH: number,
   bleedPx: number,
   guideWidthPx: number,
-  spacingPx = 0
+  spacingPx: { horizontal: number; vertical: number }
 ) {
   const xCuts: number[] = [];
   for (let c = 0; c < columns; c++) {
-    const cellLeft = startX + c * (cardW + spacingPx);
+    const cellLeft = startX + c * (cardW + spacingPx.horizontal);
     xCuts.push(cellLeft + bleedPx);
     xCuts.push(cellLeft + bleedPx + contentW);
   }
 
   const yCuts: number[] = [];
   for (let r = 0; r < rows; r++) {
-    const cellTop = startY + r * (cardH + spacingPx);
+    const cellTop = startY + r * (cardH + spacingPx.vertical);
     yCuts.push(cellTop + bleedPx);
     yCuts.push(cellTop + bleedPx + contentH);
   }
@@ -497,7 +497,10 @@ export async function exportProxyPagesToPdf({
   pageHeight,
   columns,
   rows,
-  cardSpacingMm
+  cardSpacingMm,
+  symmetricSpacing,
+  horizontalSpacingMm,
+  verticalSpacingMm
 }: {
   cards: CardOption[];
   originalSelectedImages: Record<string, string>;
@@ -514,6 +517,9 @@ export async function exportProxyPagesToPdf({
   columns: number;
   rows: number;
   cardSpacingMm: number;
+  symmetricSpacing: boolean;
+  horizontalSpacingMm: number;
+  verticalSpacingMm: number;
 }) {
   if (!cards.length) return;
 
@@ -526,12 +532,14 @@ export async function exportProxyPagesToPdf({
   const cardWidthPx = contentWidthInPx + 2 * bleedPx;
   const cardHeightPx = contentHeightInPx + 2 * bleedPx;
 
-  const spacingPx = MM_TO_PX(cardSpacingMm || 0);
+  // Calculate spacing based on symmetric/asymmetric setting
+  const horizontalSpacingPx = MM_TO_PX(symmetricSpacing ? (cardSpacingMm || 0) : (horizontalSpacingMm || 0));
+  const verticalSpacingPx = MM_TO_PX(symmetricSpacing ? (cardSpacingMm || 0) : (verticalSpacingMm || 0));
 
   // Grid + centering
   const perPage = Math.max(1, columns * rows);
-  const gridWidthPx = columns * cardWidthPx + Math.max(0, columns - 1) * spacingPx;
-  const gridHeightPx = rows * cardHeightPx + Math.max(0, rows - 1) * spacingPx;
+  const gridWidthPx = columns * cardWidthPx + Math.max(0, columns - 1) * horizontalSpacingPx;
+  const gridHeightPx = rows * cardHeightPx + Math.max(0, rows - 1) * verticalSpacingPx;
   const startX = Math.round((pageWidthPx - gridWidthPx) / 2);
   const startY = Math.round((pageHeightPx - gridHeightPx) / 2);
 
@@ -570,8 +578,8 @@ export async function exportProxyPagesToPdf({
       const card = pageCards[idx];
       const col = idx % columns;
       const row = Math.floor(idx / columns);
-      const x = startX + col * (cardWidthPx + spacingPx); // NEW
-      const y = startY + row * (cardHeightPx + spacingPx);
+      const x = startX + col * (cardWidthPx + horizontalSpacingPx);
+      const y = startY + row * (cardHeightPx + verticalSpacingPx);
 
       let src =
         (cachedImageUrls && cachedImageUrls[card.uuid]) ||
@@ -606,7 +614,7 @@ export async function exportProxyPagesToPdf({
           cardHeightPx,
           bleedPx,
           scaledGuideWidth,
-          spacingPx
+          { horizontal: horizontalSpacingPx, vertical: verticalSpacingPx }
         );
       }
     }

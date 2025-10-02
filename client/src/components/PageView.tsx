@@ -39,6 +39,9 @@ export function PageView() {
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const zoom = useSettingsStore((state) => state.zoom);
+  const symmetricSpacing = useSettingsStore((state) => state.symmetricSpacing);
+  const horizontalSpacingMm = useSettingsStore((state) => state.horizontalSpacingMm);
+  const verticalSpacingMm = useSettingsStore((state) => state.verticalSpacingMm);
 
   const pageRef = useRef<HTMLDivElement>(null);
   const cards = useCardsStore((state) => state.cards);
@@ -68,10 +71,16 @@ export function PageView() {
   // --- near your other settings selectors ---
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm); // NEW
 
+  // Calculate spacing based on symmetric setting
+  const spacing = {
+    horizontal: symmetricSpacing ? cardSpacingMm : horizontalSpacingMm,
+    vertical: symmetricSpacing ? cardSpacingMm : verticalSpacingMm,
+  };
+
   const gridWidthMm =
-    totalCardWidth * columns + Math.max(0, columns - 1) * cardSpacingMm;
+    totalCardWidth * columns + Math.max(0, columns - 1) * spacing.horizontal;
   const gridHeightMm =
-    totalCardHeight * rows + Math.max(0, rows - 1) * cardSpacingMm;
+    totalCardHeight * rows + Math.max(0, rows - 1) * spacing.vertical;
 
   const [contextMenu, setContextMenu] = useState({
     visible: false,
@@ -266,7 +275,8 @@ export function PageView() {
                     gridTemplateRows: `repeat(${rows}, ${totalCardHeight}mm)`,
                     width: `${gridWidthMm}mm`,
                     height: `${gridHeightMm}mm`,
-                    gap: `${cardSpacingMm}mm`,
+                    columnGap: symmetricSpacing ? `${cardSpacingMm}mm` : `${horizontalSpacingMm}mm`,
+                    rowGap: symmetricSpacing ? `${cardSpacingMm}mm` : `${verticalSpacingMm}mm`,
                   }}
                 >
                   {page.map((card, index) => {
