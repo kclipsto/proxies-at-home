@@ -497,7 +497,9 @@ export async function exportProxyPagesToPdf({
   pageHeight,
   columns,
   rows,
-  cardSpacingMm
+  cardSpacingMm,
+  cardPositionX,
+  cardPositionY
 }: {
   cards: CardOption[];
   originalSelectedImages: Record<string, string>;
@@ -514,6 +516,8 @@ export async function exportProxyPagesToPdf({
   columns: number;
   rows: number;
   cardSpacingMm: number;
+  cardPositionX: number;
+  cardPositionY: number;
 }) {
   if (!cards.length) return;
 
@@ -527,13 +531,17 @@ export async function exportProxyPagesToPdf({
   const cardHeightPx = contentHeightInPx + 2 * bleedPx;
 
   const spacingPx = MM_TO_PX(cardSpacingMm || 0);
+  
+  // Convert positioning offsets from mm to pixels
+  const positionOffsetXPx = MM_TO_PX(cardPositionX || 0);
+  const positionOffsetYPx = MM_TO_PX(cardPositionY || 0);
 
   // Grid + centering
   const perPage = Math.max(1, columns * rows);
   const gridWidthPx = columns * cardWidthPx + Math.max(0, columns - 1) * spacingPx;
   const gridHeightPx = rows * cardHeightPx + Math.max(0, rows - 1) * spacingPx;
-  const startX = Math.round((pageWidthPx - gridWidthPx) / 2);
-  const startY = Math.round((pageHeightPx - gridHeightPx) / 2);
+  const startX = Math.round((pageWidthPx - gridWidthPx) / 2) + positionOffsetXPx;
+  const startY = Math.round((pageHeightPx - gridHeightPx) / 2) + positionOffsetYPx;
 
   const pages: CardOption[][] = [];
   for (let i = 0; i < cards.length; i += perPage) pages.push(cards.slice(i, i + perPage));

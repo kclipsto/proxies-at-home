@@ -14,6 +14,121 @@ function inToMm(inches: number) {
   return inches * INCH_TO_MM;
 }
 
+// Custom hook for normalized numeric inputs
+const useNormalizedInput = (initialValue: number, onValueChange: (value: number) => void, isInteger = false) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  const normalizeValue = useCallback((value: string): string => {
+    if (!value.trim()) return ''; // Don't return default values during typing
+    
+    // Replace comma with dot
+    const normalized = value.replace(',', '.');
+    
+    // Remove leading zeros unless it's just "0" or followed by decimal separator
+    if (normalized !== '0' && !normalized.startsWith('0.')) {
+      return normalized.replace(/^0+(?=\d)/, '');
+    }
+    
+    return normalized;
+  }, []);
+  
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const normalized = normalizeValue(value);
+    
+    // Only update the input if normalization changed the value
+    if (normalized !== value) {
+      e.target.value = normalized;
+    }
+    
+    // Only update state if there's a valid value
+    if (normalized.trim()) {
+      const numValue = isInteger ? parseInt(normalized, 10) : parseFloat(normalized);
+      if (!isNaN(numValue)) {
+        onValueChange(numValue);
+      }
+    }
+  }, [normalizeValue, onValueChange, isInteger]);
+  
+  const handleBlur = useCallback((e: React.FocusEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (!value.trim()) {
+      // Set to the placeholder value (which is the current state value)
+      const placeholder = e.target.placeholder;
+      e.target.value = placeholder;
+      const numValue = isInteger ? parseInt(placeholder, 10) : parseFloat(placeholder);
+      onValueChange(isNaN(numValue) ? (isInteger ? 1 : 0) : numValue);
+    }
+  }, [onValueChange, isInteger]);
+  
+  return {
+    inputRef,
+    handleChange,
+    handleBlur,
+    defaultValue: initialValue.toString()
+  };
+};
+
+// Custom hook for position inputs (supports negative values)
+const usePositionInput = (initialValue: number, onValueChange: (value: number) => void) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  const normalizeValue = useCallback((value: string): string => {
+    if (!value.trim()) return ''; // Don't return default values during typing
+    
+    // Handle negative sign
+    const isNegative = value.startsWith('-');
+    const cleanValue = value.replace(/^-/, '');
+    
+    // Replace comma with dot
+    const normalized = cleanValue.replace(',', '.');
+    
+    // Remove leading zeros unless it's just "0" or followed by decimal separator
+    let cleaned = normalized;
+    if (cleaned !== '0' && !cleaned.startsWith('0.')) {
+      cleaned = cleaned.replace(/^0+(?=\d)/, '');
+    }
+    
+    return isNegative ? `-${cleaned}` : cleaned;
+  }, []);
+  
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const normalized = normalizeValue(value);
+    
+    // Only update the input if normalization changed the value
+    if (normalized !== value) {
+      e.target.value = normalized;
+    }
+    
+    // Only update state if there's a valid value
+    if (normalized.trim()) {
+      const numValue = parseFloat(normalized);
+      if (!isNaN(numValue)) {
+        onValueChange(numValue);
+      }
+    }
+  }, [normalizeValue, onValueChange]);
+  
+  const handleBlur = useCallback((e: React.FocusEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (!value.trim()) {
+      // Set to the placeholder value (which is the current state value)
+      const placeholder = e.target.placeholder;
+      e.target.value = placeholder;
+      const numValue = parseFloat(placeholder);
+      onValueChange(isNaN(numValue) ? 0 : numValue);
+    }
+  }, [onValueChange]);
+  
+  return {
+    inputRef,
+    handleChange,
+    handleBlur,
+    defaultValue: initialValue.toString()
+  };
+};
+
 export function PageSettingsControls() {
   const cards = useCardsStore((state) => state.cards);
 
@@ -32,6 +147,8 @@ export function PageSettingsControls() {
   const pageUnit = useSettingsStore((s) => s.pageSizeUnit);
 
   const cardSpacingMm = useSettingsStore((s) => s.cardSpacingMm);
+  const cardPositionX = useSettingsStore((s) => s.cardPositionX);
+  const cardPositionY = useSettingsStore((s) => s.cardPositionY);
 
   const setColumns = useSettingsStore((state) => state.setColumns);
   const setRows = useSettingsStore((state) => state.setRows);
@@ -42,6 +159,8 @@ export function PageSettingsControls() {
   const setZoom = useSettingsStore((state) => state.setZoom);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
   const setCardSpacingMm = useSettingsStore((s) => s.setCardSpacingMm);
+  const setCardPositionX = useSettingsStore((s) => s.setCardPositionX);
+  const setCardPositionY = useSettingsStore((s) => s.setCardPositionY);
 
   const { reprocessSelectedImages } = useImageProcessing({
     unit: "mm",
@@ -86,10 +205,31 @@ export function PageSettingsControls() {
     return Math.floor(Math.min(maxX, maxY));
   }, [pageWmm, pageHmm, columns, rows, cardWmm, cardHmm]);
 
-  const handleSpacingChange = (val: string) => {
-    const mm = Math.max(0, Number(val) || 0);
-    setCardSpacingMm(Math.min(mm, maxSpacingMm));
-  };
+  // Input handlers using custom hooks
+  const columnsInput = useNormalizedInput(columns, (value) => {
+    const v = Math.max(1, Math.min(10, value));
+    setColumns(v);
+  }, true);
+
+  const rowsInput = useNormalizedInput(rows, (value) => {
+    const v = Math.max(1, Math.min(10, value));
+    setRows(v);
+  }, true);
+
+  const bleedEdgeInput = useNormalizedInput(bleedEdgeWidth, (value) => {
+    setBleedEdgeWidth(value);
+    debouncedReprocess(cards, value);
+  });
+
+  const cardSpacingInput = useNormalizedInput(cardSpacingMm, (value) => {
+    const mm = Math.max(0, Math.min(value, maxSpacingMm));
+    setCardSpacingMm(mm);
+  });
+
+  const cardPositionXInput = usePositionInput(cardPositionX, setCardPositionX);
+  const cardPositionYInput = usePositionInput(cardPositionY, setCardPositionY);
+
+  const guideWidthInput = useNormalizedInput(guideWidth, setGuideWidth);
 
   return (
     <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
@@ -102,29 +242,29 @@ export function PageSettingsControls() {
           <div>
             <Label>Columns</Label>
             <TextInput
+              ref={columnsInput.inputRef}
               className="w-full"
               type="number"
               min={1}
               max={10}
-              value={columns}
-              onChange={(e) => {
-                const v = Math.max(1, Math.min(10, parseInt(e.target.value || "1", 10)));
-                if (!Number.isNaN(v)) setColumns(v);
-              }}
+              defaultValue={columnsInput.defaultValue}
+              onChange={columnsInput.handleChange}
+              onBlur={columnsInput.handleBlur}
+              placeholder={columns.toString()}
             />
           </div>
           <div>
             <Label>Rows</Label>
             <TextInput
+              ref={rowsInput.inputRef}
               className="w-full"
               type="number"
               min={1}
               max={10}
-              value={rows}
-              onChange={(e) => {
-                const v = Math.max(1, Math.min(10, parseInt(e.target.value || "1", 10)));
-                if (!Number.isNaN(v)) setRows(v);
-              }}
+              defaultValue={rowsInput.defaultValue}
+              onChange={rowsInput.handleChange}
+              onBlur={rowsInput.handleBlur}
+              placeholder={rows.toString()}
             />
           </div>
         </div>
@@ -132,18 +272,15 @@ export function PageSettingsControls() {
         <div>
           <Label>Bleed Edge (mm)</Label>
           <TextInput
+            ref={bleedEdgeInput.inputRef}
             className="w-full"
             type="number"
-            value={bleedEdgeWidth}
             max={2}
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              if (!isNaN(val)) {
-                setBleedEdgeWidth(val);
-                // Only bleed width affects reprocessing
-                debouncedReprocess(cards, val);
-              }
-            }}
+            step={0.1}
+            defaultValue={bleedEdgeInput.defaultValue}
+            onChange={bleedEdgeInput.handleChange}
+            onBlur={bleedEdgeInput.handleBlur}
+            placeholder={bleedEdgeWidth.toString()}
           />
         </div>
 
@@ -160,15 +297,56 @@ export function PageSettingsControls() {
         <div>
           <Label>Distance between cards (mm)</Label>
           <TextInput
+            ref={cardSpacingInput.inputRef}
             className="w-full"
             type="number"
             min={0}
             step={0.5}
-            value={cardSpacingMm}
-            onChange={(e) => handleSpacingChange(e.target.value)}
+            defaultValue={cardSpacingInput.defaultValue}
+            onChange={cardSpacingInput.handleChange}
+            onBlur={cardSpacingInput.handleBlur}
+            placeholder={cardSpacingMm.toString()}
           />
           <HelperText>
             Max that fits with current layout: <b>{maxSpacingMm} mm</b>.
+          </HelperText>
+        </div>
+
+        {/* Card positioning controls */}
+        <div className="space-y-3">
+          <Label>Card Position Adjustment (mm)</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Horizontal Offset</Label>
+              <TextInput
+                ref={cardPositionXInput.inputRef}
+                className="w-full"
+                type="number"
+                step={0.1}
+                defaultValue={cardPositionXInput.defaultValue}
+                onChange={cardPositionXInput.handleChange}
+                onBlur={cardPositionXInput.handleBlur}
+                placeholder="-0.0"
+              />
+              <HelperText>Positive = right, negative = left</HelperText>
+            </div>
+            <div>
+              <Label>Vertical Offset</Label>
+              <TextInput
+                ref={cardPositionYInput.inputRef}
+                className="w-full"
+                type="number"
+                step={0.1}
+                defaultValue={cardPositionYInput.defaultValue}
+                onChange={cardPositionYInput.handleChange}
+                onBlur={cardPositionYInput.handleBlur}
+                placeholder="-0.0"
+              />
+              <HelperText>Positive = down, negative = up</HelperText>
+            </div>
+          </div>
+          <HelperText>
+            Adjust card position for perfect printer alignment. Use small values (0.1-2.0mm) for fine-tuning.
           </HelperText>
         </div>
 
@@ -185,15 +363,15 @@ export function PageSettingsControls() {
         <div>
           <Label>Guides Width (px)</Label>
           <TextInput
+            ref={guideWidthInput.inputRef}
             className="w-full"
             type="number"
-            value={guideWidth}
             step="0.1"
             min="0"
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (!isNaN(val)) setGuideWidth(val);
-            }}
+            defaultValue={guideWidthInput.defaultValue}
+            onChange={guideWidthInput.handleChange}
+            onBlur={guideWidthInput.handleBlur}
+            placeholder={guideWidth.toString()}
           />
         </div>
 
