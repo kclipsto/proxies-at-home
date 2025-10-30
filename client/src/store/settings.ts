@@ -29,6 +29,10 @@ type Store = {
   resetSettings: () => void;
   cardSpacingMm: number;
   setCardSpacingMm: (mm: number) => void;
+  cardPositionX: number;
+  setCardPositionX: (mm: number) => void;
+  cardPositionY: number;
+  setCardPositionY: (mm: number) => void;
 };
 
 const defaultPageSettings = {
@@ -44,6 +48,8 @@ const defaultPageSettings = {
   guideColor: "#39FF14",
   guideWidth: 0.5,
   cardSpacingMm: 0,
+  cardPositionX: 0,
+  cardPositionY: 0,
   zoom: 1,
 } as Store;
 
@@ -96,6 +102,8 @@ export const useSettingsStore = create<Store>()(
       setGuideWidth: (value) => set({ guideWidth: value }),
       setZoom: (value) => set({ zoom: value }),
       setCardSpacingMm: (mm) => set({ cardSpacingMm: Math.max(0, mm) }),
+      setCardPositionX: (mm) => set({ cardPositionX: mm }),
+      setCardPositionY: (mm) => set({ cardPositionY: mm }),
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {
