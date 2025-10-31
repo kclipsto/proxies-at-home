@@ -8,6 +8,7 @@ import { Button } from "flowbite-react";
 
 export function ExportActions() {
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
+  const setProgress = useLoadingStore((state) => state.setProgress);
 
   const cards = useCardsStore((state) => state.cards);
   const originalSelectedImages = useCardsStore(
@@ -29,6 +30,9 @@ export function ExportActions() {
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
   const cardPositionX = useSettingsStore((state) => state.cardPositionX);
   const cardPositionY = useSettingsStore((state) => state.cardPositionY);
+  const dpi = useSettingsStore((state) => state.dpi);
+
+  const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
   const handleCopyDecklist = async () => {
     const text = buildDecklist(cards, { style: "withSetNum", sort: "alpha" });
@@ -44,7 +48,28 @@ export function ExportActions() {
   const handleExport = async () => {
     if (!cards.length) return;
 
+    const pageWidthPx =
+      pageSizeUnit === "in" ? pageWidth * dpi : (pageWidth / 25.4) * dpi;
+    const pageHeightPx =
+      pageSizeUnit === "in" ? pageHeight * dpi : (pageHeight / 25.4) * dpi;
+
+    const MAX_PIXELS_PER_PDF_BATCH = 2_000_000_000; // 2 billion pixels
+    const pixelsPerPage = pageWidthPx * pageHeightPx;
+    const autoPagesPerPdf = Math.floor(MAX_PIXELS_PER_PDF_BATCH / pixelsPerPage);
+    const effectivePagesPerPdf = Math.max(1, autoPagesPerPdf);
+
     setLoadingTask("Generating PDF");
+
+    let rejectPromise: (reason?: any) => void;
+    const cancellationPromise = new Promise<void>((_, reject) => {
+      rejectPromise = reject;
+    });
+
+    const onCancel = () => {
+      rejectPromise(new Error("Cancelled by user"));
+    };
+    setOnCancel(onCancel);
+
     try {
       await exportProxyPagesToPdf({
         cards,
@@ -64,11 +89,18 @@ export function ExportActions() {
         cardSpacingMm,
         cardPositionX,
         cardPositionY,
+        dpi,
+        onProgress: setProgress,
+        pagesPerPdf: effectivePagesPerPdf,
+        cancellationPromise,
       });
-    } catch (err) {
-      console.error("Export failed:", err);
+    } catch (err: any) {
+      if (err.message !== "Cancelled by user") {
+        console.error("Export failed:", err);
+      }
     } finally {
       setLoadingTask(null);
+      setOnCancel(null);
     }
   };
 
