@@ -1,3 +1,6 @@
+export {}; 
+declare const self: DedicatedWorkerGlobalScope;
+
 const NEAR_BLACK = 16;
 const NEAR_WHITE = 239;
 const ALPHA_EMPTY = 10;
