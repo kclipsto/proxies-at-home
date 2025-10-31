@@ -33,6 +33,8 @@ type Store = {
   setCardPositionX: (mm: number) => void;
   cardPositionY: number;
   setCardPositionY: (mm: number) => void;
+  dpi: number;
+  setDpi: (value: number) => void;
 };
 
 const defaultPageSettings = {
@@ -51,6 +53,7 @@ const defaultPageSettings = {
   cardPositionX: 0,
   cardPositionY: 0,
   zoom: 1,
+  dpi: 900,
 } as Store;
 
 const layoutPresetsSizes: Record<
@@ -104,6 +107,7 @@ export const useSettingsStore = create<Store>()(
       setCardSpacingMm: (mm) => set({ cardSpacingMm: Math.max(0, mm) }),
       setCardPositionX: (mm) => set({ cardPositionX: mm }),
       setCardPositionY: (mm) => set({ cardPositionY: mm }),
+      setDpi: (dpi) => set({ dpi }),
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {

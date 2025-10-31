@@ -1,6 +1,6 @@
 import { useImageProcessing } from "@/hooks/useImageProcessing";
 import { useCardsStore, useSettingsStore } from "@/store";
-import { Button, Checkbox, HelperText, HR, Label, TextInput } from "flowbite-react";
+import { Button, Checkbox, HelperText, HR, Label, Select, TextInput } from "flowbite-react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { ExportActions } from "./LayoutSettings/ExportActions";
@@ -9,6 +9,7 @@ import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
 const INCH_TO_MM = 25.4;
 const CARD_W_IN = 2.5;
 const CARD_H_IN = 3.5;
+const MAX_BROWSER_DIMENSION = 16384; // Max canvas dimension
 
 function inToMm(inches: number) {
   return inches * INCH_TO_MM;
@@ -149,6 +150,7 @@ export function PageSettingsControls() {
   const cardSpacingMm = useSettingsStore((s) => s.cardSpacingMm);
   const cardPositionX = useSettingsStore((s) => s.cardPositionX);
   const cardPositionY = useSettingsStore((s) => s.cardPositionY);
+  const dpi = useSettingsStore((s) => s.dpi);
 
   const setColumns = useSettingsStore((state) => state.setColumns);
   const setRows = useSettingsStore((state) => state.setRows);
@@ -161,11 +163,54 @@ export function PageSettingsControls() {
   const setCardSpacingMm = useSettingsStore((s) => s.setCardSpacingMm);
   const setCardPositionX = useSettingsStore((s) => s.setCardPositionX);
   const setCardPositionY = useSettingsStore((s) => s.setCardPositionY);
+  const setDpi = useSettingsStore((s) => s.setDpi);
 
   const { reprocessSelectedImages } = useImageProcessing({
     unit: "mm",
     bleedEdgeWidth,
   });
+
+  const maxSafeDpiForPage = useMemo(() => {
+    const widthIn = pageUnit === "in" ? pageWidth : pageWidth / INCH_TO_MM;
+    const heightIn = pageUnit === "in" ? pageHeight : pageHeight / INCH_TO_MM;
+    return Math.floor(
+      Math.min(
+        MAX_BROWSER_DIMENSION / widthIn,
+        MAX_BROWSER_DIMENSION / heightIn
+      )
+    );
+  }, [pageWidth, pageHeight, pageUnit]);
+
+  const availableDpiOptions = useMemo(() => {
+    const options: { label: string; value: number }[] = [];
+    for (let i = 300; i <= maxSafeDpiForPage; i += 300) {
+      options.push({ label: `${i}`, value: i });
+    }
+
+    if (maxSafeDpiForPage % 300 !== 0) {
+      options.push({ label: `${maxSafeDpiForPage} (Max)`, value: maxSafeDpiForPage });
+    }
+
+    options.forEach((opt) => {
+      if (opt.value === 300) opt.label = "300 (Fastest)";
+      else if (opt.value === 600) opt.label = "600 (Fast)";
+      else if (opt.value === 900) opt.label = "900 (Sharp)";
+      else if (opt.value === 1200) opt.label = "1200 (High Quality)";
+      else if (opt.value === maxSafeDpiForPage) opt.label = `${maxSafeDpiForPage} (Max)`;
+      else opt.label = `${opt.value}`;
+    });
+
+    return options;
+  }, [maxSafeDpiForPage]);
+
+  useEffect(() => {
+    if (!availableDpiOptions.some((opt) => opt.value === dpi)) {
+      const highestOption = availableDpiOptions[availableDpiOptions.length - 1];
+      if (highestOption) {
+        setDpi(highestOption.value);
+      }
+    }
+  }, [availableDpiOptions, dpi, setDpi]);
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -185,7 +230,6 @@ export function PageSettingsControls() {
     };
   }, []);
 
-  // ----- Spacing math (work in mm for a single formula) -----
   const pageWmm = pageUnit === "mm" ? pageWidth : inToMm(pageWidth);
   const pageHmm = pageUnit === "mm" ? pageHeight : inToMm(pageHeight);
 
@@ -293,7 +337,23 @@ export function PageSettingsControls() {
           <Label htmlFor="bleed-edge">Enable Bleed Edge</Label>
         </div>
 
-        {/* NEW: Card-to-card spacing */}
+        <div>
+          <Label>PDF Export DPI</Label>
+          <Select
+            value={dpi}
+            onChange={(e) => {
+              const val = parseInt(e.target.value, 10);
+              if (!isNaN(val)) setDpi(val);
+            }}
+          >
+            {availableDpiOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+
         <div>
           <Label>Distance between cards (mm)</Label>
           <TextInput
