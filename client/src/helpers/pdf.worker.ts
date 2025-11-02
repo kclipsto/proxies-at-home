@@ -88,7 +88,7 @@ async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number): Promis
 }
 
 function blackenAllNearBlackPixels(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, threshold: number, dpi: number) {
-    const borderThickness = { top: 192, bottom: 800, left: 96, right: 96 };
+    const borderThickness = { top: 48, bottom: 48, left: 48, right: 48 }
     const scale = dpi / 300;
     const bt = {
         top: Math.round(borderThickness.top * scale),
@@ -325,6 +325,7 @@ async function buildCardWithBleed(
     return out;
 }
 
+
 self.onmessage = async (event: MessageEvent) => {
     try {
         const { pageCards, pageIndex, settings } = event.data;
@@ -355,37 +356,53 @@ self.onmessage = async (event: MessageEvent) => {
         ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
         let imagesProcessed = 0;
-        const cardBuildPromises = pageCards.map((card: any, idx: number) => {
+        for (const [idx, card] of pageCards.entries()) {
             const col = idx % columns;
             const row = Math.floor(idx / columns);
             const x = startX + col * (cardWidthPx + spacingPx);
             const y = startY + row * (cardHeightPx + spacingPx);
             let src = (cachedImageUrls && cachedImageUrls[card.uuid]) || originalSelectedImages[card.uuid] || card.imageUrls?.[0] || "";
-            if (!card.isUserUpload && !(cachedImageUrls && cachedImageUrls[card.uuid])) {
-                src = getLocalBleedImageUrl(src, API_BASE);
-            }
-            return buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, DPI, {
-                isUserUpload: !!card.isUserUpload,
-                hasBakedBleed: !!card.hasBakedBleed,
-            }).then((cardCanvas: OffscreenCanvas) => {
-                imagesProcessed++;
-                self.postMessage({ type: 'progress', pageIndex, imagesProcessed });
-                return { cardCanvas, x, y };
-            });
-        });
 
-        const builtCards = await Promise.all(cardBuildPromises);
+            if (!src) {
+                // Create a blank image
+                const cardCanvas = new OffscreenCanvas(contentWidthInPx, contentHeightInPx);
+                const cardCtx = cardCanvas.getContext('2d')!;
+                cardCtx.fillStyle = 'white';
+                cardCtx.fillRect(0, 0, contentWidthInPx, contentHeightInPx);
+                cardCtx.strokeStyle = 'red';
+                cardCtx.lineWidth = 5;
+                cardCtx.strokeRect(0, 0, contentWidthInPx, contentHeightInPx);
+                cardCtx.fillStyle = 'red';
+                cardCtx.font = '30px sans-serif';
+                cardCtx.textAlign = 'center';
+                cardCtx.fillText('Image not found', contentWidthInPx / 2, contentHeightInPx / 2);
+                
+                ctx.drawImage(cardCanvas, x, y);
+            } else {
+                 if (!card.isUserUpload && !(cachedImageUrls && cachedImageUrls[card.uuid])) {
+                    src = getLocalBleedImageUrl(src, API_BASE);
+                }
+                const cardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, DPI, {
+                    isUserUpload: !!card.isUserUpload,
+                    hasBakedBleed: !!card.hasBakedBleed,
+                });
+                ctx.drawImage(cardCanvas, x, y);
+            }
+
+            imagesProcessed++;
+            self.postMessage({ type: 'progress', pageIndex, imagesProcessed });
+        }
         
         const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthPx, 96, DPI);
-        builtCards.forEach(({ cardCanvas, x, y }) => {
-            ctx.drawImage(cardCanvas, x, y);
-            if (bleedEdge) {
-                drawCornerGuides(ctx, x, y, contentWidthInPx, contentHeightInPx, bleedPx, guideColor, scaledGuideWidth, DPI);
-            }
-        });
-
         if (bleedEdge) {
             drawEdgeStubs(ctx, pageWidthPx, pageHeightPx, startX, startY, columns, rows, contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx, bleedPx, scaledGuideWidth, spacingPx);
+            pageCards.forEach((_card: any, idx: number) => {
+                const col = idx % columns;
+                const row = Math.floor(idx / columns);
+                const x = startX + col * (cardWidthPx + spacingPx);
+                const y = startY + row * (cardHeightPx + spacingPx);
+                drawCornerGuides(ctx, x, y, contentWidthInPx, contentHeightInPx, bleedPx, guideColor, scaledGuideWidth, DPI);
+            });
         }
 
         const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.98 });

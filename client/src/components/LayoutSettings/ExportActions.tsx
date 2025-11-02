@@ -17,7 +17,6 @@ export function ExportActions() {
   const cachedImageUrls = useCardsStore((state) => state.cachedImageUrls); // <-- NEW
 
   const pageOrientation = useSettingsStore((state) => state.pageOrientation);
-  const pageSizePreset = useSettingsStore((state) => state.pageSizePreset);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
   const pageWidth = useSettingsStore((state) => state.pageWidth);
   const pageHeight = useSettingsStore((state) => state.pageHeight);
@@ -80,7 +79,6 @@ export function ExportActions() {
         guideColor,
         guideWidthPx: guideWidth,
         pageOrientation,
-        pageSizePreset,
         pageSizeUnit,
         pageWidth,
         pageHeight,
