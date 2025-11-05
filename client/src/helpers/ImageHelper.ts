@@ -120,7 +120,7 @@ export function blackenAllNearBlackPixels(
   width: number,
   height: number,
   threshold: number,
-  borderThickness = { top: 96, bottom: 400, left: 48, right: 48 }
+  borderThickness = { top: 48, bottom: 48, left: 48, right: 48 }
 ) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
