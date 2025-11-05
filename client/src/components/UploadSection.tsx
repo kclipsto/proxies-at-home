@@ -23,8 +23,9 @@ import {
   ListItem,
   Select,
   Textarea,
+  Tooltip,
 } from "flowbite-react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, HelpCircle } from "lucide-react";
 import React, { useState } from "react";
 
 async function readText(file: File): Promise<string> {
@@ -57,7 +58,7 @@ export function UploadSection() {
 
   const globalLanguage = useCardsStore((s) => s.globalLanguage ?? "en");
   const setGlobalLanguage = useCardsStore(
-    (s) => s.setGlobalLanguage ?? (() => {})
+    (s) => s.setGlobalLanguage ?? (() => { })
   );
 
   async function processToWithBleed(
@@ -332,9 +333,7 @@ export function UploadSection() {
       const optionByKey: Record<string, CardOption> = {};
       for (const opt of fetchedCards) {
         if (!opt?.name) continue;
-        const k = `${opt.name.toLowerCase()}|${opt.set ?? ""}|${
-          opt.number ?? ""
-        }`;
+        const k = `${opt.name.toLowerCase()}|${opt.set ?? ""}|${opt.number ?? ""}`;
         optionByKey[k] = opt;
         const nameOnlyKey = `${opt.name.toLowerCase()}||`;
         if (!optionByKey[nameOnlyKey]) optionByKey[nameOnlyKey] = opt;
@@ -458,27 +457,46 @@ export function UploadSection() {
     }
   };
 
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+
   const handleClear = async () => {
+    if (cards.length === 0) {
+      // If no cards, just clear the state without showing the modal
+      // The confirmClear function already handles the actual clearing logic
+      await confirmClear(); // Call confirmClear directly
+      setShowClearConfirmModal(false); // Ensure modal is hidden
+    } else {
+      setShowClearConfirmModal(true);
+    }
+  };
+
+  const confirmClear = async () => {
     setLoadingTask("Clearing Images");
 
     try {
+      const hadCards = cards.length > 0;
       setCards([]);
       setSelectedImages({});
       setOriginalSelectedImages({});
 
-      try {
-        await axios.delete(`${API_BASE}/api/cards/images`, { timeout: 15000 });
-      } catch (e) {
-        console.warn(
-          "[Clear] Server cache clear failed (UI already cleared):",
-          e
-        );
+      if (hadCards) {
+        try {
+          await axios.delete(`${API_BASE}/api/cards/images`, {
+            timeout: 15000,
+          });
+        } catch (e) {
+          console.warn(
+            "[Clear] Server cache clear failed (UI already cleared):",
+            e
+          );
+        }
       }
     } catch (err: any) {
       console.error("[Clear] Error:", err);
       alert(err?.message || "Failed to clear images.");
     } finally {
       setLoadingTask(null);
+      setShowClearConfirmModal(false);
     }
   };
 
@@ -584,11 +602,7 @@ export function UploadSection() {
 
             <Textarea
               className="h-64"
-              placeholder={`1x Sol Ring
-2x Counterspell
-For specific art include set / CN
-eg. Strionic Resonator (lcc)
-or Repurposing Bay (dft) 380`}
+              placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
               value={deckText}
               onChange={(e) => setDeckText(e.target.value)}
             />
@@ -606,8 +620,10 @@ or Repurposing Bay (dft) 380`}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <h6 className="font-medium dark:text-white">Language</h6>
+              <Tooltip content="Used for Scryfall lookups">
+                <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
+              </Tooltip>
             </div>
-            <HelperText>Used for Scryfall lookups</HelperText>
 
             <Select
               className="w-full rounded-md bg-gray-300 dark:bg-gray-600 my-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
@@ -639,6 +655,35 @@ or Repurposing Bay (dft) 380`}
 
         <HR className="my-0 dark:bg-gray-500" />
       </div>
+
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+              Confirm Clear Cards
+            </div>
+            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              Are you sure you want to clear all cards? This action cannot be
+              undone.
+            </div>
+            <div className="flex justify-center gap-4">
+              <Button
+                color="failure"
+                className="dark:bg-red-600 dark:hover:bg-red-700 text-white"
+                onClick={confirmClear}
+              >
+                Yes, I'm sure
+              </Button>
+              <Button
+                color="gray"
+                onClick={() => setShowClearConfirmModal(false)}
+              >
+                No, cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

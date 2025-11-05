@@ -8,11 +8,12 @@ import {
   ModalHeader,
   TextInput,
 } from "flowbite-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { API_BASE } from "../constants";
 import { useArtworkModalStore } from "../store";
 import { useCardsStore } from "../store/cards";
 import type { CardOption } from "../types/Card";
+import { getLocalBleedImageUrl } from "../helpers/ImageHelper";
 
 export function ArtworkModal() {
   const [isGettingMore, setIsGettingMore] = useState(false);
@@ -39,6 +40,17 @@ export function ArtworkModal() {
   const clearManySelectedImages = useCardsStore(
     (state) => state.clearManySelectedImages
   );
+
+  const cardNamesToUuids = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    cards.forEach(card => {
+      if (!map[card.name]) {
+        map[card.name] = [];
+      }
+      map[card.name].push(card.uuid);
+    });
+    return map;
+  }, [cards]);
 
   async function getMoreCards() {
     if (!modalCard) return;
@@ -104,8 +116,6 @@ export function ArtworkModal() {
                 [newUuid]: newCard.imageUrls[0],
               });
 
-              
-
               clearSelectedImage(newUuid);
 
               setSearchQuery("");
@@ -148,12 +158,14 @@ export function ArtworkModal() {
                           string
                         > = {};
                         const uuidsToClear: string[] = [];
+                        const cachedUpdates: Record<string, string> = {};
 
-                        cards.forEach((card) => {
-                          if (card.name === modalCard.name) {
-                            newOriginalSelectedImages[card.uuid] = pngUrl;
-                            uuidsToClear.push(card.uuid);
-                          }
+                        const uuidsToUpdate = cardNamesToUuids[modalCard.name] || [];
+
+                        uuidsToUpdate.forEach((uuid) => {
+                          newOriginalSelectedImages[uuid] = pngUrl;
+                          cachedUpdates[uuid] = getLocalBleedImageUrl(pngUrl);
+                          uuidsToClear.push(uuid);
                         });
 
                         appendOriginalSelectedImages(

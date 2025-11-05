@@ -1,4 +1,5 @@
 import { Button } from "flowbite-react";
+import { useState, useEffect } from "react";
 
 type LoadingOverlayProps = {
   task: string;
@@ -7,6 +8,24 @@ type LoadingOverlayProps = {
 };
 
 export default function LoadingOverlay({ task, progress, onCancel }: LoadingOverlayProps) {
+  const [startTime] = useState(performance.now());
+  const [elapsedTime, setElapsedTime] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsedTime(performance.now() - startTime);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  const formatTime = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes > 0 ? `${minutes}m ` : ''}${remainingSeconds}s`;
+  };
+
   return (
     <div className="fixed rounded-xl inset-0 z-50 bg-gray-900/50 flex items-center justify-center">
       {" "}
@@ -23,13 +42,16 @@ export default function LoadingOverlay({ task, progress, onCancel }: LoadingOver
             {Math.round(progress)}%
           </div>
         </div>
-        {onCancel && (
-          <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-between">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Elapsed: {formatTime(elapsedTime)}
+          </div>
+          {onCancel && (
             <Button color="light" onClick={onCancel}>
               Cancel
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
