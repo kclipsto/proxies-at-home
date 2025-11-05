@@ -6,11 +6,6 @@ import {
   type CardInfo,
 } from "@/helpers/CardInfoHelper";
 import {
-  addBleedEdge,
-  getLocalBleedImageUrl,
-  trimBleedEdge
-} from "@/helpers/ImageHelper";
-import {
   getMpcImageUrl,
   inferCardNameFromFilename,
   parseMpcText,
@@ -45,6 +40,7 @@ export function UploadSection() {
   const cards = useCardsStore((state) => state.cards);
 
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
+  const setProgress = useLoadingStore((state) => state.setProgress);
   const appendCards = useCardsStore((state) => state.appendCards);
   const setCards = useCardsStore((state) => state.setCards);
   const setSelectedImages = useCardsStore((state) => state.setSelectedImages);
@@ -59,7 +55,9 @@ export function UploadSection() {
   );
 
   const globalLanguage = useCardsStore((s) => s.globalLanguage ?? "en");
-  const setGlobalLanguage = useCardsStore((s) => s.setGlobalLanguage ?? (() => { }));
+  const setGlobalLanguage = useCardsStore(
+    (s) => s.setGlobalLanguage ?? (() => {})
+  );
 
   async function processToWithBleed(
     srcBase64: string,
@@ -259,36 +257,79 @@ export function UploadSection() {
         console.warn("[FetchCards] DELETE failed (continuing):", e);
       }
 
-      let response: { data: CardOption[] } | null = null;
-      try {
-        response = await axios.post<CardOption[]>(
-          `${API_BASE}/api/cards/images`,
-          {
+      const response = await fetch(
+        `${API_BASE}/api/cards/images/images-stream`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
             cardQueries: uniqueInfos,
             cardNames: uniqueNames,
             cardArt: "art",
             language: globalLanguage,
-          },
-          { timeout: 20000 }
-        );
-      } catch (e: any) {
-        console.error("[FetchCards] POST failed:", e);
-        throw new Error(
-          e?.response?.data?.error ||
-          e?.message ||
-          "Failed to fetch cards. Check network/CORS."
-        );
+          }),
+        }
+      );
+
+      if (!response.body) {
+        throw new Error("Missing response body from stream");
       }
 
-      const data = Array.isArray(response?.data) ? response!.data : [];
-      if (!data.length) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const fetchedCards: CardOption[] = [];
+      const fetchErrors: string[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        let event = "";
+        let data = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            event = line.substring(7).trim();
+          } else if (line.startsWith("data: ")) {
+            data = line.substring(6);
+          } else if (line === "") {
+            if (event === "progress") {
+              const { progress, total } = JSON.parse(data);
+              const percent =
+                total > 0 ? Math.round((progress / total) * 100) : 0;
+              setProgress(percent);
+            } else if (event === "card") {
+              fetchedCards.push(JSON.parse(data));
+            } else if (event === "card-error") {
+              const { name } = JSON.parse(data);
+              fetchErrors.push(name);
+            } else if (event === "end") {
+              reader.cancel();
+              break;
+            }
+            event = "";
+            data = "";
+          }
+        }
+      }
+
+      if (!fetchedCards.length) {
+        if (fetchErrors.length > 0) {
+          throw new Error(
+            `Failed to find images for the following cards: ${fetchErrors.join(", ")}`
+          );
+        }
         throw new Error("No images found for the provided list.");
       }
 
       const optionByKey: Record<string, CardOption> = {};
-      for (const opt of data) {
+      for (const opt of fetchedCards) {
         if (!opt?.name) continue;
-        const k = `${opt.name.toLowerCase()}|${opt.set ?? ""}|${opt.number ?? ""}`;
+        const k = `${opt.name.toLowerCase()}|${opt.set ?? ""}|${
+          opt.number ?? ""
+        }`;
         optionByKey[k] = opt;
         const nameOnlyKey = `${opt.name.toLowerCase()}||`;
         if (!optionByKey[nameOnlyKey]) optionByKey[nameOnlyKey] = opt;
@@ -314,22 +355,94 @@ export function UploadSection() {
       }
       appendOriginalSelectedImages(newOriginals);
 
-      setLoadingTask(null);
+      setLoadingTask("Processing Images");
+      setProgress(0);
 
-      const processed: Record<string, string> = {};
-      for (const [uuid, url] of Object.entries(newOriginals)) {
-        try {
-          const proxiedUrl = getLocalBleedImageUrl(url);
-          const bleedImage = await addBleedEdge(proxiedUrl, bleedEdgeWidth, {
-            unit: "mm",
-            bleedEdgeWidth,
-          });
-          processed[uuid] = bleedImage;
-        } catch (e) {
-          console.warn(`[Bleed] Failed for ${uuid}:`, e);
+      const workerPool: Worker[] = [];
+      try {
+        const imageJobs = Object.entries(newOriginals);
+        const totalToProcess = imageJobs.length;
+        if (totalToProcess === 0) return;
+
+        const processed: Record<string, string> = {};
+        let processedCount = 0;
+
+        const errored = new Set<string>();
+        await new Promise<void>((resolve, reject) => {
+          const taskQueue = [...imageJobs];
+          const maxWorkers = Math.max(
+            1,
+            (navigator.hardwareConcurrency || 4) - 1
+          );
+          let activeWorkers = 0;
+
+          const run = () => {
+            while (taskQueue.length > 0 && activeWorkers < maxWorkers) {
+              const worker = new Worker(
+                new URL("../helpers/bleed.worker.ts", import.meta.url),
+                { type: "module" }
+              );
+              workerPool.push(worker);
+              activeWorkers++;
+
+              const [uuid, url] = taskQueue.shift()!;
+
+              worker.onmessage = (e: MessageEvent) => {
+                const { processedBlob, error } = e.data;
+                if (error) {
+                  console.error(`Error processing image ${uuid}:`, error);
+                  errored.add(uuid);
+                } else {
+                  const objectUrl = URL.createObjectURL(processedBlob);
+                  processed[uuid] = objectUrl;
+                }
+
+                processedCount++;
+                setProgress((processedCount / totalToProcess) * 100);
+
+                worker.terminate();
+                activeWorkers--;
+
+                if (taskQueue.length === 0 && activeWorkers === 0) {
+                  resolve();
+                } else {
+                  run();
+                }
+              };
+
+              worker.onerror = (error) => {
+                worker.terminate();
+                activeWorkers--;
+                // Don't reject, as other images might still be processing
+                console.error("Worker error:", error);
+                if (taskQueue.length === 0 && activeWorkers === 0) {
+                  resolve(); // Or reject, depending on desired behavior
+                }
+              };
+
+              const card = expandedCards.find((c) => c.uuid === uuid);
+
+              worker.postMessage({
+                uuid,
+                url,
+                bleedEdgeWidth,
+                unit: "mm",
+                apiBase: API_BASE,
+                isUserUpload: card?.isUserUpload,
+                hasBakedBleed: card?.hasBakedBleed,
+              });
+            }
+          };
+
+          run();
+        });
+
+        if (Object.keys(processed).length) {
+          appendSelectedImages(processed);
         }
+      } finally {
+        workerPool.forEach((w) => w.terminate());
       }
-      if (Object.keys(processed).length) appendSelectedImages(processed);
 
       setDeckText("");
     } catch (err: any) {
@@ -351,7 +464,10 @@ export function UploadSection() {
       try {
         await axios.delete(`${API_BASE}/api/cards/images`, { timeout: 15000 });
       } catch (e) {
-        console.warn("[Clear] Server cache clear failed (UI already cleared):", e);
+        console.warn(
+          "[Clear] Server cache clear failed (UI already cleared):",
+          e
+        );
       }
     } catch (err: any) {
       console.error("[Clear] Error:", err);
@@ -360,7 +476,6 @@ export function UploadSection() {
       setLoadingTask(null);
     }
   };
-
 
   return (
     <div className="w-1/5 dark:bg-gray-700 bg-gray-100 flex flex-col">

@@ -1,30 +1,7 @@
 import { API_BASE } from "@/constants";
 import type { LayoutPreset } from "@/store/settings";
 import type { CardOption } from "@/types/Card";
-import jsPDF from "jspdf";
 import { PDFDocument } from "pdf-lib";
-
-const JSPDF_SUPPORTED = new Set([
-  "letter",
-  "legal",
-  "tabloid",
-  "a4",
-  "a3",
-  "a2",
-  "a1",
-]);
-
-function resolveJsPdfFormat(opts: {
-  preset: LayoutPreset;
-  unit: "mm" | "in";
-  width: number;
-  height: number;
-}): string | [number, number] {
-  const { preset, unit, width, height } = opts;
-  if (JSPDF_SUPPORTED.has(preset.toLowerCase())) return preset.toLowerCase();
-  const toMm = (n: number) => (unit === "in" ? n * 25.4 : n);
-  return [toMm(width), toMm(height)];
-}
 
 export async function exportProxyPagesToPdf({
   cards,
@@ -35,8 +12,6 @@ export async function exportProxyPagesToPdf({
   guideColor,
   guideWidthPx,
   pageSizeUnit,
-  pageOrientation,
-  pageSizePreset,
   pageWidth,
   pageHeight,
   columns,
@@ -57,7 +32,6 @@ export async function exportProxyPagesToPdf({
   guideColor: string;
   guideWidthPx: number;
   pageOrientation: "portrait" | "landscape";
-  pageSizePreset: LayoutPreset;
   pageSizeUnit: "mm" | "in";
   pageWidth: number;
   pageHeight: number;
@@ -97,38 +71,78 @@ export async function exportProxyPagesToPdf({
   for (const [chunkIndex, chunkPages] of documentChunks.entries()) {
     const workerPool: Worker[] = [];
     try {
-      const format = resolveJsPdfFormat({
-        preset: pageSizePreset,
-        unit: pageSizeUnit,
-        width: pageWidth,
-        height: pageHeight,
-      });
-      const pdf = new jsPDF({
-        orientation: pageOrientation,
-        unit: "mm",
-        format,
-        compress: true,
-      });
-      const pdfWidth = pageSizeUnit === "in" ? pageWidth * 25.4 : pageWidth;
-      const pdfHeight = pageSizeUnit === "in" ? pageHeight * 25.4 : pageHeight;
+      // pdf-lib uses points (72 per inch) for dimensions.
+      const toPoints = (value: number, unit: "mm" | "in") => {
+        if (unit === "mm") {
+          return (value / 25.4) * 72;
+        }
+        return value * 72;
+      };
 
-      const workerPromise = new Promise<Uint8Array>((resolve, reject) => {
-        const maxWorkers = Math.max(
-          1,
-          (navigator.hardwareConcurrency || 4) - 1
-        );
+      const pdfWidth = toPoints(pageWidth, pageSizeUnit);
+      const pdfHeight = toPoints(pageHeight, pageSizeUnit);
+
+      const workerPromise = new Promise<Uint8Array>(async (resolve, reject) => {
+        const pdfDoc = await PDFDocument.create();
+        const maxWorkers = Math.floor(Math.log2(navigator.hardwareConcurrency || 1)) + 1;
         const taskQueue = chunkPages.map((pageCards, index) => ({
           pageCards,
           pageIndex: index, // Index within the chunk
         }));
         const results: { pageIndex: number; buffer: ArrayBuffer }[] = [];
-        let workersFinished = 0;
 
         const pageImageProgress = new Array(chunkPages.length).fill(0);
 
         const cleanupAndReject = (error: any) => {
           workerPool.forEach((w) => w.terminate());
           reject(error);
+        };
+
+        const assemblePdf = async (): Promise<Uint8Array> => {
+          results.sort((a, b) => a.pageIndex - b.pageIndex);
+
+          for (const { buffer } of results) {
+            const image = await pdfDoc.embedJpg(buffer);
+            const page = pdfDoc.addPage([pdfWidth, pdfHeight]);
+            page.drawImage(image, {
+              x: 0,
+              y: 0,
+              width: page.getWidth(),
+              height: page.getHeight(),
+            });
+          }
+
+          workerPool.forEach((w) => w.terminate());
+          return await pdfDoc.save();
+        };
+
+        const assignTask = (worker: Worker) => {
+          if (taskQueue.length > 0) {
+            const task = taskQueue.shift()!;
+            const settings = {
+              pageWidth,
+              pageHeight,
+              pageSizeUnit,
+              columns,
+              rows,
+              bleedEdge,
+              bleedEdgeWidthMm,
+              cardSpacingMm,
+              cardPositionX,
+              cardPositionY,
+              guideColor,
+              guideWidthPx,
+              DPI: dpi,
+              originalSelectedImages,
+              cachedImageUrls,
+              API_BASE,
+            };
+            worker.postMessage({
+              pageCards: task.pageCards,
+              pageIndex: task.pageIndex,
+              settings,
+            });
+          }
         };
 
         for (let i = 0; i < maxWorkers; i++) {
@@ -139,40 +153,6 @@ export async function exportProxyPagesToPdf({
             }
           );
           workerPool.push(worker);
-
-          const assignTask = () => {
-            if (taskQueue.length > 0) {
-              const task = taskQueue.shift()!;
-              const settings = {
-                pageWidth,
-                pageHeight,
-                pageSizeUnit,
-                columns,
-                rows,
-                bleedEdge,
-                bleedEdgeWidthMm,
-                cardSpacingMm,
-                cardPositionX,
-                cardPositionY,
-                guideColor,
-                guideWidthPx,
-                DPI: dpi,
-                originalSelectedImages,
-                cachedImageUrls,
-                API_BASE,
-              };
-              worker.postMessage({
-                pageCards: task.pageCards,
-                pageIndex: task.pageIndex,
-                settings,
-              });
-            } else {
-              workersFinished++;
-              if (workersFinished === maxWorkers) {
-                assemblePdf().then(resolve).catch(reject);
-              }
-            }
-          };
 
           worker.onmessage = async (event: MessageEvent) => {
             const { type, error, pageIndex, buffer, imagesProcessed } =
@@ -207,7 +187,12 @@ export async function exportProxyPagesToPdf({
                   `Failed to get buffer for page ${pageIndex + 1}.`
                 );
               }
-              assignTask();
+
+              if (results.length === chunkPages.length) {
+                assemblePdf().then(resolve).catch(reject);
+              } else {
+                assignTask(worker);
+              }
             }
           };
 
@@ -215,21 +200,8 @@ export async function exportProxyPagesToPdf({
             cleanupAndReject(e);
           };
 
-          assignTask();
+          assignTask(worker);
         }
-
-        const assemblePdf = async (): Promise<Uint8Array> => {
-          results.sort((a, b) => a.pageIndex - b.pageIndex);
-
-          results.forEach(({ pageIndex, buffer }) => {
-            if (pageIndex > 0) pdf.addPage();
-            const imageData = new Uint8Array(buffer);
-            pdf.addImage(imageData, "JPEG", 0, 0, pdfWidth, pdfHeight);
-          });
-
-          workerPool.forEach((w) => w.terminate());
-          return new Uint8Array(pdf.output("arraybuffer"));
-        };
       });
 
       pdfBuffers.push(

@@ -154,6 +154,67 @@ imageRouter.post("/", async (req, res) => {
   }
 });
 
+imageRouter.post("/images-stream", async (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const cardQueries = Array.isArray(req.body.cardQueries)
+    ? req.body.cardQueries
+    : [];
+
+  const unique = req.body.cardArt || "art";
+  const language = (req.body.language || "en").toLowerCase();
+  const fallbackToEnglish =
+    typeof req.body.fallbackToEnglish === "boolean"
+      ? req.body.fallbackToEnglish
+      : true;
+
+  const infos = cardQueries.map((q) => ({
+    name: q.name,
+    set: q.set,
+    number: q.number,
+    language: (q.language || language || "en").toLowerCase(),
+  }));
+
+  const total = infos.length;
+  let count = 0;
+
+  for (const ci of infos) {
+    try {
+      const imageUrls = await getImagesForCardInfo(
+        ci,
+        unique,
+        ci.language,
+        fallbackToEnglish
+      );
+      const card = {
+        name: ci.name,
+        set: ci.set,
+        number: ci.number,
+        imageUrls,
+        language: ci.language,
+      };
+      res.write(`event: card\ndata: ${JSON.stringify(card)}\n\n`);
+    } catch (e) {
+      console.error(`[SSE] failed to fetch ${ci.name}:`, e);
+      // Send an error event for this card
+      res.write(
+        `event: card-error\ndata: ${JSON.stringify({ name: ci.name })}\n\n`
+      );
+    } finally {
+      count++;
+      res.write(
+        `event: progress\ndata: ${JSON.stringify({ progress: count, total })}\n\n`
+      );
+    }
+  }
+
+  res.write("event: end\ndata: Stream ended\n\n");
+  res.end();
+});
+
 // -------------------- proxy (cached) --------------------
 
 imageRouter.get("/proxy", async (req, res) => {

@@ -1,12 +1,9 @@
-import { useRef, useState } from "react";
-import {
-  addBleedEdge,
-  getLocalBleedImageUrl,
-  trimBleedEdge,
-  urlToDataUrl,
-} from "../helpers/ImageHelper";
+import { API_BASE } from "@/constants";
+import { imageProcessor } from "../helpers/imageProcessor";
 import { useCardsStore } from "../store";
 import type { CardOption } from "../types/Card";
+import { getLocalBleedImageUrl } from "../helpers/ImageHelper";
+import { useRef, useState } from "react";
 
 export function useImageProcessing({
   unit,
@@ -53,18 +50,23 @@ export function useImageProcessing({
 
       setLoadingMap((m) => ({ ...m, [uuid]: "loading" }));
       try {
-        let base: string;
-        if (/^data:image\//i.test(src)) {
-          base = card.hasBakedBleed ? await trimBleedEdge(src) : src;
-        } else {
-          const dataUrl = await urlToDataUrl(src);
-          base = card.hasBakedBleed ? await trimBleedEdge(dataUrl) : dataUrl;
-        }
-        const withBleed = await addBleedEdge(base, bleedEdgeWidth, {
-          unit,
+        const { processedBlob, error } = await imageProcessor.process({
+          uuid,
+          url: src,
           bleedEdgeWidth,
+          unit,
+          apiBase: API_BASE,
+          isUserUpload: card.isUserUpload,
+          hasBakedBleed: card.hasBakedBleed,
         });
-        appendSelectedImages({ [uuid]: withBleed });
+
+        if (error) {
+          throw new Error(error);
+        }
+
+        const objectUrl = URL.createObjectURL(processedBlob);
+        appendSelectedImages({ [uuid]: objectUrl });
+
         if (!originalSelectedImages[uuid]) {
           appendOriginalSelectedImages({ [uuid]: src });
         }
@@ -93,25 +95,25 @@ export function useImageProcessing({
       
       if (!original) return;
       
-      if (card.isUserUpload) {
-        let base: string;
-        if (/^data:image\//i.test(original)) {
-          base = card.hasBakedBleed ? await trimBleedEdge(original) : original;
-        } else {
-          const dataUrl = await urlToDataUrl(original);
-          base = card.hasBakedBleed ? await trimBleedEdge(dataUrl) : dataUrl;
+      try {
+        const { processedBlob, error } = await imageProcessor.process({
+            uuid,
+            url: original,
+            bleedEdgeWidth: newBleedWidth,
+            unit,
+            apiBase: API_BASE,
+            isUserUpload: card.isUserUpload,
+            hasBakedBleed: card.hasBakedBleed,
+        });
+
+        if (error) {
+            throw new Error(error);
         }
-        updated[uuid] = await addBleedEdge(base, newBleedWidth, {
-          unit,
-          bleedEdgeWidth: newBleedWidth,
-        });
-      } else {
-        // Scryfall Image -> proxy the URL and add bleed
-        const proxiedUrl = getLocalBleedImageUrl(original);
-        updated[uuid] = await addBleedEdge(proxiedUrl, newBleedWidth, {
-          unit,
-          bleedEdgeWidth: newBleedWidth,
-        });
+
+        const objectUrl = URL.createObjectURL(processedBlob);
+        updated[uuid] = objectUrl;
+      } catch (e) {
+        console.error("reprocessSelectedImages error for", card.name, e);
       }
     });
 
