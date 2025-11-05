@@ -16,23 +16,6 @@ function getBleedInPixels(bleedEdgeWidth: number, unit: string): number {
   return unit === "mm" ? IN(bleedEdgeWidth / 25.4) : IN(bleedEdgeWidth);
 }
 
-async function canvasToBlob(
-  canvas: OffscreenCanvas,
-  type = "image/png",
-  quality?: number
-): Promise<Blob> {
-  return await canvas.convertToBlob({ type, quality });
-}
-
-async function canvasToObjectUrl(
-  canvas: OffscreenCanvas,
-  type = "image/png",
-  quality?: number
-): Promise<string> {
-  const blob = await canvasToBlob(canvas, type, quality);
-  return URL.createObjectURL(blob);
-}
-
 function blackenAllNearBlackPixels(
   ctx: OffscreenCanvasRenderingContext2D,
   width: number,

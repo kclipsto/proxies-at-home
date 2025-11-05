@@ -10,7 +10,6 @@ import {
 } from "flowbite-react";
 import { useState } from "react";
 import { API_BASE } from "../constants";
-import { pngToNormal, getLocalBleedImageUrl } from "../helpers/ImageHelper";
 import { useArtworkModalStore } from "../store";
 import { useCardsStore } from "../store/cards";
 import type { CardOption } from "../types/Card";
@@ -39,10 +38,6 @@ export function ArtworkModal() {
   const clearSelectedImage = useCardsStore((state) => state.clearSelectedImage);
   const clearManySelectedImages = useCardsStore(
     (state) => state.clearManySelectedImages
-  );
-
-  const appendCachedImageUrls = useCardsStore(
-    (state) => state.appendCachedImageUrls
   );
 
   async function getMoreCards() {
@@ -109,9 +104,7 @@ export function ArtworkModal() {
                 [newUuid]: newCard.imageUrls[0],
               });
 
-              appendCachedImageUrls({
-                [newUuid]: getLocalBleedImageUrl(newCard.imageUrls[0]),
-              });
+              
 
               clearSelectedImage(newUuid);
 
@@ -135,7 +128,7 @@ export function ArtworkModal() {
 
             <div className="grid grid-cols-3 md:grid-cols-3 gap-4">
               {modalCard.imageUrls.map((pngUrl, i) => {
-                const thumbUrl = pngToNormal(pngUrl);
+                const thumbUrl = pngUrl;
                 return (
                   <img
                     key={i}
@@ -154,14 +147,11 @@ export function ArtworkModal() {
                           string,
                           string
                         > = {};
-                        const cachedUpdates: Record<string, string> = {};
                         const uuidsToClear: string[] = [];
 
                         cards.forEach((card) => {
                           if (card.name === modalCard.name) {
                             newOriginalSelectedImages[card.uuid] = pngUrl;
-                            cachedUpdates[card.uuid] =
-                              getLocalBleedImageUrl(pngUrl);
                             uuidsToClear.push(card.uuid);
                           }
                         });
@@ -169,16 +159,11 @@ export function ArtworkModal() {
                         appendOriginalSelectedImages(
                           newOriginalSelectedImages
                         );
-                        appendCachedImageUrls(cachedUpdates);
                         clearManySelectedImages(uuidsToClear);
 
                       } else {
                         appendOriginalSelectedImages({
                           [modalCard.uuid]: pngUrl,
-                        });
-
-                        appendCachedImageUrls({
-                          [modalCard.uuid]: getLocalBleedImageUrl(pngUrl),
                         });
 
                         clearSelectedImage(modalCard.uuid);
