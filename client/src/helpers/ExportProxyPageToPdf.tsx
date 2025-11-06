@@ -1,5 +1,4 @@
 import { API_BASE } from "@/constants";
-import type { LayoutPreset } from "@/store/settings";
 import type { CardOption } from "@/types/Card";
 import { PDFDocument } from "pdf-lib";
 
@@ -11,6 +10,7 @@ export async function exportProxyPagesToPdf({
   bleedEdgeWidthMm,
   guideColor,
   guideWidthPx,
+  pageOrientation,
   pageSizeUnit,
   pageWidth,
   pageHeight,
@@ -89,60 +89,43 @@ export async function exportProxyPagesToPdf({
           pageCards,
           pageIndex: index, // Index within the chunk
         }));
-        const results: { pageIndex: number; buffer: ArrayBuffer }[] = [];
+        const pageImageUrls = new Map<number, string>();
+        let nextPageIndexToAdd = 0;
+        let workersFinished = 0;
 
         const pageImageProgress = new Array(chunkPages.length).fill(0);
 
+        const addReadyPagesToPdf = async () => {
+          while (pageImageUrls.has(nextPageIndexToAdd)) {
+            const url = pageImageUrls.get(nextPageIndexToAdd)!;
+            try {
+              const response = await fetch(url);
+              const blob = await response.blob();
+              const buffer = await blob.arrayBuffer();
+
+              const image = await pdfDoc.embedJpg(buffer);
+              const page = pdfDoc.addPage(pageOrientation === 'portrait' ? [pdfWidth, pdfHeight] : [pdfHeight, pdfWidth]);
+              page.drawImage(image, {
+                x: 0,
+                y: 0,
+                width: page.getWidth(),
+                height: page.getHeight(),
+              });
+
+            } catch (e) {
+              console.error(`Failed to process blob for page ${nextPageIndexToAdd}`, e);
+            } finally {
+              URL.revokeObjectURL(url);
+              pageImageUrls.delete(nextPageIndexToAdd);
+              nextPageIndexToAdd++;
+            }
+          }
+        };
+
         const cleanupAndReject = (error: any) => {
+          pageImageUrls.forEach(url => URL.revokeObjectURL(url));
           workerPool.forEach((w) => w.terminate());
           reject(error);
-        };
-
-        const assemblePdf = async (): Promise<Uint8Array> => {
-          results.sort((a, b) => a.pageIndex - b.pageIndex);
-
-          for (const { buffer } of results) {
-            const image = await pdfDoc.embedJpg(buffer);
-            const page = pdfDoc.addPage([pdfWidth, pdfHeight]);
-            page.drawImage(image, {
-              x: 0,
-              y: 0,
-              width: page.getWidth(),
-              height: page.getHeight(),
-            });
-          }
-
-          workerPool.forEach((w) => w.terminate());
-          return await pdfDoc.save();
-        };
-
-        const assignTask = (worker: Worker) => {
-          if (taskQueue.length > 0) {
-            const task = taskQueue.shift()!;
-            const settings = {
-              pageWidth,
-              pageHeight,
-              pageSizeUnit,
-              columns,
-              rows,
-              bleedEdge,
-              bleedEdgeWidthMm,
-              cardSpacingMm,
-              cardPositionX,
-              cardPositionY,
-              guideColor,
-              guideWidthPx,
-              DPI: dpi,
-              originalSelectedImages,
-              cachedImageUrls,
-              API_BASE,
-            };
-            worker.postMessage({
-              pageCards: task.pageCards,
-              pageIndex: task.pageIndex,
-              settings,
-            });
-          }
         };
 
         for (let i = 0; i < maxWorkers; i++) {
@@ -154,8 +137,42 @@ export async function exportProxyPagesToPdf({
           );
           workerPool.push(worker);
 
+          const assignTask = () => {
+            if (taskQueue.length > 0) {
+              const task = taskQueue.shift()!;
+              const settings = {
+                pageWidth,
+                pageHeight,
+                pageSizeUnit,
+                columns,
+                rows,
+                bleedEdge,
+                bleedEdgeWidthMm,
+                cardSpacingMm,
+                cardPositionX,
+                cardPositionY,
+                guideColor,
+                guideWidthPx,
+                DPI: dpi,
+                originalSelectedImages,
+                cachedImageUrls,
+                API_BASE,
+              };
+              worker.postMessage({
+                pageCards: task.pageCards,
+                pageIndex: task.pageIndex,
+                settings,
+              });
+            } else {
+              workersFinished++;
+              if (workersFinished === maxWorkers) {
+                assemblePdf().then(resolve).catch(reject);
+              }
+            }
+          };
+
           worker.onmessage = async (event: MessageEvent) => {
-            const { type, error, pageIndex, buffer, imagesProcessed } =
+            const { type, error, pageIndex, url, imagesProcessed } =
               event.data;
 
             if (error) {
@@ -180,19 +197,15 @@ export async function exportProxyPagesToPdf({
             }
 
             if (type === "result") {
-              if (buffer) {
-                results.push({ pageIndex, buffer });
+              if (url) {
+                pageImageUrls.set(pageIndex, url);
+                await addReadyPagesToPdf();
               } else {
                 console.error(
                   `Failed to get buffer for page ${pageIndex + 1}.`
                 );
               }
-
-              if (results.length === chunkPages.length) {
-                assemblePdf().then(resolve).catch(reject);
-              } else {
-                assignTask(worker);
-              }
+              assignTask();
             }
           };
 
@@ -200,8 +213,18 @@ export async function exportProxyPagesToPdf({
             cleanupAndReject(e);
           };
 
-          assignTask(worker);
+          assignTask();
         }
+
+        const assemblePdf = async (): Promise<Uint8Array> => {
+          await addReadyPagesToPdf();
+          if (nextPageIndexToAdd !== chunkPages.length) {
+            return Promise.reject(new Error(`PDF assembly failed. Expected ${chunkPages.length} pages, but only processed ${nextPageIndexToAdd}.`));
+          }
+
+          workerPool.forEach((w) => w.terminate());
+          return await pdfDoc.save();
+        };
       });
 
       pdfBuffers.push(

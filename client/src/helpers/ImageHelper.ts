@@ -35,31 +35,3 @@ export function pngToNormal(pngUrl: string) {
     return pngUrl;
   }
 }
-
-async function canvasToBlob(
-  canvas: HTMLCanvasElement | OffscreenCanvas,
-  type = "image/png",
-  quality?: number
-): Promise<Blob> {
-  if ("convertToBlob" in canvas) {
-    return (canvas as any).convertToBlob({ type, quality });
-  }
-  return await new Promise<Blob>((resolve, reject) => {
-    (canvas as HTMLCanvasElement).toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("toBlob returned null"))),
-      type,
-      quality
-    );
-  });
-}
-
-async function canvasToObjectUrl(
-  canvas: HTMLCanvasElement | OffscreenCanvas,
-  type = "image/png",
-  quality?: number
-): Promise<string> {
-  const blob = await canvasToBlob(canvas, type, quality);
-  return URL.createObjectURL(blob);
-}
-
-

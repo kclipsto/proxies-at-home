@@ -2,7 +2,6 @@ import { API_BASE } from "@/constants";
 import { imageProcessor } from "../helpers/imageProcessor";
 import { useCardsStore } from "../store";
 import type { CardOption } from "../types/Card";
-import { getLocalBleedImageUrl } from "../helpers/ImageHelper";
 import { useRef, useState } from "react";
 
 export function useImageProcessing({
@@ -32,7 +31,7 @@ export function useImageProcessing({
     const o = originalSelectedImages[card.uuid];
     if (o) return o;
     if (card.imageUrls?.length) {
-      return getLocalBleedImageUrl(card.imageUrls[0]);
+      return card.imageUrls[0];
     }
     return undefined;
   }

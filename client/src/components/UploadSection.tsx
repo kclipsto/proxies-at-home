@@ -5,6 +5,7 @@ import {
   parseDeckToInfos,
   type CardInfo,
 } from "@/helpers/CardInfoHelper";
+import { imageProcessor } from "@/helpers/imageProcessor";
 import {
   getMpcImageUrl,
   inferCardNameFromFilename,
@@ -63,17 +64,21 @@ export function UploadSection() {
     srcBase64: string,
     opts: { hasBakedBleed: boolean }
   ) {
-    // If the image already includes extra border/bleed (MPC Fill), trim first.
-    const trimmed = opts.hasBakedBleed
-      ? await trimBleedEdge(srcBase64)
-      : srcBase64;
-
-    // Then add your consistent bleed
-    const withBleedBase64 = await addBleedEdge(trimmed, bleedEdgeWidth, {
-      unit: "mm",
+    const { processedBlob, error } = await imageProcessor.process({
+      uuid: crypto.randomUUID(),
+      url: srcBase64,
       bleedEdgeWidth,
+      unit: "mm",
+      apiBase: API_BASE,
+      isUserUpload: true,
+      hasBakedBleed: opts.hasBakedBleed,
     });
 
+    if (error) {
+      throw new Error(error);
+    }
+
+    const withBleedBase64 = URL.createObjectURL(processedBlob);
     return { originalBase64: srcBase64, withBleedBase64 };
   }
 
@@ -368,7 +373,7 @@ export function UploadSection() {
         let processedCount = 0;
 
         const errored = new Set<string>();
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((resolve) => {
           const taskQueue = [...imageJobs];
           const maxWorkers = Math.max(
             1,
