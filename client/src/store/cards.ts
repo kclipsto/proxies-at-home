@@ -208,23 +208,31 @@ export const useCardsStore = create<Store>()(
         }),
     }),
     {
-      name: "proxxied:cards:v5",
-      version: 5,
+      name: "proxxied:cards:v6",
+      version: 6,
 
       partialize: (state) => ({
         cards: state.cards,
         cachedImageUrls: state.cachedImageUrls,
         globalLanguage: state.globalLanguage,
+        originalSelectedImages: state.originalSelectedImages,
       }),
 
       storage: createJSONStorage(() => localStorage),
 
       migrate: (persistedState: any, prevVersion) => {
-        if (!persistedState || prevVersion < 5) {
+        if (!persistedState) {
           return {
             cards: [],
             cachedImageUrls: {},
             globalLanguage: "en",
+            originalSelectedImages: {},
+          };
+        }
+        if (prevVersion < 6) {
+          return {
+            ...persistedState,
+            originalSelectedImages: persistedState.originalSelectedImages || {},
           };
         }
         return persistedState;
@@ -237,7 +245,7 @@ export const useCardsStore = create<Store>()(
           const toRemove: string[] = [];
           for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
-            if (k && k.startsWith("proxxied:") && !k.startsWith("proxxied:cards:v5")) {
+            if (k && k.startsWith("proxxied:") && !k.startsWith("proxxied:cards:v6")) {
               toRemove.push(k);
             }
           }

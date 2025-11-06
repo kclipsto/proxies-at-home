@@ -10,7 +10,6 @@ export async function exportProxyPagesToPdf({
   bleedEdgeWidthMm,
   guideColor,
   guideWidthPx,
-  pageOrientation,
   pageSizeUnit,
   pageWidth,
   pageHeight,
@@ -104,7 +103,7 @@ export async function exportProxyPagesToPdf({
               const buffer = await blob.arrayBuffer();
 
               const image = await pdfDoc.embedJpg(buffer);
-              const page = pdfDoc.addPage(pageOrientation === 'portrait' ? [pdfWidth, pdfHeight] : [pdfHeight, pdfWidth]);
+              const page = pdfDoc.addPage([pdfWidth, pdfHeight]);
               page.drawImage(image, {
                 x: 0,
                 y: 0,

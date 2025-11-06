@@ -7,3 +7,24 @@
 button {
   cursor: pointer;
 }
+
+/* Custom Scrollbar Styles */
+/* For Webkit browsers (Chrome, Safari) */
+::-webkit-scrollbar {
+  width: 8px; /* width of the scrollbar */
+}
+
+::-webkit-scrollbar-track {
+  background: #2d3748; /* color of the track (dark gray) */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a5568; /* color of the scroll thumb (lighter dark gray) */
+  border-radius: 10px;
+}
+
+/* For Firefox */
+/* Note: Firefox scrollbar styling is more limited */
+/* You can target the scrollbar-color property */
+/* scrollbar-color: #4a5568 #2d3748; */ /* thumb color track color */
