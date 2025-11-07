@@ -1,2 +1,4 @@
 server/src/cached-images/*
 server/src/uploaded-images/*
+
+node_modules
