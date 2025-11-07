@@ -270,7 +270,7 @@ export function PageView() {
                   }}
                 >
                   {page.map((card, index) => {
-                    const globalIndex = pageIndex * 9 + index;
+                    const globalIndex = pageIndex * pageCapacity + index;
                     const img = selectedImages[card.uuid];
                     const noImages =
                       !img &&

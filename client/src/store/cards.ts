@@ -211,12 +211,25 @@ export const useCardsStore = create<Store>()(
       name: "proxxied:cards:v6",
       version: 6,
 
-      partialize: (state) => ({
-        cards: state.cards,
-        cachedImageUrls: state.cachedImageUrls,
-        globalLanguage: state.globalLanguage,
-        originalSelectedImages: state.originalSelectedImages,
-      }),
+      partialize: (state) => {
+        const persistedState: Partial<Store> = {
+          cards: state.cards,
+          cachedImageUrls: state.cachedImageUrls,
+          globalLanguage: state.globalLanguage,
+        };
+
+        const filteredOriginalSelectedImages: Record<string, string> = {};
+        for (const uuid in state.originalSelectedImages) {
+          const imageUrl = state.originalSelectedImages[uuid];
+          if (imageUrl && !imageUrl.startsWith("data:")) {
+            filteredOriginalSelectedImages[uuid] = imageUrl;
+          }
+        }
+
+        persistedState.originalSelectedImages = filteredOriginalSelectedImages;
+
+        return persistedState;
+      },
 
       storage: createJSONStorage(() => localStorage),
 
