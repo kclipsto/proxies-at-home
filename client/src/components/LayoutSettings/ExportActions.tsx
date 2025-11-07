@@ -58,6 +58,7 @@ export function ExportActions() {
     const effectivePagesPerPdf = Math.max(1, autoPagesPerPdf);
 
     setLoadingTask("Generating PDF");
+    setProgress(0);
 
     let rejectPromise: (reason?: any) => void;
     const cancellationPromise = new Promise<void>((_, reject) => {

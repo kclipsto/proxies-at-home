@@ -42,7 +42,6 @@ export function UploadSection() {
   const cards = useCardsStore((state) => state.cards);
 
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
-  const setProgress = useLoadingStore((state) => state.setProgress);
   const appendCards = useCardsStore((state) => state.appendCards);
   const setCards = useCardsStore((state) => state.setCards);
   const setSelectedImages = useCardsStore((state) => state.setSelectedImages);
@@ -58,7 +57,7 @@ export function UploadSection() {
 
   const globalLanguage = useCardsStore((s) => s.globalLanguage ?? "en");
   const setGlobalLanguage = useCardsStore(
-    (s) => s.setGlobalLanguage ?? (() => { })
+    (s) => s.setGlobalLanguage ?? (() => {})
   );
 
   async function processToWithBleed(
@@ -243,9 +242,8 @@ export function UploadSection() {
   };
 
   const handleSubmit = async () => {
-    setLoadingTask("Fetching cards");
-
     try {
+      setLoadingTask("Fetching cards");
       const infos = parseDeckToInfos(deckText || "");
       if (!infos.length) {
         setLoadingTask(null);
@@ -263,68 +261,32 @@ export function UploadSection() {
         console.warn("[FetchCards] DELETE failed (continuing):", e);
       }
 
-      const response = await fetch(
-        `${API_BASE}/api/cards/images/images-stream`,
+      const response = await axios.post<CardOption[]>(
+        `${API_BASE}/api/cards/images`,
+
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            cardQueries: uniqueInfos,
-            cardNames: uniqueNames,
-            cardArt: "art",
-            language: globalLanguage,
-          }),
+          cardQueries: uniqueInfos,
+
+          cardNames: uniqueNames,
+
+          cardArt: "art",
+
+          language: globalLanguage,
         }
       );
 
-      if (!response.body) {
-        throw new Error("Missing response body from stream");
-      }
+      setLoadingTask(null); // Hide loader immediately after fetch
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      const fetchedCards: CardOption[] = [];
-      const fetchErrors: string[] = [];
+      const fetchedCards = response.data;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        let event = "";
-        let data = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            event = line.substring(7).trim();
-          } else if (line.startsWith("data: ")) {
-            data = line.substring(6);
-          } else if (line === "") {
-            if (event === "progress") {
-              const { progress, total } = JSON.parse(data);
-              const percent =
-                total > 0 ? Math.round((progress / total) * 100) : 0;
-              setProgress(percent);
-            } else if (event === "card") {
-              fetchedCards.push(JSON.parse(data));
-            } else if (event === "card-error") {
-              const { name } = JSON.parse(data);
-              fetchErrors.push(name);
-            } else if (event === "end") {
-              reader.cancel();
-              break;
-            }
-            event = "";
-            data = "";
-          }
-        }
-      }
+      const fetchErrors: string[] = []; // For compatibility with later logic
 
-      if (!fetchedCards.length) {
+      if (!fetchedCards || !fetchedCards.length) {
         if (fetchErrors.length > 0) {
           throw new Error(
-            `Failed to find images for the following cards: ${fetchErrors.join(", ")}`
+            `Failed to find images for the following cards: ${fetchErrors.join(
+              ", "
+            )}`
           );
         }
         throw new Error("No images found for the provided list.");
@@ -333,7 +295,11 @@ export function UploadSection() {
       const optionByKey: Record<string, CardOption> = {};
       for (const opt of fetchedCards) {
         if (!opt?.name) continue;
-        const k = `${opt.name.toLowerCase()}|${opt.set ?? ""}|${opt.number ?? ""}`;
+
+        const k = `${opt.name.toLowerCase()}|${
+          opt.set ?? ""
+        }|${opt.number ?? ""}`;
+
         optionByKey[k] = opt;
         const nameOnlyKey = `${opt.name.toLowerCase()}||`;
         if (!optionByKey[nameOnlyKey]) optionByKey[nameOnlyKey] = opt;
@@ -359,17 +325,18 @@ export function UploadSection() {
       }
       appendOriginalSelectedImages(newOriginals);
 
-      setLoadingTask("Processing Images");
-      setProgress(0);
-
       const workerPool: Worker[] = [];
       try {
         const imageJobs = Object.entries(newOriginals);
         const totalToProcess = imageJobs.length;
-        if (totalToProcess === 0) return;
+
+        if (totalToProcess === 0) {
+          setDeckText("");
+
+          return;
+        }
 
         const processed: Record<string, string> = {};
-        let processedCount = 0;
 
         const errored = new Set<string>();
         await new Promise<void>((resolve) => {
@@ -400,9 +367,6 @@ export function UploadSection() {
                   const objectUrl = URL.createObjectURL(processedBlob);
                   processed[uuid] = objectUrl;
                 }
-
-                processedCount++;
-                setProgress((processedCount / totalToProcess) * 100);
 
                 worker.terminate();
                 activeWorkers--;
@@ -450,10 +414,9 @@ export function UploadSection() {
 
       setDeckText("");
     } catch (err: any) {
+      setLoadingTask(null); // Ensure loader is hidden on error
       console.error("[FetchCards] Error:", err);
       alert(err?.message || "Something went wrong while fetching cards.");
-    } finally {
-      setLoadingTask(null);
     }
   };
 

@@ -34,13 +34,22 @@ export default function LoadingOverlay({ task, progress, onCancel }: LoadingOver
           {task}
         </div>
         <div className="w-full h-4 bg-gray-300 dark:bg-gray-700 rounded overflow-hidden relative">
-          <div
-            className="h-full bg-green-500 transition-all duration-150"
-            style={{ width: `${progress}%` }}
-          />
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-800 dark:text-gray-200 font-bold">
-            {Math.round(progress)}%
-          </div>
+          {progress >= 0 ? (
+            <>
+              <div
+                className="h-full bg-green-500 transition-all duration-150"
+                style={{ width: `${progress}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-800 dark:text-gray-200 font-bold">
+                {Math.round(progress)}%
+              </div>
+            </>
+          ) : (
+            <div
+              className="h-full animate-sheen"
+              style={{ width: "100%" }}
+            />
+          )}
         </div>
         <div className="mt-4 flex items-center justify-between">
           <div className="text-sm text-gray-600 dark:text-gray-400">

@@ -22,7 +22,7 @@ export const useLoadingStore = create<Store>((set) => ({
   progress: 0,
   onCancel: null,
   setLoadingTask: (loadingTask) =>
-    set({ loadingTask, progress: 0, onCancel: null }),
+    set({ loadingTask, progress: -1, onCancel: null }),
   setProgress: (progress) => set({ progress }),
   setOnCancel: (onCancel) => set({ onCancel }),
 }));
