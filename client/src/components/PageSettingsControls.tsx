@@ -1,4 +1,3 @@
-import { useImageProcessing } from "@/hooks/useImageProcessing";
 import { useCardsStore, useSettingsStore } from "@/store";
 import {
   Button,
@@ -9,10 +8,13 @@ import {
   TextInput,
   Tooltip,
 } from "flowbite-react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../db";
 import { HelpCircle, ZoomIn, ZoomOut } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExportActions } from "./LayoutSettings/ExportActions";
 import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
+import { useImageProcessing } from "@/hooks/useImageProcessing";
 
 const INCH_TO_MM = 25.4;
 const CARD_W_IN = 2.5;
@@ -161,23 +163,27 @@ const usePositionInput = (
   };
 };
 
-export function PageSettingsControls() {
-  const cards = useCardsStore((state) => state.cards);
+type PageSettingsControlsProps = {
+  reprocessSelectedImages: ReturnType<
+    typeof useImageProcessing
+  >["reprocessSelectedImages"];
+};
+
+export function PageSettingsControls({
+  reprocessSelectedImages,
+}: PageSettingsControlsProps) {
+  const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []) || [];
 
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
-
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
-
   const guideColor = useSettingsStore((state) => state.guideColor);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const zoom = useSettingsStore((state) => state.zoom);
-
   const pageWidth = useSettingsStore((s) => s.pageWidth);
   const pageHeight = useSettingsStore((s) => s.pageHeight);
   const pageUnit = useSettingsStore((s) => s.pageSizeUnit);
-
   const cardSpacingMm = useSettingsStore((s) => s.cardSpacingMm);
   const cardPositionX = useSettingsStore((s) => s.cardPositionX);
   const cardPositionY = useSettingsStore((s) => s.cardPositionY);
@@ -198,10 +204,37 @@ export function PageSettingsControls() {
   const setCardPositionY = useSettingsStore((s) => s.setCardPositionY);
   const setDpi = useSettingsStore((s) => s.setDpi);
 
-  const { reprocessSelectedImages } = useImageProcessing({
-    unit: "mm",
-    bleedEdgeWidth,
-  });
+  const clearAllCardsAndImages = useCardsStore(
+    (state) => state.clearAllCardsAndImages
+  );
+
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+
+  const handleReset = () => {
+    setShowResetConfirmModal(true);
+  };
+
+  const confirmReset = async () => {
+    setShowResetConfirmModal(false);
+    try {
+      // Clear all data from IndexedDB
+      await clearAllCardsAndImages();
+      resetSettings(); // Reset settings store to defaults
+
+      if ("caches" in window) {
+        const names = await caches.keys();
+        await Promise.all(
+          names
+            .filter((n) => n.startsWith("proxxied-"))
+            .map((n) => caches.delete(n))
+        );
+      }
+    } catch (e) {
+      console.error("Error clearing app data:", e);
+    } finally {
+      window.location.reload();
+    }
+  };
 
   const maxSafeDpiForPage = useMemo(() => {
     const widthIn = pageUnit === "in" ? pageWidth : pageWidth / INCH_TO_MM;
@@ -249,13 +282,16 @@ export function PageSettingsControls() {
     }
   }, [availableDpiOptions, dpi, setDpi]);
 
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
+
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const debouncedReprocess = useCallback(
-    (cards: any[], newBleedWidth: number) => {
+    (newBleedWidth: number) => {
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
       debounceTimeoutRef.current = setTimeout(() => {
-        reprocessSelectedImages(cards, newBleedWidth);
+        reprocessSelectedImages(cardsRef.current, newBleedWidth);
       }, 500);
     },
     [reprocessSelectedImages]
@@ -307,7 +343,7 @@ export function PageSettingsControls() {
 
   const bleedEdgeInput = useNormalizedInput(bleedEdgeWidth, (value) => {
     setBleedEdgeWidth(value);
-    debouncedReprocess(cards, value);
+    debouncedReprocess(value);
   });
 
   const cardSpacingInput = useNormalizedInput(cardSpacingMm, (value) => {
@@ -331,6 +367,7 @@ export function PageSettingsControls() {
           <div>
             <Label>Columns</Label>
             <TextInput
+              key={columns}
               ref={columnsInput.inputRef}
               className="w-full"
               type="number"
@@ -345,6 +382,7 @@ export function PageSettingsControls() {
           <div>
             <Label>Rows</Label>
             <TextInput
+              key={rows}
               ref={rowsInput.inputRef}
               className="w-full"
               type="number"
@@ -361,6 +399,7 @@ export function PageSettingsControls() {
         <div>
           <Label>Bleed Edge (mm)</Label>
           <TextInput
+            key={bleedEdgeWidth}
             ref={bleedEdgeInput.inputRef}
             className="w-full"
             type="number"
@@ -407,6 +446,7 @@ export function PageSettingsControls() {
             </Tooltip>
           </div>
           <TextInput
+            key={cardSpacingMm}
             ref={cardSpacingInput.inputRef}
             className="w-full"
             type="number"
@@ -436,6 +476,7 @@ export function PageSettingsControls() {
                 </Tooltip>
               </div>
               <TextInput
+                key={cardPositionX}
                 ref={cardPositionXInput.inputRef}
                 className="w-full"
                 type="number"
@@ -454,6 +495,7 @@ export function PageSettingsControls() {
                 </Tooltip>
               </div>
               <TextInput
+                key={cardPositionY}
                 ref={cardPositionYInput.inputRef}
                 className="w-full"
                 type="number"
@@ -480,6 +522,7 @@ export function PageSettingsControls() {
         <div>
           <Label>Guides Width (px)</Label>
           <TextInput
+            key={guideWidth}
             ref={guideWidthInput.inputRef}
             className="w-full"
             type="number"
@@ -532,37 +575,40 @@ export function PageSettingsControls() {
       <div className="w-full flex justify-center">
         <span
           className="text-red-600 hover:underline cursor-pointer text-sm font-medium"
-          onClick={async () => {
-            const ok = window.confirm(
-              "This will clear all saved Proxxied data (cards, cached images, settings) and reload the page. Continue?"
-            );
-            if (!ok) return;
-
-            try {
-              const toRemove: string[] = [];
-              for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
-                if (k && k.startsWith("proxxied:")) toRemove.push(k);
-              }
-              toRemove.forEach((k) => localStorage.removeItem(k));
-
-              if ("caches" in window) {
-                const names = await caches.keys();
-                await Promise.all(
-                  names
-                    .filter((n) => n.startsWith("proxxied-"))
-                    .map((n) => caches.delete(n))
-                );
-              }
-            } catch {
-            } finally {
-              window.location.reload();
-            }
-          }}
+          onClick={handleReset}
         >
           Reset App Data
         </span>
       </div>
+
+      {showResetConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+              Confirm Reset App Data
+            </div>
+            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              This will clear all saved Proxxied data (cards, cached images,
+              settings) and reload the page. Continue?
+            </div>
+            <div className="flex justify-center gap-4">
+              <Button
+                color="failure"
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={confirmReset}
+              >
+                Yes, I'm sure
+              </Button>
+              <Button
+                color="gray"
+                onClick={() => setShowResetConfirmModal(false)}
+              >
+                No, cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-auto space-y-3 pt-4">
         <a

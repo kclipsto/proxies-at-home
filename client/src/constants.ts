@@ -1,8 +1,7 @@
-const fromEnv = (import.meta as any)?.env?.VITE_API_BASE as string | undefined;
+const fromEnv = import.meta.env.VITE_API_BASE;
 
 export const API_BASE =
-  (fromEnv && fromEnv.replace(/\/$/, "")) ||
-  (import.meta.env.DEV ? "http://localhost:3001" : "");
+  (fromEnv && fromEnv.replace(/\/$/, "")) || (import.meta.env.DEV ? "" : "");
 
 // Helper to safely prefix with API_BASE (or keep relative)
 export const apiUrl = (path: string) => {

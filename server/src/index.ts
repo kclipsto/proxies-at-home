@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { imageRouter } from "./routes/imageRouter.js";
+import { streamRouter } from "./routes/streamRouter.js";
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use(cors({
 
 app.use(express.json({ limit: "1mb" }));
 app.use("/api/cards/images", imageRouter);
+app.use("/api/stream", streamRouter);
 
 app.get("/api/cards/images/diag", (req, res) => {
   res.json({

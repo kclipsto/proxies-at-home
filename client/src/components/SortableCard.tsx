@@ -15,7 +15,7 @@ type SortableCardProps = {
     visible: boolean;
     x: number;
     y: number;
-    cardIndex: number;
+    cardUuid: string;
   }) => void;
 };
 
@@ -57,6 +57,8 @@ export default function SortableCard({
     >
       <img
         src={imageSrc}
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
         className="cursor-pointer block"
         onContextMenu={(e) => {
           e.preventDefault();
@@ -64,7 +66,7 @@ export default function SortableCard({
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            cardIndex: globalIndex,
+            cardUuid: card.uuid,
           });
         }}
       />
@@ -72,7 +74,7 @@ export default function SortableCard({
       {/* ⠿ Drag Handle */}
       <div
         {...listeners}
-        className="absolute right-[4px] top-1 w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50"
+        className="absolute right-[4px] top-1 w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50 select-none"
         title="Drag"
       >
         ⠿

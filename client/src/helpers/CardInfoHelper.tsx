@@ -4,6 +4,11 @@ export type CardInfo = {
   number?: string;
 };
 
+export type CardInfoWithQuantity = {
+  info: CardInfo;
+  quantity: number;
+};
+
 export function extractCardInfo(input: string): CardInfo {
   let s = input.trim();
 
@@ -32,8 +37,8 @@ export function extractCardInfo(input: string): CardInfo {
   return { name: s, set: setCode, number };
 }
 
-export function parseDeckToInfos(deckText: string): CardInfo[] {
-  const infos: CardInfo[] = [];
+export function parseDeckToInfos(deckText: string): CardInfoWithQuantity[] {
+  const infos: CardInfoWithQuantity[] = [];
   deckText.split(/\r?\n/).forEach((line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -43,9 +48,9 @@ export function parseDeckToInfos(deckText: string): CardInfo[] {
       const count = parseInt(qtyMatch[1], 10);
       const rest = qtyMatch[2];
       const info = extractCardInfo(rest);
-      for (let i = 0; i < count; i++) infos.push(info);
+      infos.push({ info, quantity: count });
     } else {
-      infos.push(extractCardInfo(trimmed));
+      infos.push({ info: extractCardInfo(trimmed), quantity: 1 });
     }
   });
   return infos;

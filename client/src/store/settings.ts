@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { indexedDbStorage } from "./indexedDbStorage";
 
 export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid" | "Legal" | "ArchA" | "ArchB" | "SuperB" | "A2" | "A1";
 export type PageOrientation = "portrait" | "landscape";
@@ -35,6 +36,8 @@ type Store = {
   setCardPositionY: (mm: number) => void;
   dpi: number;
   setDpi: (value: number) => void;
+  globalLanguage: string;
+  setGlobalLanguage: (lang: string) => void;
 };
 
 const defaultPageSettings = {
@@ -54,6 +57,7 @@ const defaultPageSettings = {
   cardPositionY: 0,
   zoom: 1,
   dpi: 900,
+  globalLanguage: "en",
 } as Store;
 
 const layoutPresetsSizes: Record<
@@ -74,7 +78,7 @@ const layoutPresetsSizes: Record<
 
 export const useSettingsStore = create<Store>()(
   persist(
-    (set, _) => ({
+    (set) => ({
       ...defaultPageSettings,
 
       setPageSizePreset: (value) =>
@@ -108,27 +112,54 @@ export const useSettingsStore = create<Store>()(
       setCardPositionX: (mm) => set({ cardPositionX: mm }),
       setCardPositionY: (mm) => set({ cardPositionY: mm }),
       setDpi: (dpi) => set({ dpi }),
+      setGlobalLanguage: (lang) => set({ globalLanguage: lang }),
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {
       name: "proxxied:layout-settings:v1",
+      storage: createJSONStorage(() => indexedDbStorage),
       version: 2,
 
       partialize: (state) => {
-        const { pageOrientation, pageWidth, pageHeight, pageSizeUnit, ...rest } = state;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { pageWidth, pageHeight, pageSizeUnit, ...rest } = state;
         return rest;
       },
 
-      migrate: (persistedState, _version) => {
-        const { pageOrientation, pageWidth, pageHeight, pageSizeUnit, ...rest } =
-          (persistedState as any) ?? {};
-        return rest;
+      migrate: (persistedState: unknown, version) => {
+        if (!persistedState || typeof persistedState !== "object") {
+          return defaultPageSettings;
+        }
+
+        if (version < 2) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { pageWidth, pageHeight, pageSizeUnit, ...rest } =
+            persistedState as Partial<Store>;
+          return rest;
+        }
+
+        return persistedState as Partial<Store>;
       },
 
-      onRehydrateStorage: () => (state, error) => {
-        if (error) return;
-        const preset = state?.pageSizePreset ?? "Letter";
-        state?.setPageSizePreset?.(preset);
+      merge: (persistedState, currentState) => {
+        const merged = { ...currentState, ...(persistedState as Partial<Store>) };
+
+        const preset = merged.pageSizePreset ?? defaultPageSettings.pageSizePreset;
+        const orientation = merged.pageOrientation ?? defaultPageSettings.pageOrientation;
+
+        const {
+          pageWidth: portraitWidth,
+          pageHeight: portraitHeight,
+          pageSizeUnit,
+        } = layoutPresetsSizes[preset];
+
+        const isLandscape = orientation === "landscape";
+
+        merged.pageWidth = isLandscape ? portraitHeight : portraitWidth;
+        merged.pageHeight = isLandscape ? portraitWidth : portraitHeight;
+        merged.pageSizeUnit = pageSizeUnit;
+
+        return merged;
       },
     }
   )

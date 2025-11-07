@@ -1,18 +1,15 @@
 import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
-import { useCardsStore } from "@/store/cards";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import { Button } from "flowbite-react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../../db";
 
 export function ExportActions() {
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const setProgress = useLoadingStore((state) => state.setProgress);
 
-  const cards = useCardsStore((state) => state.cards);
-  const originalSelectedImages = useCardsStore(
-    (state) => state.originalSelectedImages
-  );
-  const selectedImages = useCardsStore((state) => state.selectedImages);
+  const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []) || [];
 
   const pageOrientation = useSettingsStore((state) => state.pageOrientation);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
@@ -49,6 +46,9 @@ export function ExportActions() {
       "@/helpers/ExportProxyPageToPdf"
     );
 
+    const allImages = await db.images.toArray();
+    const imagesById = new Map(allImages.map((img) => [img.id, img]));
+
     const pageWidthPx =
       pageSizeUnit === "in" ? pageWidth * dpi : (pageWidth / 25.4) * dpi;
     const pageHeightPx =
@@ -62,7 +62,7 @@ export function ExportActions() {
     setLoadingTask("Generating PDF");
     setProgress(0);
 
-    let rejectPromise: (reason?: any) => void;
+    let rejectPromise: (reason?: Error) => void;
     const cancellationPromise = new Promise<void>((_, reject) => {
       rejectPromise = reject;
     });
@@ -75,8 +75,7 @@ export function ExportActions() {
     try {
       await exportProxyPagesToPdf({
         cards,
-        originalSelectedImages,
-        cachedImageUrls: selectedImages,
+        imagesById,
         bleedEdge,
         bleedEdgeWidthMm: bleedEdgeWidth,
         guideColor,
@@ -95,8 +94,8 @@ export function ExportActions() {
         pagesPerPdf: effectivePagesPerPdf,
         cancellationPromise,
       });
-    } catch (err: any) {
-      if (err.message !== "Cancelled by user") {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message !== "Cancelled by user") {
         console.error("Export failed:", err);
       }
     } finally {
@@ -104,6 +103,21 @@ export function ExportActions() {
       setOnCancel(null);
     }
   };
+
+  async function handleExportZip() {
+    setLoadingTask("Exporting ZIP");
+    try {
+      const { ExportImagesZip } = await import("@/helpers/ExportImagesZip");
+      const allCards = await db.cards.toArray();
+      const allImages = await db.images.toArray();
+      await ExportImagesZip({
+        cards: allCards,
+        images: allImages,
+      });
+    } finally {
+      setLoadingTask(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -113,15 +127,7 @@ export function ExportActions() {
 
       <Button
         color="indigo"
-        onClick={async () => {
-          const { ExportImagesZip } = await import("@/helpers/ExportImagesZip");
-          ExportImagesZip({
-            cards,
-            originalSelectedImages,
-            fileBaseName: "card_images",
-            // If your zip helper later supports it, you can pass cachedImageUrls here too.
-          });
-        }}
+        onClick={handleExportZip}
         disabled={!cards.length}
       >
         Export Card Images (.zip)

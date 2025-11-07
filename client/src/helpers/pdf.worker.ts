@@ -84,7 +84,9 @@ async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number): Promis
     const w = img.width - trim * 2;
     const h = img.height - trim * 2;
     if (w <= 0 || h <= 0) return img;
-    return createImageBitmap(img, trim, trim, w, h);
+    const newImg = await createImageBitmap(img, trim, trim, w, h);
+    img.close();
+    return newImg;
 }
 
 function blackenAllNearBlackPixels(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, threshold: number, dpi: number) {
@@ -206,6 +208,7 @@ async function buildCardWithBleed(
     bctx.imageSmoothingEnabled = true;
     bctx.imageSmoothingQuality = "high";
     bctx.drawImage(baseImg, -offX, -offY, drawW, drawH);
+    baseImg.close();
 
     const dpiFactor = dpi / 300;
     const cornerSize = Math.round(30 * dpiFactor);
@@ -267,79 +270,17 @@ async function buildCardWithBleed(
     const ctx = out.getContext("2d")!;
     ctx.drawImage(base, bleedPx, bleedPx);
     if (bleedPx > 0) {
-        const mostlyBlack = (() => {
-            const edge = bctx.getImageData(0, 0, 1, contentHeightPx).data;
-            let blackCount = 0;
-            for (let i = 0; i < contentHeightPx; i++) {
-                const idx = i * 4;
-                const [r, g, b] = [edge[idx], edge[idx + 1], edge[idx + 2]];
-                if (r < blackThreshold && g < blackThreshold && b < blackThreshold) blackCount++;
-            }
-            return blackCount / contentHeightPx > 0.7;
-        })();
-        if (mostlyBlack) {
-            const slice = Math.min(8, Math.floor(contentWidthPx / 100));
-            ctx.drawImage(base, 0, 0, slice, contentHeightPx, 0, bleedPx, bleedPx, contentHeightPx);
-            ctx.drawImage(base, contentWidthPx - slice, 0, slice, contentHeightPx, contentWidthPx + bleedPx, bleedPx, bleedPx, contentHeightPx);
-            ctx.drawImage(base, 0, 0, contentWidthPx, slice, bleedPx, 0, contentWidthPx, bleedPx);
-            ctx.drawImage(base, 0, contentHeightPx - slice, contentWidthPx, slice, bleedPx, contentHeightPx + bleedPx, contentWidthPx, bleedPx);
-            ctx.drawImage(base, 0, 0, slice, slice, 0, 0, bleedPx, bleedPx);
-            ctx.drawImage(base, contentWidthPx - slice, 0, slice, slice, contentWidthPx + bleedPx, 0, bleedPx, bleedPx);
-            ctx.drawImage(base, 0, contentHeightPx - slice, slice, slice, 0, contentHeightPx + bleedPx, bleedPx, bleedPx);
-            ctx.drawImage(base, contentWidthPx - slice, contentHeightPx - slice, slice, slice, contentWidthPx + bleedPx, contentHeightPx + bleedPx, bleedPx, bleedPx);
-        } else {
-            ctx.save();
-            ctx.scale(-1, 1);
-            ctx.drawImage(base, 0, 0, bleedPx, contentHeightPx, -bleedPx, bleedPx, bleedPx, contentHeightPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(-1, 1);
-            ctx.drawImage(base, contentWidthPx - bleedPx, 0, bleedPx, contentHeightPx, -(contentWidthPx + 2 * bleedPx), bleedPx, bleedPx, contentHeightPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(1, -1);
-            ctx.drawImage(base, 0, 0, contentWidthPx, bleedPx, bleedPx, -bleedPx, contentWidthPx, bleedPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(1, -1);
-            ctx.drawImage(base, 0, contentHeightPx - bleedPx, contentWidthPx, bleedPx, bleedPx, -(contentHeightPx + 2 * bleedPx), contentWidthPx, bleedPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(base, 0, 0, bleedPx, bleedPx, -bleedPx, -bleedPx, bleedPx, bleedPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(base, contentWidthPx - bleedPx, 0, bleedPx, bleedPx, -(contentWidthPx + 2 * bleedPx), -bleedPx, bleedPx, bleedPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(base, 0, contentHeightPx - bleedPx, bleedPx, bleedPx, -bleedPx, -(contentHeightPx + 2 * bleedPx), bleedPx, bleedPx);
-            ctx.restore();
-            ctx.save();
-            ctx.scale(-1, -1);
-            ctx.drawImage(base, contentWidthPx - bleedPx, contentHeightPx - bleedPx, bleedPx, bleedPx, -(contentWidthPx + 2 * bleedPx), -(contentHeightPx + 2 * bleedPx), bleedPx, bleedPx);
-            ctx.restore();
-        }
+        const slice = Math.min(8, Math.floor(contentWidthPx / 100));
+        ctx.drawImage(base, 0, 0, slice, contentHeightPx, 0, bleedPx, bleedPx, contentHeightPx);
+        ctx.drawImage(base, contentWidthPx - slice, 0, slice, contentHeightPx, contentWidthPx + bleedPx, bleedPx, bleedPx, contentHeightPx);
+        ctx.drawImage(base, 0, 0, contentWidthPx, slice, bleedPx, 0, contentWidthPx, bleedPx);
+        ctx.drawImage(base, 0, contentHeightPx - slice, contentWidthPx, slice, bleedPx, contentHeightPx + bleedPx, contentWidthPx, bleedPx);
+        ctx.drawImage(base, 0, 0, slice, slice, 0, 0, bleedPx, bleedPx);
+        ctx.drawImage(base, contentWidthPx - slice, 0, slice, slice, contentWidthPx + bleedPx, 0, bleedPx, bleedPx);
+        ctx.drawImage(base, 0, contentHeightPx - slice, slice, slice, 0, contentHeightPx + bleedPx, bleedPx, bleedPx);
+        ctx.drawImage(base, contentWidthPx - slice, contentHeightPx - slice, slice, slice, contentWidthPx + bleedPx, contentHeightPx + bleedPx, bleedPx, bleedPx);
     }
     return out;
-}
-
-
-async function runWithConcurrency<T>(jobs: Array<() => Promise<T>>, limit: number) {
-    const results: T[] = [];
-    let next = 0;
-
-    async function worker() {
-      while (next < jobs.length) {
-        const cur = next++;
-        results[cur] = await jobs[cur]();
-      }
-    }
-
-    const workers = Array.from({ length: Math.max(1, limit) }, worker);
-    await Promise.all(workers);
-    return results;
 }
 
 self.onmessage = async (event: MessageEvent) => {
@@ -348,7 +289,7 @@ self.onmessage = async (event: MessageEvent) => {
         const {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthPx, DPI,
-            originalSelectedImages, API_BASE
+            imagesById, API_BASE
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -372,22 +313,32 @@ self.onmessage = async (event: MessageEvent) => {
         ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
         let imagesProcessed = 0;
-        const cardBuildJobs = pageCards.map((card: any, idx: number) => {
-            return async () => {
-                const col = idx % columns;
-                const row = Math.floor(idx / columns);
-                const x = startX + col * (cardWidthPx + spacingPx);
-                const y = startY + row * (cardHeightPx + spacingPx);
-        
-                let finalCardCanvas: OffscreenCanvas;
-                
-                let src = originalSelectedImages[card.uuid] || card.imageUrls?.[0] || "";
+        const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthPx, 96, DPI);
+
+        for (const [idx, card] of pageCards.entries()) {
+            const col = idx % columns;
+            const row = Math.floor(idx / columns);
+            const x = startX + col * (cardWidthPx + spacingPx);
+            const y = startY + row * (cardHeightPx + spacingPx);
+    
+            let finalCardCanvas: OffscreenCanvas | ImageBitmap;
+            const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
+
+            const isCacheValid = 
+                imageInfo?.exportBlob &&
+                imageInfo?.exportDpi === DPI &&
+                imageInfo?.exportBleedWidth === bleedEdgeWidthMm;
+
+            if (isCacheValid) {
+                finalCardCanvas = await createImageBitmap(imageInfo.exportBlob!);
+            } else {
+                let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
         
                 if (!src) {
                     const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
                     const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
-                    finalCardCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
-                    const cardCtx = finalCardCanvas.getContext('2d')!;
+                    const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
+                    const cardCtx = placeholderCanvas.getContext('2d')!;
                     cardCtx.fillStyle = 'white';
                     cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
                     cardCtx.strokeStyle = 'red';
@@ -397,6 +348,7 @@ self.onmessage = async (event: MessageEvent) => {
                     cardCtx.font = '30px sans-serif';
                     cardCtx.textAlign = 'center';
                     cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
+                    finalCardCanvas = placeholderCanvas;
                 } else {
                     if (!card.isUserUpload) {
                         src = getLocalBleedImageUrl(src, API_BASE);
@@ -405,23 +357,22 @@ self.onmessage = async (event: MessageEvent) => {
                         isUserUpload: !!card.isUserUpload,
                         hasBakedBleed: !!card.hasBakedBleed,
                     });
+                    if (src.startsWith("blob:")) URL.revokeObjectURL(src);
                 }
-        
-                imagesProcessed++;
-                self.postMessage({ type: 'progress', pageIndex, imagesProcessed });
-                return { cardCanvas: finalCardCanvas, x, y };
-            };
-        });
+            }
+    
+            ctx.drawImage(finalCardCanvas, x, y, cardWidthPx, cardHeightPx);
+            if (finalCardCanvas instanceof ImageBitmap) {
+                finalCardCanvas.close();
+            }
 
-        const builtCards: { cardCanvas: OffscreenCanvas, x: number, y: number }[] = await runWithConcurrency(cardBuildJobs, 1);
-
-        const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthPx, 96, DPI);
-        builtCards.forEach(({ cardCanvas, x, y }) => {
-            ctx.drawImage(cardCanvas, x, y, cardWidthPx, cardHeightPx);
             if (bleedEdge) {
                 drawCornerGuides(ctx, x, y, contentWidthInPx, contentHeightInPx, bleedPx, guideColor, scaledGuideWidth, DPI);
             }
-        });
+
+            imagesProcessed++;
+            self.postMessage({ type: 'progress', pageIndex, imagesProcessed });
+        }
 
         if (bleedEdge) {
             drawEdgeStubs(ctx, pageWidthPx, pageHeightPx, startX, startY, columns, rows, contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx, bleedPx, scaledGuideWidth, spacingPx);
@@ -435,9 +386,13 @@ self.onmessage = async (event: MessageEvent) => {
             self.postMessage({ error: 'Failed to create blob' });
         }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error in PDF worker process:", error);
-        self.postMessage({ error: error.message, stack: error.stack, pageIndex: event.data.pageIndex });
+        if (error instanceof Error) {
+            self.postMessage({ error: error.message, stack: error.stack, pageIndex: event.data.pageIndex });
+        } else {
+            self.postMessage({ error: "An unknown error occurred in the PDF worker.", pageIndex: event.data.pageIndex });
+        }
     }
 };
 

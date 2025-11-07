@@ -97,6 +97,76 @@ async function fetchPngsByQuery(query) {
   return pngs;
 }
 
+async function fetchCardsByQuery(query) {
+  const encodedUrl = `${SCRYFALL_API}?q=${encodeURIComponent(query)}`;
+  const cards = [];
+  let next = encodedUrl;
+
+  try {
+    while (next) {
+      const resp = await AX.get(next);
+      const { data, has_more, next_page } = resp.data;
+      if (data) {
+        cards.push(...data);
+      }
+      next = has_more ? next_page : null;
+    }
+  } catch (err) {
+    console.warn("[Scryfall] Query failed:", query, err?.message);
+  }
+
+  return cards;
+}
+
+/**
+ * Given a CardInfo, find the best matching card data from Scryfall.
+ * Returns a single Scryfall card object or null.
+ */
+async function getCardDataForCardInfo(
+  cardInfo,
+  language = "en",
+  fallbackToEnglish = true
+) {
+  const { name, set, number } = cardInfo || {};
+  const lang = (language || "en").toLowerCase();
+
+  // Strategy 1: Exact printing (set, number, name, lang)
+  if (set && number) {
+    const q = `set:${set} number:${escapeColon(
+      number
+    )} name:"${name}" include:extras lang:${lang}`;
+    let cards = await fetchCardsByQuery(q);
+    if (!cards.length && fallbackToEnglish && lang !== "en") {
+      const qEn = `set:${set} number:${escapeColon(
+        number
+      )} name:"${name}" include:extras lang:en`;
+      cards = await fetchCardsByQuery(qEn);
+    }
+    if (cards.length) return cards[0];
+  }
+
+  // Strategy 2: Set + name
+  if (set) {
+    const q = `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`;
+    let cards = await fetchCardsByQuery(q);
+    if (!cards.length && fallbackToEnglish && lang !== "en") {
+      const qEn = `set:${set} name:"${name}" include:extras unique:prints lang:en`;
+      cards = await fetchCardsByQuery(qEn);
+    }
+    if (cards.length) return cards[0];
+  }
+
+  // Strategy 3: Name-only exact match
+  const q = `!"${name}" include:extras unique:prints lang:${lang}`;
+  let cards = await fetchCardsByQuery(q);
+  if (!cards.length && fallbackToEnglish && lang !== "en") {
+    const qEn = `!"${name}" include:extras unique:prints lang:en`;
+    cards = await fetchCardsByQuery(qEn);
+  }
+  return cards[0] || null;
+}
+
+module.exports.getCardDataForCardInfo = getCardDataForCardInfo;
 module.exports.getImagesForCardInfo = getImagesForCardInfo;
 module.exports.getScryfallPngImagesForCard = async (cardName, unique = "art", language = "en", fallbackToEnglish = true) => {
   // name-only helper with language support

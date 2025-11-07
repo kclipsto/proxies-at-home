@@ -12,7 +12,7 @@ type Store = {
   index: number | null;
   openModal: (data: ArtworkModalData) => void;
   closeModal: () => void;
-  updateCard: (updatedCard: Partial<CardOption>) => void;
+  updateCard: (updatedCard: CardOption) => void;
 };
 
 export const useArtworkModalStore = create<Store>((set) => ({
@@ -21,10 +21,9 @@ export const useArtworkModalStore = create<Store>((set) => ({
   index: null,
   openModal: (data) => set({ open: true, card: data.card, index: data.index }),
   closeModal: () => set({ open: false, card: null, index: null }),
-  updateCard: (updatedCard) =>
+  updateCard: (updatedCard: CardOption) =>
     set((state) => {
       if (!state.card) return state;
-
-      return { ...state, card: { ...state.card, ...updatedCard } };
+      return { card: updatedCard };
     }),
 }));

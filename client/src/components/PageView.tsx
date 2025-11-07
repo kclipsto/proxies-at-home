@@ -10,28 +10,31 @@ import {
   rectSortingStrategy,
   SortableContext,
 } from "@dnd-kit/sortable";
+import { useLiveQuery } from "dexie-react-hooks";
 import { Button, Label } from "flowbite-react";
 import { Copy, Trash } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import fullLogo from "../assets/fullLogo.png";
 import CardCellLazy from "../components/CardCellLazy";
 import EdgeCutLines from "../components/FullPageGuides";
 import SortableCard from "../components/SortableCard";
+import { db } from "../db"; // Import the Dexie database instance
+import { deleteCard, duplicateCard } from "../helpers/dbUtils";
 import { getBleedInPixels } from "../helpers/ImageHelper";
 import { useImageProcessing } from "../hooks/useImageProcessing";
-import {
-  useArtworkModalStore,
-  useCardsStore,
-  useSettingsStore,
-} from "../store";
-import type { CardOption } from "../types/Card";
+import { useArtworkModalStore, useSettingsStore } from "../store";
 import { ArtworkModal } from "./ArtworkModal";
 
 const unit = "mm";
 const baseCardWidthMm = 63;
 const baseCardHeightMm = 88;
 
-export function PageView() {
+type PageViewProps = {
+  loadingMap: ReturnType<typeof useImageProcessing>["loadingMap"];
+  ensureProcessed: ReturnType<typeof useImageProcessing>["ensureProcessed"];
+};
+
+export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
   const pageWidth = useSettingsStore((state) => state.pageWidth);
   const pageHeight = useSettingsStore((state) => state.pageHeight);
@@ -41,32 +44,32 @@ export function PageView() {
   const zoom = useSettingsStore((state) => state.zoom);
 
   const pageRef = useRef<HTMLDivElement>(null);
-  const cards = useCardsStore((state) => state.cards);
-  const selectedImages = useCardsStore((state) => state.selectedImages);
-  const originalSelectedImages = useCardsStore(
-    (state) => state.originalSelectedImages
-  );
-  const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
-  const setCards = useCardsStore((state) => state.setCards);
-  const setSelectedImages = useCardsStore((state) => state.setSelectedImages);
-  const setOriginalSelectedImages = useCardsStore(
-    (state) => state.setOriginalSelectedImages
-  );
-  const appendSelectedImages = useCardsStore(
-    (state) => state.appendSelectedImages
-  );
-  const appendOriginalSelectedImages = useCardsStore(
-    (state) => state.appendOriginalSelectedImages
-  );
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []);
+  const images = useLiveQuery(() => db.images.toArray(), []);
+
+  const processedImageUrls: Record<string, string> = useMemo(() => {
+    const urls: Record<string, string> = {};
+    if (!images) return urls;
+
+    images.forEach((img) => {
+      if (img.displayBlob && img.displayBlob.size > 0) {
+        urls[img.id] = URL.createObjectURL(img.displayBlob);
+      }
+    });
+    return urls;
+  }, [images]);
+
+  const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
   const bleedPixels = getBleedInPixels(bleedEdgeWidth, unit);
   const guideOffset = `${(bleedPixels * (25.4 / 300)).toFixed(3)}mm`;
   const totalCardWidth = baseCardWidthMm + bleedEdgeWidth * 2;
   const totalCardHeight = baseCardHeightMm + bleedEdgeWidth * 2;
   const pageCapacity = columns * rows;
-  // --- near your other settings selectors ---
-  const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm); // NEW
+  const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
 
   const gridWidthMm =
     totalCardWidth * columns + Math.max(0, columns - 1) * cardSpacingMm;
@@ -77,8 +80,17 @@ export function PageView() {
     visible: false,
     x: 0,
     y: 0,
-    cardIndex: null as number | null,
+    cardUuid: null as string | null,
   });
+
+  const rebalanceOrders = useCallback(async () => {
+    const sortedCards = await db.cards.orderBy("order").toArray();
+    const rebalancedCards = sortedCards.map((card, index) => ({
+      ...card,
+      order: index + 1,
+    }));
+    await db.cards.bulkPut(rebalancedCards);
+  }, []);
 
   useEffect(() => {
     const handler = () =>
@@ -86,60 +98,6 @@ export function PageView() {
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
   }, []);
-
-  function duplicateCard(index: number) {
-    const cardToCopy = cards[index];
-    const newCard = { ...cardToCopy, uuid: crypto.randomUUID() };
-
-    const newCards = [...cards];
-    newCards.splice(index + 1, 0, newCard);
-    setCards(newCards);
-
-    const original = originalSelectedImages[cardToCopy.uuid];
-    const processed = selectedImages[cardToCopy.uuid];
-
-    appendOriginalSelectedImages({
-      [newCard.uuid]: original,
-    });
-
-    appendSelectedImages({
-      [newCard.uuid]: processed,
-    });
-  }
-
-  function deleteCard(index: number) {
-    const cardToRemove = cards[index];
-    const cardUuid = cardToRemove.uuid;
-
-    const newCards = cards.filter((_, i) => i !== index);
-
-    const { [cardUuid]: _, ...newSelectedImages } = selectedImages;
-    const { [cardUuid]: __, ...newOriginalSelectedImages } =
-      originalSelectedImages;
-
-    setCards(newCards);
-    setSelectedImages(newSelectedImages);
-    setOriginalSelectedImages(newOriginalSelectedImages);
-  }
-
-  const reorderImageMap = (
-    cards: CardOption[],
-    oldIndex: number,
-    newIndex: number,
-    map: Record<string, string>
-  ) => {
-    const uuids = cards.map((c) => c.uuid);
-    const reorderedUuids = arrayMove(uuids, oldIndex, newIndex);
-
-    const newMap: Record<string, string> = {};
-    reorderedUuids.forEach((uuid) => {
-      if (map[uuid]) {
-        newMap[uuid] = map[uuid];
-      }
-    });
-
-    return newMap;
-  };
 
   function chunkCards<T>(cards: T[], size: number): T[][] {
     const chunks: T[][] = [];
@@ -149,14 +107,15 @@ export function PageView() {
     return chunks;
   }
 
-  const { loadingMap, ensureProcessed } = useImageProcessing({
-    unit, // "mm" | "in"
-    bleedEdgeWidth, // number
-  });
+  useEffect(() => {
+    return () => {
+      Object.values(processedImageUrls).forEach(URL.revokeObjectURL);
+    };
+  }, [processedImageUrls]);
 
   return (
     <div className="w-1/2 flex-1 overflow-y-auto bg-gray-200 h-full p-6 flex justify-center dark:bg-gray-800 ">
-      {cards.length === 0 ? (
+      {(!cards || cards.length === 0) ? (
         <div className="flex flex-col items-center">
           <div className="flex flex-row items-center">
             <Label className="text-7xl justify-center font-bold whitespace-nowrap">
@@ -172,10 +131,10 @@ export function PageView() {
             Enter a decklist to the left or Upload Files to get started
           </Label>
         </div>
-      ) : null}
+      ) : (
 
       <div ref={pageRef} className="flex flex-col gap-[1rem]">
-        {contextMenu.visible && contextMenu.cardIndex !== null && (
+        {contextMenu.visible && contextMenu.cardUuid && (
           <div
             className="absolute bg-white border rounded-xl border-gray-300 shadow-md z-50 text-sm flex flex-col gap-1"
             style={{
@@ -189,8 +148,8 @@ export function PageView() {
           >
             <Button
               size="xs"
-              onClick={() => {
-                duplicateCard(contextMenu.cardIndex!);
+              onClick={async () => {
+                await duplicateCard(contextMenu.cardUuid!);
                 setContextMenu({ ...contextMenu, visible: false });
               }}
             >
@@ -200,8 +159,8 @@ export function PageView() {
             <Button
               size="xs"
               color="red"
-              onClick={() => {
-                deleteCard(contextMenu.cardIndex!);
+              onClick={async () => {
+                await deleteCard(contextMenu.cardUuid!);
                 setContextMenu({ ...contextMenu, visible: false });
               }}
             >
@@ -211,30 +170,39 @@ export function PageView() {
           </div>
         )}
 
-        <DndContext
-          sensors={useSensors(useSensor(PointerSensor))}
-          collisionDetection={closestCenter}
-          onDragEnd={({ active, over }) => {
-            if (over && active.id !== over.id) {
-              const oldIndex = cards.findIndex((c) => c.uuid === active.id);
-              const newIndex = cards.findIndex((c) => c.uuid === over.id);
-              if (oldIndex === -1 || newIndex === -1) return;
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}          onDragEnd={async ({ active, over }) => {
+            if (!cards || !over || active.id === over.id) return;
 
-              const updatedCards = arrayMove(cards, oldIndex, newIndex);
-              setCards(updatedCards);
+            const oldIndex = cards.findIndex((c) => c.uuid === active.id);
+            const newIndex = cards.findIndex((c) => c.uuid === over.id);
+            if (oldIndex === -1 || newIndex === -1) return;
 
-              setSelectedImages(
-                reorderImageMap(cards, oldIndex, newIndex, selectedImages)
-              );
-              setOriginalSelectedImages(
-                reorderImageMap(
-                  cards,
-                  oldIndex,
-                  newIndex,
-                  originalSelectedImages
-                )
-              );
+            const reorderedCards = arrayMove(cards, oldIndex, newIndex);
+
+            const prevCard = reorderedCards[newIndex - 1];
+            const nextCard = reorderedCards[newIndex + 1];
+
+            let newOrder: number;
+
+            if (!prevCard) {
+              newOrder = (nextCard?.order || 0) - 1;
+            } else if (!nextCard) {
+              newOrder = prevCard.order + 1;
+            } else {
+              newOrder = (prevCard.order + nextCard.order) / 2.0;
             }
+
+            if (newOrder === prevCard?.order || newOrder === nextCard?.order) {
+              console.warn(
+                "Floating point precision limit reached. Triggering order re-balance."
+              );
+              await rebalanceOrders();
+              return;
+            }
+
+            await db.cards.update(active.id as string, { order: newOrder });
           }}
         >
           <SortableContext
@@ -271,13 +239,9 @@ export function PageView() {
                 >
                   {page.map((card, index) => {
                     const globalIndex = pageIndex * pageCapacity + index;
-                    const img = selectedImages[card.uuid];
-                    const noImages =
-                      !img &&
-                      !originalSelectedImages[card.uuid] &&
-                      !(card.imageUrls && card.imageUrls.length);
 
-                    if (noImages) {
+                    // If the card has no imageId, it's permanently not found.
+                    if (!card.imageId) {
                       return (
                         <div
                           key={globalIndex}
@@ -287,7 +251,7 @@ export function PageView() {
                               visible: true,
                               x: e.clientX,
                               y: e.clientY,
-                              cardIndex: globalIndex,
+                              cardUuid: card.uuid,
                             });
                           }}
                           onClick={() => {
@@ -307,18 +271,21 @@ export function PageView() {
                               "{card.name}"
                             </div>
                             <div className="text-xs text-gray-600">
-                              not found
+                              Image not available
                             </div>
                           </div>
                         </div>
                       );
                     }
+
+                    const processedBlobUrl = processedImageUrls[card.imageId];
+
                     return (
                       <CardCellLazy
                         key={globalIndex}
                         card={card}
                         state={loadingMap[card.uuid] ?? "idle"}
-                        hasImage={!!selectedImages[card.uuid]}
+                        hasImage={!!processedBlobUrl}
                         ensureProcessed={ensureProcessed}
                       >
                         <SortableCard
@@ -326,7 +293,7 @@ export function PageView() {
                           card={card}
                           index={index}
                           globalIndex={globalIndex}
-                          imageSrc={img}
+                          imageSrc={processedBlobUrl!}
                           totalCardWidth={totalCardWidth}
                           totalCardHeight={totalCardHeight}
                           guideOffset={guideOffset}
@@ -349,6 +316,7 @@ export function PageView() {
           </SortableContext>
         </DndContext>
       </div>
+      )}
 
       <ArtworkModal />
     </div>
