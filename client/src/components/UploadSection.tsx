@@ -632,7 +632,7 @@ export function UploadSection() {
             <div className="flex justify-center gap-4">
               <Button
                 color="failure"
-                className="dark:bg-red-600 dark:hover:bg-red-700 text-white"
+                className="bg-red-600 hover:bg-red-700 text-white"
                 onClick={confirmClear}
               >
                 Yes, I'm sure
