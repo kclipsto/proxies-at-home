@@ -14,7 +14,7 @@ export function ExportActions() {
   const originalSelectedImages = useCardsStore(
     (state) => state.originalSelectedImages
   );
-  const cachedImageUrls = useCardsStore((state) => state.cachedImageUrls); // <-- NEW
+  const selectedImages = useCardsStore((state) => state.selectedImages);
 
   const pageOrientation = useSettingsStore((state) => state.pageOrientation);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
@@ -74,7 +74,7 @@ export function ExportActions() {
       await exportProxyPagesToPdf({
         cards,
         originalSelectedImages,
-        cachedImageUrls,
+        cachedImageUrls: selectedImages,
         bleedEdge,
         bleedEdgeWidthMm: bleedEdgeWidth,
         guideColor,
