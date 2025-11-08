@@ -297,7 +297,7 @@ self.onmessage = async (e: MessageEvent) => {
     const proxiedUrl = url.startsWith("http") ? toProxied(url) : url;
     
     let imageBitmap: ImageBitmap;
-    if (isUserUpload && hasBakedBleed && !url.startsWith("data:")) {
+    if (isUserUpload && hasBakedBleed) {
         imageBitmap = await trimExistingBleedIfAny(proxiedUrl);
     } else {
         imageBitmap = await loadImage(proxiedUrl);
