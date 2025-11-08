@@ -28,3 +28,22 @@ button {
 /* Note: Firefox scrollbar styling is more limited */
 /* You can target the scrollbar-color property */
 /* scrollbar-color: #4a5568 #2d3748; */ /* thumb color track color */
+
+@keyframes sheen-flow {
+  100% {
+    background-position: 100% 0;
+  }
+}
+
+.animate-sheen {
+  background-color: rgb(14, 159, 110); /* bg-green-500 */
+  background-image: linear-gradient(
+    to right,
+    transparent 10%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 90%
+  );
+  /* background-repeat: no-repeat; */
+  background-size: 50% 100%;
+  animation: sheen-flow 1.5s linear infinite;
+}
