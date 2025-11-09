@@ -1,6 +1,4 @@
 import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
-import { ExportImagesZip } from "@/helpers/ExportImagesZip";
-import { exportProxyPagesToPdf } from "@/helpers/ExportProxyPageToPdf";
 import { useCardsStore } from "@/store/cards";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
@@ -46,6 +44,10 @@ export function ExportActions() {
 
   const handleExport = async () => {
     if (!cards.length) return;
+
+    const { exportProxyPagesToPdf } = await import(
+      "@/helpers/ExportProxyPageToPdf"
+    );
 
     const pageWidthPx =
       pageSizeUnit === "in" ? pageWidth * dpi : (pageWidth / 25.4) * dpi;
@@ -111,14 +113,15 @@ export function ExportActions() {
 
       <Button
         color="indigo"
-        onClick={() =>
+        onClick={async () => {
+          const { ExportImagesZip } = await import("@/helpers/ExportImagesZip");
           ExportImagesZip({
             cards,
             originalSelectedImages,
             fileBaseName: "card_images",
             // If your zip helper later supports it, you can pass cachedImageUrls here too.
-          })
-        }
+          });
+        }}
         disabled={!cards.length}
       >
         Export Card Images (.zip)
@@ -128,7 +131,11 @@ export function ExportActions() {
         Copy Decklist
       </Button>
 
-      <Button color="blue" onClick={handleDownloadDecklist} disabled={!cards.length}>
+      <Button
+        color="blue"
+        onClick={handleDownloadDecklist}
+        disabled={!cards.length}
+      >
         Download Decklist (.txt)
       </Button>
 
