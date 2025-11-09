@@ -348,7 +348,7 @@ self.onmessage = async (event: MessageEvent) => {
         const {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthPx, DPI,
-            originalSelectedImages, cachedImageUrls, API_BASE
+            originalSelectedImages, API_BASE
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -379,45 +379,32 @@ self.onmessage = async (event: MessageEvent) => {
                 const x = startX + col * (cardWidthPx + spacingPx);
                 const y = startY + row * (cardHeightPx + spacingPx);
         
-                const processedSrc = cachedImageUrls && cachedImageUrls[card.uuid];
                 let finalCardCanvas: OffscreenCanvas;
+                
+                let src = originalSelectedImages[card.uuid] || card.imageUrls?.[0] || "";
         
-                if (processedSrc) {
-                    // This image is already processed and includes bleed.
-                    // We just need to load it. It should be the correct final dimensions.
-                    finalCardCanvas = await loadImage(processedSrc).then(img => {
-                        const canvas = new OffscreenCanvas(img.width, img.height);
-                        canvas.getContext('2d')!.drawImage(img, 0, 0);
-                        return canvas;
-                    });
+                if (!src) {
+                    const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
+                    const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
+                    finalCardCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
+                    const cardCtx = finalCardCanvas.getContext('2d')!;
+                    cardCtx.fillStyle = 'white';
+                    cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
+                    cardCtx.strokeStyle = 'red';
+                    cardCtx.lineWidth = 5;
+                    cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
+                    cardCtx.fillStyle = 'red';
+                    cardCtx.font = '30px sans-serif';
+                    cardCtx.textAlign = 'center';
+                    cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
                 } else {
-                    // This image has not been processed yet (e.g., it wasn't visible on screen).
-                    // We need to process it now using the original logic.
-                    let src = originalSelectedImages[card.uuid] || card.imageUrls?.[0] || "";
-        
-                    if (!src) {
-                        const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
-                        const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
-                        finalCardCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
-                        const cardCtx = finalCardCanvas.getContext('2d')!;
-                        cardCtx.fillStyle = 'white';
-                        cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
-                        cardCtx.strokeStyle = 'red';
-                        cardCtx.lineWidth = 5;
-                        cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
-                        cardCtx.fillStyle = 'red';
-                        cardCtx.font = '30px sans-serif';
-                        cardCtx.textAlign = 'center';
-                        cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
-                    } else {
-                        if (!card.isUserUpload) {
-                            src = getLocalBleedImageUrl(src, API_BASE);
-                        }
-                        finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, DPI, {
-                            isUserUpload: !!card.isUserUpload,
-                            hasBakedBleed: !!card.hasBakedBleed,
-                        });
+                    if (!card.isUserUpload) {
+                        src = getLocalBleedImageUrl(src, API_BASE);
                     }
+                    finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, DPI, {
+                        isUserUpload: !!card.isUserUpload,
+                        hasBakedBleed: !!card.hasBakedBleed,
+                    });
                 }
         
                 imagesProcessed++;
