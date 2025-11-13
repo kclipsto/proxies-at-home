@@ -30,6 +30,7 @@ export async function exportProxyPagesToPdf({
   onProgress,
   pagesPerPdf,
   cancellationPromise,
+  darkenNearBlack,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
@@ -50,6 +51,7 @@ export async function exportProxyPagesToPdf({
   onProgress?: (progress: number) => void;
   pagesPerPdf: number;
   cancellationPromise: Promise<void>;
+  darkenNearBlack: boolean;
 }): Promise<void> {
   if (!cards || !cards.length) {
     return;
@@ -147,6 +149,7 @@ export async function exportProxyPagesToPdf({
             reject(error);
           };
 
+
           for (let i = 0; i < maxWorkers; i++) {
             const worker = new Worker(
               new URL("./pdf.worker.ts", import.meta.url),
@@ -175,6 +178,7 @@ export async function exportProxyPagesToPdf({
                   DPI: dpi,
                   imagesById,
                   API_BASE,
+                  darkenNearBlack,
                 };
                 worker.postMessage({
                   pageCards: task.pageCards,

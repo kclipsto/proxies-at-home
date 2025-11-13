@@ -92,26 +92,14 @@ export function blackenAllNearBlackPixels(
     ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     width: number,
     height: number,
-    threshold: number,
-    dpi: number
+    threshold: number
 ) {
-    const borderThickness = { top: 48, bottom: 48, left: 48, right: 48 };
-    const scale = dpi / 300;
-    const bt = {
-        top: Math.round(borderThickness.top * scale),
-        bottom: Math.round(borderThickness.bottom * scale),
-        left: Math.round(borderThickness.left * scale),
-        right: Math.round(borderThickness.right * scale),
-    };
 
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
     for (let y = 0; y < height; y++) {
-        const inY = y < bt.top || y >= height - bt.bottom;
         for (let x = 0; x < width; x++) {
-            const inX = x < bt.left || x >= width - bt.right;
-            if (!(inY || inX)) continue;
 
             const i = (y * width + x) * 4;
             const [r, g, b] = [data[i], data[i + 1], data[i + 2]];

@@ -9,10 +9,12 @@ export function useImageProcessing({
   unit,
   bleedEdgeWidth,
   imageProcessor,
+  darkenNearBlack,
 }: {
   unit: "mm" | "in";
   bleedEdgeWidth: number;
   imageProcessor: ImageProcessor;
+  darkenNearBlack: boolean;
 }) {
   const dpi = useSettingsStore((state) => state.dpi);
 
@@ -58,6 +60,7 @@ export function useImageProcessing({
           isUserUpload: card.isUserUpload,
           hasBakedBleed: card.hasBakedBleed,
           dpi,
+          darkenNearBlack,
         });
 
         if ("displayBlob" in result) {
@@ -95,10 +98,11 @@ export function useImageProcessing({
 
     inFlight.current[imageId] = p;
     return p;
-  }, [bleedEdgeWidth, unit, dpi, imageProcessor]);
+  }, [bleedEdgeWidth, unit, dpi, imageProcessor, darkenNearBlack]);
 
   const reprocessSelectedImages = useCallback(
-    async (cards: CardOption[], newBleedWidth: number) => {
+    async (cards: CardOption[], newBleedWidth: number, darkenNearBlack: boolean = false
+    ) => {
       const promises = cards.map(async (card) => {
         if (!card.imageId) return;
 
@@ -121,6 +125,7 @@ export function useImageProcessing({
             isUserUpload: card.isUserUpload,
             hasBakedBleed: card.hasBakedBleed,
             dpi,
+            darkenNearBlack,
           });
 
           if (src.startsWith("blob:")) URL.revokeObjectURL(src);

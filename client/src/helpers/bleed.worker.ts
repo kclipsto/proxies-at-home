@@ -12,14 +12,10 @@ import {
 
 let API_BASE = "";
 
-// Removed local definitions of:
-// fetchWithRetry, IN, toProxied, getBleedInPixels, calibratedBleedTrimPxForHeight,
-// trimExistingBleedIfAny, loadImage, blackenAllNearBlackPixels, getPatchNearCorner
-
 async function addBleedEdge(
   img: ImageBitmap,
   bleedOverride?: number,
-  opts?: { unit?: "mm" | "in"; bleedEdgeWidth?: number; dpi?: number }
+  opts?: { unit?: "mm" | "in"; bleedEdgeWidth?: number; dpi?: number; darkenNearBlack?: boolean }
 ): Promise<{
   exportBlob: Blob;
   exportDpi: number;
@@ -60,7 +56,7 @@ async function addBleedEdge(
 async function generateBleedCanvas(
   img: ImageBitmap,
   bleedWidth: number,
-  opts: { unit?: "mm" | "in"; dpi?: number }
+  opts: { unit?: "mm" | "in"; dpi?: number; darkenNearBlack?: boolean }
 ): Promise<OffscreenCanvas> {
   const dpi = opts?.dpi ?? 300;
   const targetCardWidth = IN(2.48, dpi);
@@ -103,6 +99,10 @@ async function generateBleedCanvas(
   ctx2d.drawImage(img, -offsetX, -offsetY, drawWidth, drawHeight);
 
   if (bleed === 0) {
+    if (opts?.darkenNearBlack) {
+      const blackThreshold = 30;
+      blackenAllNearBlackPixels(ctx2d, targetCardWidth, targetCardHeight, blackThreshold);
+    }
     return temp;
   }
 
@@ -180,7 +180,9 @@ async function generateBleedCanvas(
     ctx2d.restore();
   }
 
-  blackenAllNearBlackPixels(ctx2d, targetCardWidth, targetCardHeight, blackThreshold, dpi);
+  if (opts?.darkenNearBlack) {
+    blackenAllNearBlackPixels(ctx2d, targetCardWidth, targetCardHeight, blackThreshold);
+  }
 
   ctx.drawImage(temp, bleed, bleed);
 
@@ -209,6 +211,7 @@ self.onmessage = async (e: MessageEvent) => {
     isUserUpload,
     hasBakedBleed,
     dpi,
+    darkenNearBlack,
   } = e.data;
   API_BASE = apiBase; // Set the API_BASE for the worker
 
@@ -231,6 +234,7 @@ self.onmessage = async (e: MessageEvent) => {
       unit,
       bleedEdgeWidth,
       dpi,
+      darkenNearBlack,
     });
     imageBitmap.close(); // Release memory
 

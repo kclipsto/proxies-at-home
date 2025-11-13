@@ -16,7 +16,7 @@ test.describe('ZIP Export Custom', () => {
         await expect(page.getByText('Upload Other Images')).toBeVisible();
 
         // Upload a custom image
-        const fileInput = page.locator('input#upload-mpc');
+        const fileInput = page.locator('input#upload-standard');
         await fileInput.setInputFiles(path.join(__dirname, '../fixtures/irenicus.png'));
 
         // Wait for card to appear

@@ -50,6 +50,7 @@ export function UploadSection() {
     (s) => s.setGlobalLanguage ?? (() => { })
   );
 
+
   async function addUploadedFiles(
     files: FileList,
     opts: { hasBakedBleed: boolean }

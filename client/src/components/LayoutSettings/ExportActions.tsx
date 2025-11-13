@@ -19,6 +19,7 @@ export function ExportActions() {
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
   const guideColor = useSettingsStore((state) => state.guideColor);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
@@ -93,6 +94,7 @@ export function ExportActions() {
         onProgress: setProgress,
         pagesPerPdf: effectivePagesPerPdf,
         cancellationPromise,
+        darkenNearBlack,
       });
     } catch (err: unknown) {
       if (err instanceof Error && err.message !== "Cancelled by user") {

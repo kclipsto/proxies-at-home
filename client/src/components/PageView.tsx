@@ -41,6 +41,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+
   const zoom = useSettingsStore((state) => state.zoom);
 
   const pageRef = useRef<HTMLDivElement>(null);
@@ -173,189 +174,189 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
         </div>
       ) : (
 
-      <div ref={pageRef} className="flex flex-col gap-[1rem]">
-        {contextMenu.visible && contextMenu.cardUuid && (
-          <div
-            className="absolute bg-white border rounded-xl border-gray-300 shadow-md z-50 text-sm flex flex-col gap-1"
-            style={{
-              top: contextMenu.y,
-              left: contextMenu.x,
-              padding: "0.25rem",
-            }}
-            onMouseLeave={() =>
-              setContextMenu({ ...contextMenu, visible: false })
-            }
-          >
-            <Button
-              size="xs"
-              onClick={async () => {
-                await duplicateCard(contextMenu.cardUuid!);
-                setContextMenu({ ...contextMenu, visible: false });
+        <div ref={pageRef} className="flex flex-col gap-[1rem]">
+          {contextMenu.visible && contextMenu.cardUuid && (
+            <div
+              className="absolute bg-white border rounded-xl border-gray-300 shadow-md z-50 text-sm flex flex-col gap-1"
+              style={{
+                top: contextMenu.y,
+                left: contextMenu.x,
+                padding: "0.25rem",
               }}
+              onMouseLeave={() =>
+                setContextMenu({ ...contextMenu, visible: false })
+              }
             >
-              <Copy className="size-3 mr-1" />
-              Duplicate
-            </Button>
-            <Button
-              size="xs"
-              color="red"
-              onClick={async () => {
-                await deleteCard(contextMenu.cardUuid!);
-                setContextMenu({ ...contextMenu, visible: false });
-              }}
-            >
-              <Trash className="size-3 mr-1" />
-              Delete
-            </Button>
-          </div>
-        )}
-
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}          onDragEnd={async ({ active, over }) => {
-            if (!cards || !over || active.id === over.id) return;
-
-            const oldIndex = cards.findIndex((c) => c.uuid === active.id);
-            const newIndex = cards.findIndex((c) => c.uuid === over.id);
-            if (oldIndex === -1 || newIndex === -1) return;
-
-            const reorderedCards = arrayMove(cards, oldIndex, newIndex);
-
-            const prevCard = reorderedCards[newIndex - 1];
-            const nextCard = reorderedCards[newIndex + 1];
-
-            let newOrder: number;
-
-            if (!prevCard) {
-              newOrder = (nextCard?.order || 0) - 1;
-            } else if (!nextCard) {
-              newOrder = prevCard.order + 1;
-            } else {
-              newOrder = (prevCard.order + nextCard.order) / 2.0;
-            }
-
-            if (newOrder === prevCard?.order || newOrder === nextCard?.order) {
-              console.warn(
-                "Floating point precision limit reached. Triggering order re-balance."
-              );
-              await rebalanceOrders();
-              return;
-            }
-
-            await db.cards.update(active.id as string, { order: newOrder });
-          }}
-        >
-          <SortableContext
-            items={cards.map((card) => card.uuid)}
-            strategy={rectSortingStrategy}
-          >
-            {chunkCards(cards, pageCapacity).map((page, pageIndex) => (
-              <div
-                key={pageIndex}
-                className="proxy-page relative bg-white dark:bg-gray-700"
-                style={{
-                  zoom: zoom,
-                  width: `${pageWidth}${pageSizeUnit}`,
-                  height: `${pageHeight}${pageSizeUnit}`,
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  breakAfter: "page",
-                  flexShrink: 0,
-                  padding: 0,
-                  margin: 0,
+              <Button
+                size="xs"
+                onClick={async () => {
+                  await duplicateCard(contextMenu.cardUuid!);
+                  setContextMenu({ ...contextMenu, visible: false });
                 }}
               >
+                <Copy className="size-3 mr-1" />
+                Duplicate
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                onClick={async () => {
+                  await deleteCard(contextMenu.cardUuid!);
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Trash className="size-3 mr-1" />
+                Delete
+              </Button>
+            </div>
+          )}
+
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter} onDragEnd={async ({ active, over }) => {
+              if (!cards || !over || active.id === over.id) return;
+
+              const oldIndex = cards.findIndex((c) => c.uuid === active.id);
+              const newIndex = cards.findIndex((c) => c.uuid === over.id);
+              if (oldIndex === -1 || newIndex === -1) return;
+
+              const reorderedCards = arrayMove(cards, oldIndex, newIndex);
+
+              const prevCard = reorderedCards[newIndex - 1];
+              const nextCard = reorderedCards[newIndex + 1];
+
+              let newOrder: number;
+
+              if (!prevCard) {
+                newOrder = (nextCard?.order || 0) - 1;
+              } else if (!nextCard) {
+                newOrder = prevCard.order + 1;
+              } else {
+                newOrder = (prevCard.order + nextCard.order) / 2.0;
+              }
+
+              if (newOrder === prevCard?.order || newOrder === nextCard?.order) {
+                console.warn(
+                  "Floating point precision limit reached. Triggering order re-balance."
+                );
+                await rebalanceOrders();
+                return;
+              }
+
+              await db.cards.update(active.id as string, { order: newOrder });
+            }}
+          >
+            <SortableContext
+              items={cards.map((card) => card.uuid)}
+              strategy={rectSortingStrategy}
+            >
+              {chunkCards(cards, pageCapacity).map((page, pageIndex) => (
                 <div
+                  key={pageIndex}
+                  className="proxy-page relative bg-white dark:bg-gray-700"
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${columns}, ${totalCardWidth}mm)`,
-                    gridTemplateRows: `repeat(${rows}, ${totalCardHeight}mm)`,
-                    width: `${gridWidthMm}mm`,
-                    height: `${gridHeightMm}mm`,
-                    gap: `${cardSpacingMm}mm`,
+                    zoom: zoom,
+                    width: `${pageWidth}${pageSizeUnit}`,
+                    height: `${pageHeight}${pageSizeUnit}`,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    breakAfter: "page",
+                    flexShrink: 0,
+                    padding: 0,
+                    margin: 0,
                   }}
                 >
-                  {page.map((card, index) => {
-                    const globalIndex = pageIndex * pageCapacity + index;
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${columns}, ${totalCardWidth}mm)`,
+                      gridTemplateRows: `repeat(${rows}, ${totalCardHeight}mm)`,
+                      width: `${gridWidthMm}mm`,
+                      height: `${gridHeightMm}mm`,
+                      gap: `${cardSpacingMm}mm`,
+                    }}
+                  >
+                    {page.map((card, index) => {
+                      const globalIndex = pageIndex * pageCapacity + index;
 
-                    // If the card has no imageId, it's permanently not found.
-                    if (!card.imageId) {
-                      return (
-                        <div
-                          key={globalIndex}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setContextMenu({
-                              visible: true,
-                              x: e.clientX,
-                              y: e.clientY,
-                              cardUuid: card.uuid,
-                            });
-                          }}
-                          onClick={() => {
-                            openArtworkModal({
-                              card,
-                              index: globalIndex,
-                            });
-                          }}
-                          className="flex items-center justify-center border-2 border-dashed border-red-500 bg-gray-50 text-center p-2 select-none"
-                          style={{
-                            boxSizing: "border-box",
-                          }}
-                          title={`"${card.name}" not found`}
-                        >
-                          <div>
-                            <div className="font-semibold text-red-700">
-                              "{card.name}"
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              Image not available
+                      // If the card has no imageId, it's permanently not found.
+                      if (!card.imageId) {
+                        return (
+                          <div
+                            key={globalIndex}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setContextMenu({
+                                visible: true,
+                                x: e.clientX,
+                                y: e.clientY,
+                                cardUuid: card.uuid,
+                              });
+                            }}
+                            onClick={() => {
+                              openArtworkModal({
+                                card,
+                                index: globalIndex,
+                              });
+                            }}
+                            className="flex items-center justify-center border-2 border-dashed border-red-500 bg-gray-50 text-center p-2 select-none"
+                            style={{
+                              boxSizing: "border-box",
+                            }}
+                            title={`"${card.name}" not found`}
+                          >
+                            <div>
+                              <div className="font-semibold text-red-700">
+                                "{card.name}"
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Image not available
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    }
+                        );
+                      }
 
-                    const processedBlobUrl = processedImageUrls[card.imageId];
+                      const processedBlobUrl = processedImageUrls[card.imageId];
 
-                    return (
-                      <CardCellLazy
-                        key={globalIndex}
-                        card={card}
-                        state={loadingMap[card.uuid] ?? "idle"}
-                        hasImage={!!processedBlobUrl}
-                        ensureProcessed={ensureProcessed}
-                      >
-                        <SortableCard
+                      return (
+                        <CardCellLazy
                           key={globalIndex}
                           card={card}
-                          index={index}
-                          globalIndex={globalIndex}
-                          imageSrc={processedBlobUrl!}
-                          totalCardWidth={totalCardWidth}
-                          totalCardHeight={totalCardHeight}
-                          guideOffset={guideOffset}
-                          setContextMenu={setContextMenu}
-                        />
-                      </CardCellLazy>
-                    );
-                  })}
-                </div>
+                          state={loadingMap[card.uuid] ?? "idle"}
+                          hasImage={!!processedBlobUrl}
+                          ensureProcessed={ensureProcessed}
+                        >
+                          <SortableCard
+                            key={globalIndex}
+                            card={card}
+                            index={index}
+                            globalIndex={globalIndex}
+                            imageSrc={processedBlobUrl!}
+                            totalCardWidth={totalCardWidth}
+                            totalCardHeight={totalCardHeight}
+                            guideOffset={guideOffset}
+                            setContextMenu={setContextMenu}
+                          />
+                        </CardCellLazy>
+                      );
+                    })}
+                  </div>
 
-                <EdgeCutLines
-                  totalCardWidthMm={totalCardWidth}
-                  totalCardHeightMm={totalCardHeight}
-                  baseCardWidthMm={baseCardWidthMm}
-                  baseCardHeightMm={baseCardHeightMm}
-                  bleedEdgeWidthMm={bleedEdgeWidth}
-                />
-              </div>
-            ))}
-          </SortableContext>
-        </DndContext>
-      </div>
+                  <EdgeCutLines
+                    totalCardWidthMm={totalCardWidth}
+                    totalCardHeightMm={totalCardHeight}
+                    baseCardWidthMm={baseCardWidthMm}
+                    baseCardHeightMm={baseCardHeightMm}
+                    bleedEdgeWidthMm={bleedEdgeWidth}
+                  />
+                </div>
+              ))}
+            </SortableContext>
+          </DndContext>
+        </div>
       )}
 
       <ArtworkModal />

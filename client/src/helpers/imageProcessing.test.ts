@@ -261,7 +261,7 @@ describe('imageProcessing', () => {
             imgData.data.set([5, 5, 5, 255, 50, 50, 50, 255]);
             ctx.putImageData(imgData, 0, 0);
 
-            blackenAllNearBlackPixels(ctx, 2, 1, 30, 300);
+            blackenAllNearBlackPixels(ctx, 2, 1, 30);
 
             const data = ctx.getImageData(0, 0, 2, 1).data;
             // Pixel 0 should be 0,0,0,255
@@ -269,7 +269,7 @@ describe('imageProcessing', () => {
             expect(data[4]).toBe(50); // Unchanged
         });
 
-        it('should not blacken pixels outside the border region', () => {
+        it('should blacken pixels in the center region as well', () => {
             // 300 DPI -> border is 48px
             // Canvas 100x100. Center (50, 50) is outside border (48 from left/right/top/bottom).
             const canvas = new OffscreenCanvas(100, 100);
@@ -285,7 +285,7 @@ describe('imageProcessing', () => {
             }
             ctx.putImageData(imgData, 0, 0);
 
-            blackenAllNearBlackPixels(ctx, 100, 100, 30, 300);
+            blackenAllNearBlackPixels(ctx, 100, 100, 30);
 
             const data = ctx.getImageData(0, 0, 100, 100).data;
 
@@ -294,11 +294,11 @@ describe('imageProcessing', () => {
             expect(data[1]).toBe(0);
             expect(data[2]).toBe(0);
 
-            // Pixel at (50,50) is center -> should be unchanged (5, 5, 5)
+            // Pixel at (50,50) is center -> should ALSO be blackened now
             const centerIdx = (50 * 100 + 50) * 4;
-            expect(data[centerIdx]).toBe(5);
-            expect(data[centerIdx + 1]).toBe(5);
-            expect(data[centerIdx + 2]).toBe(5);
+            expect(data[centerIdx]).toBe(0);
+            expect(data[centerIdx + 1]).toBe(0);
+            expect(data[centerIdx + 2]).toBe(0);
         });
     });
 

@@ -12,6 +12,7 @@ interface WorkerMessage {
   isUserUpload: boolean;
   hasBakedBleed?: boolean;
   dpi: number;
+  darkenNearBlack?: boolean;
 }
 
 interface WorkerSuccessResponse {

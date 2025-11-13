@@ -61,9 +61,7 @@ function detectFlatBorderColor(ctx: OffscreenCanvasRenderingContext2D, contentW:
     return null;
 }
 
-// Removed local definitions of:
-// IN, MM_TO_IN, MM_TO_PX, loadImage, bucketDpiFromHeight, calibratedBleedTrimPxForHeight,
-// trimExistingBleedIfAny, blackenAllNearBlackPixels
+
 
 function drawEdgeStubs(ctx: OffscreenCanvasRenderingContext2D, pageW: number, pageH: number, startX: number, startY: number, columns: number, rows: number, contentW: number, contentH: number, cardW: number, cardH: number, bleedPx: number, guideWidthPx: number, spacingPx = 0) {
     const xCuts: number[] = [];
@@ -127,7 +125,8 @@ async function buildCardWithBleed(
     contentWidthPx: number,
     contentHeightPx: number,
     dpi: number,
-    opts: { isUserUpload: boolean; hasBakedBleed?: boolean }
+    opts: { isUserUpload: boolean; hasBakedBleed?: boolean },
+    darkenNearBlack?: boolean
 ): Promise<OffscreenCanvas> {
     const finalW = contentWidthPx + bleedPx * 2;
     const finalH = contentHeightPx + bleedPx * 2;
@@ -211,7 +210,9 @@ async function buildCardWithBleed(
         }
         bctx.restore();
     }
-    blackenAllNearBlackPixels(bctx, contentWidthPx, contentHeightPx, blackThreshold, dpi);
+    if (darkenNearBlack) {
+        blackenAllNearBlackPixels(bctx, contentWidthPx, contentHeightPx, blackThreshold);
+    }
     const out = new OffscreenCanvas(finalW, finalH);
     const ctx = out.getContext("2d")!;
     ctx.drawImage(base, bleedPx, bleedPx);
@@ -235,7 +236,7 @@ self.onmessage = async (event: MessageEvent) => {
         const {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthPx, DPI,
-            imagesById, API_BASE
+            imagesById, API_BASE, darkenNearBlack
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -302,7 +303,7 @@ self.onmessage = async (event: MessageEvent) => {
                     finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, DPI, {
                         isUserUpload: !!card.isUserUpload,
                         hasBakedBleed: !!card.hasBakedBleed,
-                    });
+                    }, darkenNearBlack);
                     if (src.startsWith("blob:")) URL.revokeObjectURL(src);
                 }
             }

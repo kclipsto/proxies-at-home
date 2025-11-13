@@ -178,6 +178,7 @@ export function PageSettingsControls({
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
   const guideColor = useSettingsStore((state) => state.guideColor);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const zoom = useSettingsStore((state) => state.zoom);
@@ -195,6 +196,9 @@ export function PageSettingsControls({
     (state) => state.setBleedEdgeWidth
   );
   const setBleedEdge = useSettingsStore((state) => state.setBleedEdge);
+  const setDarkenNearBlack = useSettingsStore(
+    (state) => state.setDarkenNearBlack
+  );
   const setGuideColor = useSettingsStore((state) => state.setGuideColor);
   const setGuideWidth = useSettingsStore((state) => state.setGuideWidth);
   const setZoom = useSettingsStore((state) => state.setZoom);
@@ -288,10 +292,10 @@ export function PageSettingsControls({
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const debouncedReprocess = useCallback(
-    (newBleedWidth: number) => {
+    (newBleedWidth: number, darkenNearBlack: boolean) => {
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
       debounceTimeoutRef.current = setTimeout(() => {
-        reprocessSelectedImages(cardsRef.current, newBleedWidth);
+        reprocessSelectedImages(cardsRef.current, newBleedWidth, darkenNearBlack);
       }, 500);
     },
     [reprocessSelectedImages]
@@ -343,7 +347,7 @@ export function PageSettingsControls({
 
   const bleedEdgeInput = useNormalizedInput(bleedEdgeWidth, (value) => {
     setBleedEdgeWidth(value);
-    debouncedReprocess(value);
+    debouncedReprocess(value, darkenNearBlack);
   });
 
   const cardSpacingInput = useNormalizedInput(cardSpacingMm, (value) => {
@@ -418,9 +422,27 @@ export function PageSettingsControls({
           <Checkbox
             id="bleed-edge"
             checked={bleedEdge}
-            onChange={(e) => setBleedEdge(e.target.checked)}
+            onChange={(e) => {
+              setBleedEdge(e.target.checked);
+              reprocessSelectedImages(
+                cards,
+                e.target.checked ? bleedEdgeWidth : 0,
+                darkenNearBlack
+              );
+            }}
           />
           <Label htmlFor="bleed-edge">Enable Bleed Edge</Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="darken-near-black"
+            checked={darkenNearBlack}
+            onChange={(e) => {
+              setDarkenNearBlack(e.target.checked);
+              reprocessSelectedImages(cards, bleedEdge ? bleedEdgeWidth : 0, e.target.checked);
+            }}
+          />
+          <Label htmlFor="darken-near-black">Darken Near-Black Pixels</Label>
         </div>
 
         <div>
@@ -443,7 +465,9 @@ export function PageSettingsControls({
         <div>
           <div className="flex items-center justify-between">
             <Label>Distance between cards (mm)</Label>
-            <Tooltip content={`Max that fits with current layout: ${maxSpacingMm} mm`}>
+            <Tooltip
+              content={`Max that fits with current layout: ${maxSpacingMm} mm`}
+            >
               <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
             </Tooltip>
           </div>

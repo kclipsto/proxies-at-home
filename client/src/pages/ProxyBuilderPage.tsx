@@ -23,6 +23,7 @@ function PageViewLoader() {
 
 export default function ProxyBuilderPage() {
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
   const imageProcessor = useMemo(() => ImageProcessor.getInstance(), []);
 
   const { loadingMap, ensureProcessed, reprocessSelectedImages } =
@@ -30,6 +31,7 @@ export default function ProxyBuilderPage() {
       unit: "mm",
       bleedEdgeWidth,
       imageProcessor,
+      darkenNearBlack,
     });
 
   // On startup, rebalance card orders to prevent floating point issues.
