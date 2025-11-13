@@ -1,56 +1,138 @@
-const maxWorkers = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
-const workers = Array.from({ length: maxWorkers }, () => new Worker(new URL('./bleed.worker.ts', import.meta.url), { type: 'module' }));
-const taskQueue: any[] = [];
-let idleWorkers = [...workers];
+type IdleWorker = {
+  worker: Worker;
+  timeoutId: ReturnType<typeof setTimeout> | null;
+};
 
-function returnWorkerToPool(worker: Worker) {
-  idleWorkers.push(worker);
-  processNextTask();
+interface WorkerMessage {
+  uuid: string;
+  url: string;
+  bleedEdgeWidth: number;
+  unit: "mm" | "in";
+  apiBase: string;
+  isUserUpload: boolean;
+  hasBakedBleed?: boolean;
+  dpi: number;
 }
 
-async function runTask(task: any) {
-  if (idleWorkers.length === 0) return; // Should not happen due to processNextTask check, but as a safeguard
-  
-  const worker = idleWorkers.pop()!;
-
-  worker.onmessage = (e: MessageEvent) => {
-    worker.onmessage = null;
-    worker.onerror = null;
-    returnWorkerToPool(worker);
-    task.resolve(e.data);
-  };
-  worker.onerror = (e: ErrorEvent) => {
-    worker.onmessage = null;
-    worker.onerror = null;
-    returnWorkerToPool(worker);
-    task.reject(e);
-  };
-  worker.postMessage(task.message);
+interface WorkerSuccessResponse {
+  uuid: string;
+  exportBlob: Blob;
+  exportDpi: number;
+  exportBleedWidth: number;
+  displayBlob: Blob;
+  displayDpi: number;
+  displayBleedWidth: number;
+  error?: undefined;
 }
 
-function processNextTask() {
-  if (taskQueue.length > 0 && idleWorkers.length > 0) {
-    const task = taskQueue.shift();
-    if (task) {
-      runTask(task);
+interface WorkerErrorResponse {
+  uuid: string;
+  error: string;
+}
+
+type WorkerResponse = WorkerSuccessResponse | WorkerErrorResponse;
+
+export class ImageProcessor {
+  private allWorkers: Set<Worker> = new Set();
+  private idleWorkers: IdleWorker[] = [];
+  private taskQueue: {
+    message: WorkerMessage;
+    resolve: (value: WorkerResponse) => void;
+    reject: (reason?: ErrorEvent) => void;
+  }[] = [];
+  private maxWorkers: number;
+
+  constructor() {
+    this.maxWorkers = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
+  }
+
+  private createWorker(): Worker {
+    const worker = new Worker(new URL("./bleed.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    this.allWorkers.add(worker);
+    return worker;
+  }
+
+  private terminateWorker(worker: Worker) {
+    const idleWorkerIndex = this.idleWorkers.findIndex(
+      (iw) => iw.worker === worker
+    );
+    if (idleWorkerIndex > -1) {
+      const idleWorker = this.idleWorkers[idleWorkerIndex];
+      if (idleWorker.timeoutId) {
+        clearTimeout(idleWorker.timeoutId);
+      }
+      this.idleWorkers.splice(idleWorkerIndex, 1);
+    }
+
+    if (this.allWorkers.has(worker)) {
+      worker.terminate();
+      this.allWorkers.delete(worker);
     }
   }
-}
 
-export const imageProcessor = {
-  process: (message: any): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      const task = {
-        message,
-        resolve,
-        reject,
-      };
-      taskQueue.push(task);
-      processNextTask();
-    });
-  },
-  destroy: () => {
-    workers.forEach(w => w.terminate());
-    idleWorkers = [];
+  private returnWorkerToPool(worker: Worker) {
+    const timeoutId = setTimeout(() => {
+      this.terminateWorker(worker);
+    }, 20000); // Terminate after 20 seconds of inactivity
+
+    this.idleWorkers.push({ worker, timeoutId });
+    this.processNextTask();
   }
-};
+
+  private processNextTask() {
+    if (this.taskQueue.length === 0) {
+      return;
+    }
+
+    let worker: Worker | null = null;
+
+    if (this.idleWorkers.length > 0) {
+      const idleWorker = this.idleWorkers.pop()!;
+      if (idleWorker.timeoutId) {
+        clearTimeout(idleWorker.timeoutId);
+      }
+      worker = idleWorker.worker;
+    } else if (this.allWorkers.size < this.maxWorkers) {
+      worker = this.createWorker();
+    }
+
+    if (worker) {
+      const task = this.taskQueue.shift()!;
+
+      worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+        this.returnWorkerToPool(worker);
+        task.resolve(e.data);
+      };
+
+      worker.onerror = (e: ErrorEvent) => {
+        this.terminateWorker(worker);
+        task.reject(e);
+        this.processNextTask(); // Try to process another task with a new worker if available
+      };
+
+      worker.postMessage(task.message);
+    }
+  }
+
+  process(message: WorkerMessage): Promise<WorkerResponse> {
+    return new Promise((resolve, reject) => {
+      this.taskQueue.push({ message, resolve, reject });
+      this.processNextTask();
+    });
+  }
+
+  destroy() {
+    this.taskQueue = [];
+    this.idleWorkers.forEach(({ worker, timeoutId }) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      worker.terminate();
+    });
+    this.idleWorkers = [];
+    this.allWorkers.forEach((worker) => {
+      worker.terminate();
+    });
+    this.allWorkers.clear();
+  }
+}

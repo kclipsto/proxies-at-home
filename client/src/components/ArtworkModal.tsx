@@ -1,3 +1,5 @@
+import { changeCardArtwork } from "@/helpers/dbUtils";
+import { useLiveQuery } from "dexie-react-hooks";
 import axios from "axios";
 import {
   Button,
@@ -8,124 +10,133 @@ import {
   ModalHeader,
   TextInput,
 } from "flowbite-react";
-import { useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import { API_BASE } from "../constants";
+import { db } from "../db";
 import { useArtworkModalStore } from "../store";
-import { useCardsStore } from "../store/cards";
-import type { CardOption } from "../types/Card";
-import { getLocalBleedImageUrl } from "../helpers/ImageHelper";
+import type { ScryfallCard } from "../types/Card";
+import { ArrowLeft } from "lucide-react";
 
 export function ArtworkModal() {
   const [isGettingMore, setIsGettingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [applyToAll, setApplyToAll] = useState(false);
+  const [previewCardData, setPreviewCardData] = useState<ScryfallCard | null>(
+    null
+  );
 
   const isModalOpen = useArtworkModalStore((state) => state.open);
   const modalCard = useArtworkModalStore((state) => state.card);
-  const modalIndex = useArtworkModalStore((state) => state.index);
-  const closeArtworkModal = useArtworkModalStore((state) => state.closeModal);
-  const updateArtworkCard = useArtworkModalStore((state) => state.updateCard);
+  const closeModal = useArtworkModalStore((state) => state.closeModal);
 
-  const cards = useCardsStore((state) => state.cards);
-  const updateCard = useCardsStore((state) => state.updateCard);
+  // Reset local state when the modal is closed or the underlying card changes
+  useEffect(() => {
+    if (!isModalOpen) {
+      setPreviewCardData(null);
+      setSearchQuery("");
+      setApplyToAll(false);
+    }
+  }, [isModalOpen]);
 
-  const originalSelectedImages = useCardsStore(
-    (state) => state.originalSelectedImages
-  );
-  const appendOriginalSelectedImages = useCardsStore(
-    (state) => state.appendOriginalSelectedImages
-  );
+  const imageObject =
+    useLiveQuery(
+      () => (modalCard?.imageId ? db.images.get(modalCard.imageId) : undefined),
+      [modalCard?.imageId]
+    ) || null;
 
-  const clearSelectedImage = useCardsStore((state) => state.clearSelectedImage);
-  const clearManySelectedImages = useCardsStore(
-    (state) => state.clearManySelectedImages
-  );
+  const displayData = {
+    name: previewCardData?.name || modalCard?.name,
+    imageUrls: previewCardData?.imageUrls || imageObject?.imageUrls,
+    id: previewCardData?.imageUrls?.[0] || imageObject?.id,
+  };
 
-  const cardNamesToUuids = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    cards.forEach(card => {
-      if (!map[card.name]) {
-        map[card.name] = [];
-      }
-      map[card.name].push(card.uuid);
-    });
-    return map;
-  }, [cards]);
-
-  async function getMoreCards() {
-    if (!modalCard) return;
+  async function getMorePrints() {
+    if (!displayData.name || !displayData.id) return;
     setIsGettingMore(true);
     try {
-      const res = await axios.post<CardOption[]>(
+      const res = await axios.post<ScryfallCard[]>(
         `${API_BASE}/api/cards/images`,
-        { cardNames: [modalCard.name], cardArt: "prints" }
+        { cardNames: [displayData.name], cardArt: "prints" }
       );
 
       const urls = res.data?.[0]?.imageUrls ?? [];
-      updateArtworkCard({ imageUrls: urls });
+      if (previewCardData) {
+        setPreviewCardData({ ...previewCardData, imageUrls: urls });
+      } else {
+        await db.images.update(displayData.id, { imageUrls: urls });
+      }
     } finally {
       setIsGettingMore(false);
     }
   }
 
+  async function handleSelectArtwork(newImageUrl: string) {
+    if (!modalCard?.imageId) return;
+
+    const isReplacing = !!previewCardData;
+    const newImageId = newImageUrl.includes("scryfall") ? newImageUrl.split("?")[0] : newImageUrl.split("id=")[1];
+
+    await changeCardArtwork(
+      modalCard.imageId,
+      newImageId,
+      modalCard,
+      applyToAll,
+      isReplacing ? previewCardData.name : undefined
+    );
+
+    closeModal();
+  }
+
+  async function handleSearch() {
+    const name = searchQuery.trim();
+    if (!name) return;
+
+    const res = await axios.post<ScryfallCard[]>(
+      `${API_BASE}/api/cards/images`,
+      { cardNames: [name] }
+    );
+
+    const newCardData = res.data?.[0];
+    if (newCardData) {
+      setPreviewCardData(newCardData);
+    }
+  }
+
   return (
-    <Modal show={isModalOpen} onClose={() => closeArtworkModal()} size="4xl">
-      <ModalHeader>Select Artwork</ModalHeader>
+    <Modal show={isModalOpen} onClose={closeModal} size="4xl">
+      <ModalHeader>
+        {previewCardData && (
+          <Button
+            size="xs"
+            className="mr-2"
+            onClick={() => setPreviewCardData(null)}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+        )}
+        Select Artwork for {displayData.name}
+      </ModalHeader>
       <ModalBody>
-        <div className="mb-4">
-          <TextInput
-            type="text"
-            placeholder="Replace with a different card..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={async (e) => {
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              e.stopPropagation();
-
-              const name = searchQuery.trim();
-              if (!name || modalIndex === null) return;
-
-              const res = await axios.post<CardOption[]>(
-                `${API_BASE}/api/cards/images`,
-                { cardNames: [name] } // unique:art default happens server-side
-              );
-
-              if (!res.data.length) return;
-
-              const newCard = res.data[0]; // { name, imageUrls }
-              if (!newCard.imageUrls?.length) return;
-
-              const newUuid = crypto.randomUUID();
-
-              updateCard(modalIndex, {
-                uuid: newUuid,
-                name: newCard.name,
-                imageUrls: newCard.imageUrls,
-                isUserUpload: false,
-              });
-
-              updateArtworkCard({
-                uuid: newUuid,
-                name: newCard.name,
-                imageUrls: newCard.imageUrls,
-                isUserUpload: false,
-              });
-
-              appendOriginalSelectedImages({
-                [newUuid]: newCard.imageUrls[0],
-              });
-
-              clearSelectedImage(newUuid);
-
-              setSearchQuery("");
-            }}
-          />
-        </div>
-
-        {modalCard && (
-          <>
-            <div className="flex items-center gap-2 mb-4">
+        <div className="sticky top-0 z-10 bg-white dark:bg-gray-700 py-4">
+          <div className="flex gap-2 mb-4">
+            <TextInput
+              className="flex-grow"
+              type="text"
+              placeholder="Replace with a different card..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSearch();
+                }
+              }}
+            />
+            <Button onClick={handleSearch}>Search</Button>
+          </div>
+          {modalCard && (
+            <div className="flex items-center gap-2">
               <Checkbox
                 id="apply-to-all"
                 checked={applyToAll}
@@ -135,63 +146,31 @@ export function ArtworkModal() {
                 Apply to all cards named "{modalCard?.name}"
               </Label>
             </div>
+          )}
+        </div>
 
-            <div className="grid grid-cols-3 md:grid-cols-3 gap-4">
-              {modalCard.imageUrls.map((pngUrl, i) => {
-                const thumbUrl = pngUrl;
-                return (
-                  <img
-                    key={i}
-                    src={thumbUrl}
-                    loading="lazy"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = pngUrl;
-                    }} // fallback
-                    className={`w-full cursor-pointer border-4 ${originalSelectedImages[modalCard.uuid] === pngUrl
-                        ? "border-green-500"
-                        : "border-transparent"
-                      }`}
-                    onClick={async () => {
-                      if (applyToAll) {
-                        const newOriginalSelectedImages: Record<
-                          string,
-                          string
-                        > = {};
-                        const uuidsToClear: string[] = [];
-                        const cachedUpdates: Record<string, string> = {};
-
-                        const uuidsToUpdate = cardNamesToUuids[modalCard.name] || [];
-
-                        uuidsToUpdate.forEach((uuid) => {
-                          newOriginalSelectedImages[uuid] = pngUrl;
-                          cachedUpdates[uuid] = getLocalBleedImageUrl(pngUrl);
-                          uuidsToClear.push(uuid);
-                        });
-
-                        appendOriginalSelectedImages(
-                          newOriginalSelectedImages
-                        );
-                        clearManySelectedImages(uuidsToClear);
-
-                      } else {
-                        appendOriginalSelectedImages({
-                          [modalCard.uuid]: pngUrl,
-                        });
-
-                        clearSelectedImage(modalCard.uuid);
-                      }
-
-                      closeArtworkModal();
-                    }}
-                  />
-                );
-              })}
+        {modalCard && (
+          <>
+            <div className="grid grid-cols-3 md:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pt-4">
+              {(displayData.imageUrls ?? []).map((pngUrl, i) => (
+                <img
+                  key={i}
+                  src={pngUrl}
+                  loading="lazy"
+                  className={`w-full cursor-pointer border-4 ${
+                    displayData.id === pngUrl
+                      ? "border-green-500"
+                      : "border-transparent"
+                  }`}
+                  onClick={() => handleSelectArtwork(pngUrl)}
+                />
+              ))}
             </div>
 
             <Button
-              className="w-full"
+              className="w-full mt-4"
               color="blue"
-              onClick={getMoreCards}
+              onClick={getMorePrints}
               disabled={isGettingMore}
             >
               {isGettingMore ? "Loading prints..." : "Get All Prints"}

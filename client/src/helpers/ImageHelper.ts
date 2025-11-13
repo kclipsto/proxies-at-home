@@ -35,3 +35,28 @@ export function pngToNormal(pngUrl: string) {
     return pngUrl;
   }
 }
+
+export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        return response;
+      }
+      if (response.status >= 400 && response.status < 500) {
+        throw new Error(`Client error: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      if (i === retries - 1) throw error;
+    }
+    
+    const exponentialDelay = baseDelay * (2 ** i);
+    const jitter = Math.random() * baseDelay;
+    const totalDelay = exponentialDelay + jitter;
+    
+    console.log(`Fetch failed for ${url}. Retrying in ${Math.round(totalDelay)}ms... (Attempt ${i + 1}/${retries})`);
+    
+    await new Promise(res => setTimeout(res, totalDelay));
+  }
+  throw new Error(`Fetch failed for ${url} after ${retries} attempts.`);
+}

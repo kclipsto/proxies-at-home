@@ -1,127 +1,160 @@
 import { API_BASE } from "@/constants";
-import { imageProcessor } from "../helpers/imageProcessor";
-import { useCardsStore } from "../store";
+import { db } from "../db"; // Import the Dexie database instance
+import { ImageProcessor } from "../helpers/imageProcessor";
+import { useSettingsStore } from "../store";
 import type { CardOption } from "../types/Card";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 export function useImageProcessing({
   unit,
   bleedEdgeWidth,
+  imageProcessor,
 }: {
   unit: "mm" | "in";
   bleedEdgeWidth: number;
+  imageProcessor: ImageProcessor;
 }) {
-  const selectedImages = useCardsStore((state) => state.selectedImages);
-  const originalSelectedImages = useCardsStore(
-    (state) => state.originalSelectedImages
-  );
-  const appendSelectedImages = useCardsStore(
-    (state) => state.appendSelectedImages
-  );
-  const appendOriginalSelectedImages = useCardsStore(
-    (state) => state.appendOriginalSelectedImages
-  );
+  const dpi = useSettingsStore((state) => state.dpi);
 
   const [loadingMap, setLoadingMap] = useState<
     Record<string, "idle" | "loading" | "error">
   >({});
   const inFlight = useRef<Record<string, Promise<void>>>({});
 
-  function getOriginalSrcForCard(card: CardOption): string | undefined {
-    const o = originalSelectedImages[card.uuid];
-    if (o) return o;
-    if (card.imageUrls?.length) {
-      return card.imageUrls[0];
+  async function getOriginalSrcForCard(
+    card: CardOption
+  ): Promise<string | undefined> {
+    if (!card.imageId) return undefined;
+
+    const imageRecord = await db.images.get(card.imageId);
+    if (imageRecord?.originalBlob) {
+      return URL.createObjectURL(imageRecord.originalBlob);
     }
-    return undefined;
+    return imageRecord?.sourceUrl;
   }
 
   async function ensureProcessed(card: CardOption): Promise<void> {
-    const uuid = card.uuid;
-    if (selectedImages[uuid]) return;
+    const { imageId } = card;
+    if (!imageId) return;
 
-    const existing = inFlight.current[uuid];
-    if (existing) return existing;
+    const existingImage = await db.images.get(imageId);
+    if (existingImage?.displayBlob) return;
+
+    const existingRequest = inFlight.current[imageId];
+    if (existingRequest) return existingRequest;
 
     const p = (async () => {
-      const src = getOriginalSrcForCard(card);
+      const src = await getOriginalSrcForCard(card);
       if (!src) return;
 
-      setLoadingMap((m) => ({ ...m, [uuid]: "loading" }));
+      setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
       try {
-        const { processedBlob, error } = await imageProcessor.process({
-          uuid,
+        const result = await imageProcessor.process({
+          uuid: card.uuid,
           url: src,
           bleedEdgeWidth,
           unit,
           apiBase: API_BASE,
           isUserUpload: card.isUserUpload,
           hasBakedBleed: card.hasBakedBleed,
+          dpi,
         });
 
-        if (error) {
-          throw new Error(error);
+        if ("displayBlob" in result) {
+          const {
+            displayBlob,
+            displayDpi,
+            displayBleedWidth,
+            exportBlob,
+            exportDpi,
+            exportBleedWidth,
+          } = result;
+
+          await db.images.update(imageId, {
+            displayBlob,
+            displayDpi,
+            displayBleedWidth,
+            exportBlob,
+            exportDpi,
+            exportBleedWidth,
+          });
+        } else {
+          throw new Error(result.error);
         }
 
-        const objectUrl = URL.createObjectURL(processedBlob);
-        appendSelectedImages({ [uuid]: objectUrl });
-
-        if (!originalSelectedImages[uuid]) {
-          appendOriginalSelectedImages({ [uuid]: src });
-        }
-        setLoadingMap((m) => ({ ...m, [uuid]: "idle" }));
+        setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
       } catch (e) {
         console.error("ensureProcessed error for", card.name, e);
-        setLoadingMap((m) => ({ ...m, [uuid]: "error" }));
+        setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
       } finally {
-        delete inFlight.current[uuid];
+        if (src.startsWith("blob:")) URL.revokeObjectURL(src);
       }
-    })();
+    })().finally(() => {
+      delete inFlight.current[imageId];
+    });
 
-    inFlight.current[uuid] = p;
+    inFlight.current[imageId] = p;
     return p;
   }
 
-  async function reprocessSelectedImages(
-    cards: CardOption[],
-    newBleedWidth: number
-  ) {
-    const updated: Record<string, string> = {};
-    
-    const promises = cards.map(async (card) => {
-      const uuid = card.uuid;
-      const original = originalSelectedImages[uuid];
-      
-      if (!original) return;
-      
-      try {
-        const { processedBlob, error } = await imageProcessor.process({
-            uuid,
-            url: original,
+  const reprocessSelectedImages = useCallback(
+    async (cards: CardOption[], newBleedWidth: number) => {
+      const promises = cards.map(async (card) => {
+        if (!card.imageId) return;
+
+        const imageRecord = await db.images.get(card.imageId);
+        if (!imageRecord) return;
+
+        const src = imageRecord.originalBlob
+          ? URL.createObjectURL(imageRecord.originalBlob)
+          : imageRecord.sourceUrl;
+
+        if (!src) return;
+
+        try {
+          const result = await imageProcessor.process({
+            uuid: card.uuid,
+            url: src,
             bleedEdgeWidth: newBleedWidth,
             unit,
             apiBase: API_BASE,
             isUserUpload: card.isUserUpload,
             hasBakedBleed: card.hasBakedBleed,
-        });
+            dpi,
+          });
 
-        if (error) {
-            throw new Error(error);
+          if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+
+          if ("displayBlob" in result) {
+            const {
+              displayBlob,
+              displayDpi,
+              displayBleedWidth,
+              exportBlob,
+              exportDpi,
+              exportBleedWidth,
+            } = result;
+
+            await db.images.update(card.imageId, {
+              displayBlob,
+              displayDpi,
+              displayBleedWidth,
+              exportBlob,
+              exportDpi,
+              exportBleedWidth,
+            });
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (e) {
+          console.error("reprocessSelectedImages error for", card.name, e);
         }
+      });
 
-        const objectUrl = URL.createObjectURL(processedBlob);
-        updated[uuid] = objectUrl;
-      } catch (e) {
-        console.error("reprocessSelectedImages error for", card.name, e);
-      }
-    });
-
-    await Promise.allSettled(promises);
-    
-    if (Object.keys(updated).length > 0) {
-      appendSelectedImages(updated);
-    }
-  }
+      await Promise.allSettled(promises);
+    },
+    [imageProcessor, unit, dpi]
+  );
 
   return { loadingMap, ensureProcessed, reprocessSelectedImages };
 }

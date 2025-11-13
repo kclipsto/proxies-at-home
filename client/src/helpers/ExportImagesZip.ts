@@ -2,25 +2,31 @@ import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import type { CardOption } from "../types/Card";
 import { API_BASE } from "@/constants";
+import type { Image } from "@/db";
 
 function sanitizeFilename(name: string): string {
   return (
     name
-      .replace(/[\/\\?%*:|"<>]/g, "_")
+      .replace(/[/?%*:|"<>]/g, "_")
       .replace(/\s+/g, " ")
       .trim() || "card"
   );
 }
 
 function getLocalBleedImageUrl(originalUrl: string) {
-  return `${API_BASE}/api/cards/images/proxy?url=${encodeURIComponent(originalUrl)}`;
+  return `${API_BASE}/api/cards/images/proxy?url=${encodeURIComponent(
+    originalUrl
+  )}`;
 }
 
 // Scryfall thumbs sometimes come as .jpg; prefer .png for fewer artifacts
-function preferPng(url: string) {
+function preferPng(url:string) {
   try {
     const u = new URL(url);
-    if (u.hostname.endsWith("scryfall.io") && u.pathname.match(/\.(jpg|jpeg)$/i)) {
+    if (
+      u.hostname.endsWith("scryfall.io") &&
+      u.pathname.match(/\.(jpg|jpeg)$/i)
+    ) {
       u.pathname = u.pathname.replace(/\.(jpg|jpeg)$/i, ".png");
       return u.toString();
     }
@@ -32,39 +38,30 @@ function preferPng(url: string) {
 
 type ExportOpts = {
   cards: CardOption[];
-  originalSelectedImages: Record<string, string>;
-  cachedImageUrls?: Record<string, string>;   // <-- NEW
+  images: Image[];
   fileBaseName?: string; // default: card_images_YYYY-MM-DD
-  concurrency?: number;  // default: 6
+  concurrency?: number; // default: 6
 };
 
 export async function ExportImagesZip(opts: ExportOpts) {
-  const {
-    cards,
-    originalSelectedImages,
-    cachedImageUrls,
-    fileBaseName,
-    concurrency = 6,
-  } = opts;
+  const { cards, images, fileBaseName, concurrency = 6 } = opts;
 
   const zip = new JSZip();
   const usedNames = new Map<string, number>();
+  const imagesById = new Map(images.map((img) => [img.id, img]));
 
   // Build a work list that resolves the best URL for each card
   const tasks = cards.map((c, i) => {
-    // Choose the best source (cached > originalSelected > first imageUrl)
-    let url =
-      (cachedImageUrls && cachedImageUrls[c.uuid]) ||
-      originalSelectedImages[c.uuid] ||
-      c.imageUrls?.[0] ||
-      "";
+    const image = c.imageId ? imagesById.get(c.imageId) : undefined;
+
+    let url = image?.sourceUrl || "";
 
     if (!url) {
       return async () => null; // empty slot
     }
 
-    // If it’s not a user upload and not cached, run it through the proxy
-    if (!c.isUserUpload && !(cachedImageUrls && cachedImageUrls[c.uuid])) {
+    // If it’s not a user upload, run it through the proxy to get the bleed version
+    if (!c.isUserUpload) {
       url = getLocalBleedImageUrl(preferPng(url));
     }
 
@@ -87,9 +84,11 @@ export async function ExportImagesZip(opts: ExportOpts) {
 
         // Try to keep the right extension if we know it; default to .png
         const ext =
-          blob.type === "image/jpeg" ? "jpg" :
-            blob.type === "image/webp" ? "webp" :
-              "png";
+          blob.type === "image/jpeg"
+            ? "jpg"
+            : blob.type === "image/webp"
+            ? "webp"
+            : "png";
 
         const filename = `${idx} - ${baseName}${suffix}.${ext}`;
         zip.file(filename, blob);
@@ -102,7 +101,10 @@ export async function ExportImagesZip(opts: ExportOpts) {
   });
 
   // Simple concurrency limiter
-  async function runWithConcurrency<T>(jobs: Array<() => Promise<T>>, limit: number) {
+  async function runWithConcurrency<T>(
+    jobs: Array<() => Promise<T>>,
+    limit: number
+  ) {
     const results: T[] = [];
     let next = 0;
 
