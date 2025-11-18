@@ -102,8 +102,8 @@ if (!fs.existsSync(cacheDir)) {
   fs.mkdirSync(cacheDir);
 }
 
-// Cache size management with LRU eviction (15GB limit)
-const MAX_CACHE_SIZE_BYTES = 15 * 1024 * 1024 * 1024; // 15GB
+// Cache size management with LRU eviction (12GB limit for Koyeb eLarge 20GB disk)
+const MAX_CACHE_SIZE_BYTES = 12 * 1024 * 1024 * 1024; // 12GB (leaves 8GB for system/logs)
 let lastCacheCleanup = 0;
 
 async function checkAndCleanCache() {
@@ -132,14 +132,14 @@ async function checkAndCleanCache() {
     }
 
     if (totalSize > MAX_CACHE_SIZE_BYTES) {
-      console.log(`[CACHE] Size ${(totalSize / 1024 / 1024 / 1024).toFixed(2)}GB exceeds 15GB limit. Cleaning...`);
+      console.log(`[CACHE] Size ${(totalSize / 1024 / 1024 / 1024).toFixed(2)}GB exceeds 12GB limit. Cleaning...`);
 
       fileStats.sort((a, b) => a.atime - b.atime);
 
       let removedSize = 0;
       let removedCount = 0;
-      // Remove oldest files until we're under 12GB (leave 3GB buffer)
-      const targetSize = 12 * 1024 * 1024 * 1024;
+      // Remove oldest files until we're under 10GB (leave 2GB buffer)
+      const targetSize = 10 * 1024 * 1024 * 1024;
 
       for (const file of fileStats) {
         if (totalSize - removedSize < targetSize) break;
