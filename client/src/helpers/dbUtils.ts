@@ -253,16 +253,20 @@ export async function changeCardArtwork(
       }))
     );
 
-    // 3. Increment the new image's refCount
+    // 3. Increment the new image's refCount or create the new image
     if (newImage) {
       await db.images.update(newImageId, {
         refCount: newImage.refCount + cardsToUpdate.length,
       });
     } else {
-      // This case handles a new remote image
+      // This case handles a new remote image - get imageUrls from the old image if available
+      const oldImage = await db.images.get(oldImageId);
+      const imageUrls = oldImage?.imageUrls || [newImageId];
+
       await db.images.add({
         id: newImageId,
         sourceUrl: newImageId,
+        imageUrls: imageUrls,
         refCount: cardsToUpdate.length,
       });
     }

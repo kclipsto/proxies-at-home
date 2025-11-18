@@ -1,5 +1,5 @@
 const express = require("express");
-const { getCardDataForCardInfo } = require("../utils/getCardImagesPaged");
+const { getImagesForCardInfo } = require("../utils/getCardImagesPaged");
 
 const streamRouter = express.Router();
 
@@ -35,23 +35,18 @@ streamRouter.post("/cards", async (req, res) => {
     for (const ci of cardQueries) {
       processed++;
       try {
-        const cardData = await getCardDataForCardInfo(ci, language);
-        if (cardData) {
-          // The client needs image URLs, let's add them if they are not directly on the object
-          const imageUrls = [];
-          if (cardData.image_uris?.png) {
-            imageUrls.push(cardData.image_uris.png);
-          }
-          if (Array.isArray(cardData.card_faces)) {
-            for (const face of cardData.card_faces) {
-              if (face.image_uris?.png) {
-                imageUrls.push(face.image_uris.png);
-              }
-            }
-          }
-          const cardToSend = { ...cardData, imageUrls };
+        // Fetch all unique arts for the card (default behavior)
+        const imageUrls = await getImagesForCardInfo(ci, "art", language);
+        if (imageUrls && imageUrls.length > 0) {
+          const cardToSend = {
+            name: ci.name,
+            set: ci.set,
+            number: ci.number,
+            lang: language,
+            imageUrls,
+          };
           res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
-          console.log(`[STREAM] Found: ${ci.name}`);
+          console.log(`[STREAM] Found ${imageUrls.length} arts for: ${ci.name}`);
         } else {
           throw new Error("Card not found on Scryfall.");
         }

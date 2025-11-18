@@ -18,14 +18,15 @@ const AX = axios.create({
   validateStatus: (s) => s >= 200 && s < 500,      // surface 4xx/429 to logic
 });
 
-// Light retry for 429 / transient errors
-async function getWithRetry(url, opts = {}, tries = 3) {
+// Improved retry with exponential backoff
+async function getWithRetry(url, opts = {}, tries = 5) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
       const res = await AX.get(url, opts);
       if (res.status === 429) {
-        const wait = Number(res.headers["retry-after"] || 2);
+        const wait = Number(res.headers["retry-after"] || 5);
+        console.log(`[429] Rate limited. Waiting ${wait}s before retry...`);
         await new Promise(r => setTimeout(r, wait * 1000));
         continue;
       }
@@ -33,10 +34,40 @@ async function getWithRetry(url, opts = {}, tries = 3) {
       throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       lastErr = e;
-      await new Promise(r => setTimeout(r, 500 * (i + 1)));
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+      const backoffMs = Math.min(1000 * Math.pow(2, i), 16000);
+      const jitter = Math.random() * 500;
+      await new Promise(r => setTimeout(r, backoffMs + jitter));
     }
   }
   throw lastErr;
+}
+
+// 100ms delay between Scryfall requests (their recommendation)
+let lastScryfallRequest = 0;
+async function delayScryfallRequest() {
+  const now = Date.now();
+  const elapsed = now - lastScryfallRequest;
+  if (elapsed < 100) {
+    await new Promise(r => setTimeout(r, 100 - elapsed));
+  }
+  lastScryfallRequest = Date.now();
+}
+
+// In-memory deduplication cache for concurrent requests
+const pendingRequests = new Map();
+async function dedupedFetch(key, fetchFn) {
+  if (pendingRequests.has(key)) {
+    return pendingRequests.get(key);
+  }
+  const promise = fetchFn();
+  pendingRequests.set(key, promise);
+  try {
+    const result = await promise;
+    return result;
+  } finally {
+    pendingRequests.delete(key);
+  }
 }
 
 // Tiny p-limit (cap parallel Scryfall calls)
@@ -60,7 +91,7 @@ function pLimit(concurrency) {
     else q.push([fn, resolve, reject]);
   });
 }
-const limit = pLimit(6); // 6 at a time is a safe default
+const limit = pLimit(3); // Reduced for multi-user load
 
 // -------------------- cache helpers --------------------
 
@@ -69,6 +100,63 @@ const imageRouter = express.Router();
 const cacheDir = path.join(__dirname, "..", "cached-images");
 if (!fs.existsSync(cacheDir)) {
   fs.mkdirSync(cacheDir);
+}
+
+// Cache size management with LRU eviction (15GB limit)
+const MAX_CACHE_SIZE_BYTES = 15 * 1024 * 1024 * 1024; // 15GB
+let lastCacheCleanup = 0;
+
+async function checkAndCleanCache() {
+  const now = Date.now();
+  // Only check every 5 minutes to avoid excessive disk I/O
+  if (now - lastCacheCleanup < 5 * 60 * 1000) return;
+  lastCacheCleanup = now;
+
+  try {
+    const files = fs.readdirSync(cacheDir);
+    const fileStats = [];
+    let totalSize = 0;
+
+    for (const file of files) {
+      const filePath = path.join(cacheDir, file);
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.isFile()) {
+          fileStats.push({ path: filePath, atime: stats.atimeMs, size: stats.size });
+          totalSize += stats.size;
+        }
+      } catch (err) {
+        // File might have been deleted, skip it
+        continue;
+      }
+    }
+
+    if (totalSize > MAX_CACHE_SIZE_BYTES) {
+      console.log(`[CACHE] Size ${(totalSize / 1024 / 1024 / 1024).toFixed(2)}GB exceeds 15GB limit. Cleaning...`);
+
+      fileStats.sort((a, b) => a.atime - b.atime);
+
+      let removedSize = 0;
+      let removedCount = 0;
+      // Remove oldest files until we're under 12GB (leave 3GB buffer)
+      const targetSize = 12 * 1024 * 1024 * 1024;
+
+      for (const file of fileStats) {
+        if (totalSize - removedSize < targetSize) break;
+        try {
+          fs.unlinkSync(file.path);
+          removedSize += file.size;
+          removedCount++;
+        } catch (err) {
+          console.warn(`[CACHE] Failed to delete ${file.path}:`, err.message);
+        }
+      }
+
+      console.log(`[CACHE] Removed ${removedCount} files (${(removedSize / 1024 / 1024 / 1024).toFixed(2)}GB)`);
+    }
+  } catch (err) {
+    console.error(`[CACHE] Cleanup error:`, err.message);
+  }
 }
 
 const uploadDir = path.join(__dirname, "..", "uploaded-images");
@@ -229,8 +317,18 @@ imageRouter.get("/proxy", async (req, res) => {
 
   const localPath = cachePathFromUrl(originalUrl);
 
+  // Check cache size periodically
+  checkAndCleanCache().catch(err => console.error('[CACHE] Cleanup failed:', err));
+
   try {
     if (fs.existsSync(localPath)) {
+      // Update access time for LRU
+      try {
+        const now = new Date();
+        fs.utimesSync(localPath, now, now);
+      } catch (e) {
+        // Ignore access time update errors
+      }
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       return res.sendFile(localPath);
     }

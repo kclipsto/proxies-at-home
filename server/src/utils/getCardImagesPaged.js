@@ -7,6 +7,17 @@ const AX = axios.create({
   headers: { "User-Agent": "Proxxied/1.0 (contact: your-email@example.com)" },
 });
 
+// 100ms delay between Scryfall requests (their recommendation)
+let lastScryfallRequest = 0;
+async function delayScryfallRequest() {
+  const now = Date.now();
+  const elapsed = now - lastScryfallRequest;
+  if (elapsed < 100) {
+    await new Promise(r => setTimeout(r, 100 - elapsed));
+  }
+  lastScryfallRequest = Date.now();
+}
+
 /**
  * Core: given a CardInfo { name, set?, number?, language? }, return PNG urls.
  * If set && number => try exact printing (that language); else set+name; else name-only.
@@ -15,23 +26,24 @@ const AX = axios.create({
 async function getImagesForCardInfo(
   cardInfo,
   unique = "art",
-  language = "en", // NEW
-  fallbackToEnglish = true // NEW
+  language = "en",
+  fallbackToEnglish = true
 ) {
   const { name, set, number } = cardInfo || {};
   const lang = (language || "en").toLowerCase();
 
-  // 1) Exact printing: set + collector number + name (language filter still applied)
-  if (set && number) {
-    // include language
+  // If we want unique arts, skip set/number entirely (a specific printing has only one art)
+  // Only use set/number when unique=prints (getting all printings of a specific card)
+  if (unique === "prints" && set && number) {
+    // 1) Exact printing: set + collector number + name
     const q = `set:${set} number:${escapeColon(
       number
-    )} name:"${name}" include:extras unique:prints lang:${lang}`; // NEW
+    )} name:"${name}" include:extras unique:prints lang:${lang}`;
     let urls = await fetchPngsByQuery(q);
     if (!urls.length && fallbackToEnglish && lang !== "en") {
       const qEn = `set:${set} number:${escapeColon(
         number
-      )} name:"${name}" include:extras unique:prints lang:en`; // NEW
+      )} name:"${name}" include:extras unique:prints lang:en`;
       urls = await fetchPngsByQuery(qEn);
     }
     if (urls.length) return urls;
@@ -39,22 +51,23 @@ async function getImagesForCardInfo(
   }
 
   // 2) Set + name (all printings in set for that name)
-  if (set && !number) {
-    const q = `set:${set} name:"${name}" include:extras unique:${unique} lang:${lang}`; // NEW
+  // Only use this if unique=prints, otherwise skip to name-only
+  if (unique === "prints" && set && !number) {
+    const q = `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`;
     let urls = await fetchPngsByQuery(q);
     if (!urls.length && fallbackToEnglish && lang !== "en") {
-      const qEn = `set:${set} name:"${name}" include:extras unique:${unique} lang:en`; // NEW
+      const qEn = `set:${set} name:"${name}" include:extras unique:prints lang:en`;
       urls = await fetchPngsByQuery(qEn);
     }
     if (urls.length) return urls;
     // fallback if empty
   }
 
-  // 3) Name-only exact match (prefer language)
-  const q = `!"${name}" include:extras unique:${unique} lang:${lang}`; // NEW
+  // 3) Name-only search - this is the main strategy for unique:art
+  const q = `!"${name}" include:extras unique:${unique} lang:${lang}`;
   let urls = await fetchPngsByQuery(q);
   if (!urls.length && fallbackToEnglish && lang !== "en") {
-    const qEn = `!"${name}" include:extras unique:${unique} lang:en`; // NEW
+    const qEn = `!"${name}" include:extras unique:${unique} lang:en`;
     urls = await fetchPngsByQuery(qEn);
   }
   return urls;
@@ -73,6 +86,7 @@ async function fetchPngsByQuery(query) {
 
   try {
     while (next) {
+      await delayScryfallRequest();
       const resp = await AX.get(next);
       const { data, has_more, next_page } = resp.data;
 
@@ -104,6 +118,7 @@ async function fetchCardsByQuery(query) {
 
   try {
     while (next) {
+      await delayScryfallRequest();
       const resp = await AX.get(next);
       const { data, has_more, next_page } = resp.data;
       if (data) {

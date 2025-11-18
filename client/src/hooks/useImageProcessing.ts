@@ -33,7 +33,7 @@ export function useImageProcessing({
     return imageRecord?.sourceUrl;
   }
 
-  async function ensureProcessed(card: CardOption): Promise<void> {
+  const ensureProcessed = useCallback(async (card: CardOption): Promise<void> => {
     const { imageId } = card;
     if (!imageId) return;
 
@@ -95,7 +95,7 @@ export function useImageProcessing({
 
     inFlight.current[imageId] = p;
     return p;
-  }
+  }, [bleedEdgeWidth, unit, dpi, imageProcessor]);
 
   const reprocessSelectedImages = useCallback(
     async (cards: CardOption[], newBleedWidth: number) => {

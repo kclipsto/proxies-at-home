@@ -21,7 +21,7 @@ export default function CardCellLazy({
 
   useEffect(() => {
     if (visible) void ensureProcessed(card);
-  }, [visible, card, ensureProcessed]);
+  }, [visible, card.uuid, card.imageId, ensureProcessed]);
 
   return (
     <div ref={ref} className="relative">

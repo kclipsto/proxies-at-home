@@ -50,17 +50,56 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
   const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []);
   const images = useLiveQuery(() => db.images.toArray(), []);
 
+  const urlCacheRef = useRef<Map<string, { blob: Blob; url: string }>>(new Map());
+
   const processedImageUrls: Record<string, string> = useMemo(() => {
     const urls: Record<string, string> = {};
     if (!images) return urls;
 
+    const currentCache = urlCacheRef.current;
+    const usedIds = new Set<string>();
+
     images.forEach((img) => {
       if (img.displayBlob && img.displayBlob.size > 0) {
-        urls[img.id] = URL.createObjectURL(img.displayBlob);
+        usedIds.add(img.id);
+
+        // Check if we already have a URL for this exact blob
+        const cached = currentCache.get(img.id);
+        if (cached && cached.blob === img.displayBlob) {
+          urls[img.id] = cached.url;
+        } else {
+          // Revoke old URL if it exists
+          if (cached) {
+            URL.revokeObjectURL(cached.url);
+          }
+          // Create new URL
+          const newUrl = URL.createObjectURL(img.displayBlob);
+          urls[img.id] = newUrl;
+          currentCache.set(img.id, { blob: img.displayBlob, url: newUrl });
+        }
       }
     });
+
+    // Clean up URLs for images that no longer exist or don't have blobs
+    for (const [id, cached] of currentCache.entries()) {
+      if (!usedIds.has(id)) {
+        URL.revokeObjectURL(cached.url);
+        currentCache.delete(id);
+      }
+    }
+
     return urls;
   }, [images]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      for (const cached of urlCacheRef.current.values()) {
+        URL.revokeObjectURL(cached.url);
+      }
+      urlCacheRef.current.clear();
+    };
+  }, []);
 
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
