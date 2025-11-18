@@ -91,7 +91,7 @@ function pLimit(concurrency) {
     else q.push([fn, resolve, reject]);
   });
 }
-const limit = pLimit(3); // Reduced for multi-user load
+const limit = pLimit(6); // Re-upped for multi-user load
 
 // -------------------- cache helpers --------------------
 
