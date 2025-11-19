@@ -1,15 +1,6 @@
-export type CardInfo = {
-  name: string;
-  set?: string;
-  number?: string;
-};
+import type { CardInfo } from "../../../shared/types";
 
-export type CardInfoWithQuantity = {
-  info: CardInfo;
-  quantity: number;
-};
-
-export function extractCardInfo(input: string): CardInfo {
+export function extractCardInfo(input: string, quantity: number= 1): CardInfo {
   let s = input.trim();
 
   s = s.replace(/^\s*\d+\s*x?\s+/i, "");
@@ -34,11 +25,11 @@ export function extractCardInfo(input: string): CardInfo {
     s = s.replace(setNumTail, "").trim();
   }
 
-  return { name: s, set: setCode, number };
+  return { name: s, quantity, set: setCode, number };
 }
 
-export function parseDeckToInfos(deckText: string): CardInfoWithQuantity[] {
-  const infos: CardInfoWithQuantity[] = [];
+export function parseDeckToInfos(deckText: string): CardInfo[] {
+  const infos: CardInfo[] = [];
   deckText.split(/\r?\n/).forEach((line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -47,15 +38,16 @@ export function parseDeckToInfos(deckText: string): CardInfoWithQuantity[] {
     if (qtyMatch) {
       const count = parseInt(qtyMatch[1], 10);
       const rest = qtyMatch[2];
-      const info = extractCardInfo(rest);
-      infos.push({ info, quantity: count });
+      const info = extractCardInfo(rest, count);
+      infos.push(info);
     } else {
-      infos.push({ info: extractCardInfo(trimmed), quantity: 1 });
+      const info = extractCardInfo(trimmed);
+      infos.push(info);
     }
   });
   return infos;
 }
 
 export function cardKey(ci: CardInfo): string {
-  return `${ci.name.toLowerCase()}|${ci.set ?? ""}|${ci.number ?? ""}`;
+  return `${ci.name.toLowerCase()}|${(ci.set ?? "").toLowerCase()}|${ci.number ?? ""}`;
 }

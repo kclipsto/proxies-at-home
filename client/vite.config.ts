@@ -1,8 +1,11 @@
+/// <reference types="vitest" />
+
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import flowbiteReact from "flowbite-react/plugin/vite";
 import path from "path";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
+
 
 export default defineConfig({
   css: {
@@ -13,7 +16,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:3001",
+        target: "http://127.0.0.1:3001",
         changeOrigin: true,
       },
     },
@@ -24,4 +27,9 @@ export default defineConfig({
     },
   },
   plugins: [react(), tailwindcss(), flowbiteReact()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/vitest.setup.ts'],
+  },
 });

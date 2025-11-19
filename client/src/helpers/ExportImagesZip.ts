@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
 import { API_BASE } from "@/constants";
 import type { Image } from "@/db";
 

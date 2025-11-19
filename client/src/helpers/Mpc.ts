@@ -37,6 +37,16 @@ export function extractDriveId(
       const u = new URL(v);
       const qid = u.searchParams.get("id");
       if (qid && DRIVE_ID_RE.test(qid)) return qid;
+
+      const pathParts = u.pathname.split("/").filter(Boolean);
+      const dIndex = pathParts.indexOf("d");
+      if (dIndex !== -1 && dIndex < pathParts.length - 1) {
+        const id = pathParts[dIndex + 1];
+        if (DRIVE_ID_RE.test(id)) {
+          return id;
+        }
+      }
+
       const last = u.pathname.split("/").filter(Boolean).pop();
       if (last && DRIVE_ID_RE.test(last)) return last;
     } catch (e) {
@@ -84,6 +94,11 @@ export function tryParseMpcSchemaXml(raw: string): MpcItem[] | null {
       .filter((n) => Number.isFinite(n));
     const qty = Math.max(1, slots.length || 1);
 
+    let backId: string | undefined;
+    if (slots.length > 0) {
+      backId = backs.get(slots[0]);
+    }
+
     const looksLikeFilename = /\.[a-z0-9]{2,4}$/i.test(nameText);
     const filename = looksLikeFilename ? nameText.trim() : undefined;
     const name = (
@@ -97,6 +112,7 @@ export function tryParseMpcSchemaXml(raw: string): MpcItem[] | null {
       name,
       filename,
       frontId,
+      backId,
     });
   }
 

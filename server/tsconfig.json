@@ -1,34 +1,16 @@
 {
+  "files": [],
   "compilerOptions": {
-    "allowJs": true,
-    // File Layout
-    "rootDir": "./src",
-    "outDir": "./dist",
-
-    // Node environment settings
-    "module": "commonjs",
-    "target": "es2020",
-    "lib": ["es2020"],
-    "types": ["node"],
-
-    // Output controls
-    "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
-
-    // Type checking
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-
-    // Clean style
-    "noImplicitReturns": true,
-    "noUnusedLocals": true,
-
-    // Module settings
-    "esModuleInterop": true,
-    "skipLibCheck": true
+    "types": [
+      "vitest/globals"
+    ]
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
 }

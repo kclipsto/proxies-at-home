@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useOnScreen } from "../hooks/useOnScreen";
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
 
 type Props = {
   card: CardOption;
@@ -21,7 +21,7 @@ export default function CardCellLazy({
 
   useEffect(() => {
     if (visible) void ensureProcessed(card);
-  }, [visible, card.uuid, card.imageId, ensureProcessed]);
+  }, [visible, card, ensureProcessed]);
 
   return (
     <div ref={ref} className="relative">

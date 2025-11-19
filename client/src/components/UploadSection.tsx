@@ -6,7 +6,6 @@ import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
 import {
   cardKey,
   parseDeckToInfos,
-  type CardInfo,
 } from "@/helpers/CardInfoHelper";
 import {
   getMpcImageUrl,
@@ -15,7 +14,7 @@ import {
   tryParseMpcSchemaXml,
 } from "@/helpers/Mpc";
 import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
-import type { CardOption, ScryfallCard } from "@/types/Card";
+import type { CardOption, ScryfallCard } from "../../../shared/types";
 import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
 import {
@@ -29,6 +28,7 @@ import {
   Tooltip,
 } from "flowbite-react";
 import { ExternalLink, HelpCircle } from "lucide-react";
+import type { CardInfo } from "../../../shared/types";
 
 async function readText(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -47,7 +47,7 @@ export function UploadSection() {
 
   const globalLanguage = useSettingsStore((s) => s.globalLanguage ?? "en");
   const setGlobalLanguage = useSettingsStore(
-    (s) => s.setGlobalLanguage ?? (() => {})
+    (s) => s.setGlobalLanguage ?? (() => { })
   );
 
   async function addUploadedFiles(
@@ -122,16 +122,20 @@ export function UploadSection() {
       > = [];
 
       for (const it of items) {
-        for (let i = 0; i < (it.qty || 1); i++) {
-          const name =
-            it.name ||
-            (it.filename
-              ? inferCardNameFromFilename(it.filename)
-              : "Custom Art");
+        const qty = it.qty || 1;
+        const name =
+          it.name ||
+          (it.filename
+            ? inferCardNameFromFilename(it.filename)
+            : "Custom Art");
 
-          const mpcUrl = getMpcImageUrl(it.frontId);
-          const imageUrls = mpcUrl ? [mpcUrl] : [];
-          const imageId = await addRemoteImage(imageUrls);
+        const mpcUrl = getMpcImageUrl(it.frontId);
+        const imageUrls = mpcUrl ? [mpcUrl] : [];
+
+        // Add image once with the full quantity count
+        const imageId = await addRemoteImage(imageUrls, qty);
+
+        for (let i = 0; i < qty; i++) {
           cardsToAdd.push({
             name,
             imageId: imageId,
@@ -163,7 +167,7 @@ export function UploadSection() {
       setLoadingTask("Fetching cards");
 
       const uniqueMap = new Map<string, CardInfo>();
-      for (const { info } of infos) uniqueMap.set(cardKey(info), info);
+      for (const info of infos) uniqueMap.set(cardKey(info), info);
       const uniqueInfos = Array.from(uniqueMap.values());
 
       const optionByKey: Record<string, ScryfallCard> = {};
@@ -205,12 +209,12 @@ export function UploadSection() {
               imageId?: string;
             })[] = [];
 
-            for (const { info, quantity } of infos) {
+            for (const info of infos) {
               const k = cardKey(info);
               const fallbackK = cardKey({ name: info.name });
               const card = optionByKey[k] ?? optionByKey[fallbackK];
-              const imageId = await addRemoteImage(card?.imageUrls ?? []);
-
+              const quantity = info.quantity ?? 1;
+              const imageId = await addRemoteImage(card?.imageUrls ?? [], quantity);
               for (let i = 0; i < quantity; i++) {
                 cardsToAdd.push({
                   name: card?.name || info.name,

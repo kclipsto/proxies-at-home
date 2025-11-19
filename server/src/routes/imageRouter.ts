@@ -1,26 +1,27 @@
-const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const axios = require("axios");
-const multer = require("multer");
-const crypto = require("crypto");
+import express, { type Request, type Response } from "express";
+import path from "path";
+import fs from "fs";
+import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
+import multer from "multer";
+import crypto from "crypto";
+import { fileURLToPath } from "url";
+import { getImagesForCardInfo } from "../utils/getCardImagesPaged";
+import { normalizeCardInfos } from "../utils/cardUtils";
+import type { CardInfo } from "@/types";
 
-const {
-  getScryfallPngImagesForCard,
-  getImagesForCardInfo,
-  getScryfallPngImagesForCardPrints,
-} = require("../utils/getCardImagesPaged");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // --- add under your existing requires ---
 const AX = axios.create({
-  timeout: 12000,                                  // 12s per outbound request
+  timeout: 12000, // 12s per outbound request
   headers: { "User-Agent": "Proxxied/1.0 (+contact@example.com)" },
-  validateStatus: (s) => s >= 200 && s < 500,      // surface 4xx/429 to logic
+  validateStatus: (s) => s >= 200 && s < 500, // surface 4xx/429 to logic
 });
 
 // Improved retry with exponential backoff
-async function getWithRetry(url, opts = {}, tries = 5) {
-  let lastErr;
+async function getWithRetry(url: string, opts: AxiosRequestConfig = {}, tries = 5): Promise<AxiosResponse> {
+  let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
     try {
       const res = await AX.get(url, opts);
@@ -43,52 +44,41 @@ async function getWithRetry(url, opts = {}, tries = 5) {
   throw lastErr;
 }
 
-// 100ms delay between Scryfall requests (their recommendation)
-let lastScryfallRequest = 0;
-async function delayScryfallRequest() {
-  const now = Date.now();
-  const elapsed = now - lastScryfallRequest;
-  if (elapsed < 100) {
-    await new Promise(r => setTimeout(r, 100 - elapsed));
-  }
-  lastScryfallRequest = Date.now();
-}
 
-// In-memory deduplication cache for concurrent requests
-const pendingRequests = new Map();
-async function dedupedFetch(key, fetchFn) {
-  if (pendingRequests.has(key)) {
-    return pendingRequests.get(key);
-  }
-  const promise = fetchFn();
-  pendingRequests.set(key, promise);
-  try {
-    const result = await promise;
-    return result;
-  } finally {
-    pendingRequests.delete(key);
-  }
-}
 
 // Tiny p-limit (cap parallel Scryfall calls)
-function pLimit(concurrency) {
-  const q = [];
+function pLimit(concurrency: number) {
+  type Task = () => Promise<unknown>;
+  type Resolver = (value: unknown) => void;
+  type Rejector = (reason?: unknown) => void;
+
+  const q: [Task, Resolver, Rejector][] = [];
   let active = 0;
-  const run = async (fn, resolve, reject) => {
+
+  const run = async (fn: Task, resolve: Resolver, reject: Rejector) => {
     active++;
-    try { resolve(await fn()); }
-    catch (e) { reject(e); }
+    try {
+      resolve(await fn());
+    }
+    catch (e) {
+      reject(e);
+    }
     finally {
       active--;
       if (q.length) {
-        const [fn, res, rej] = q.shift();
-        run(fn, res, rej);
+        const next = q.shift();
+        if (next) {
+          const [nextFn, nextRes, nextRej] = next;
+          run(nextFn, nextRes, nextRej);
+        }
       }
     }
   };
-  return (fn) => new Promise((resolve, reject) => {
-    if (active < concurrency) run(fn, resolve, reject);
-    else q.push([fn, resolve, reject]);
+  return <T>(fn: () => Promise<T>) => new Promise<T>((resolve, reject) => {
+    const wrappedResolve = resolve as Resolver;
+    const wrappedReject = reject as Rejector;
+    if (active < concurrency) run(fn, wrappedResolve, wrappedReject);
+    else q.push([fn, wrappedResolve, wrappedReject]);
   });
 }
 const limit = pLimit(6); // Re-upped for multi-user load
@@ -114,7 +104,7 @@ async function checkAndCleanCache() {
 
   try {
     const files = fs.readdirSync(cacheDir);
-    const fileStats = [];
+    const fileStats: { path: string; atime: number; size: number }[] = [];
     let totalSize = 0;
 
     for (const file of files) {
@@ -125,7 +115,7 @@ async function checkAndCleanCache() {
           fileStats.push({ path: filePath, atime: stats.atimeMs, size: stats.size });
           totalSize += stats.size;
         }
-      } catch (err) {
+      } catch {
         // File might have been deleted, skip it
         continue;
       }
@@ -147,15 +137,17 @@ async function checkAndCleanCache() {
           fs.unlinkSync(file.path);
           removedSize += file.size;
           removedCount++;
-        } catch (err) {
-          console.warn(`[CACHE] Failed to delete ${file.path}:`, err.message);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[CACHE] Failed to delete ${file.path}:`, msg);
         }
       }
 
       console.log(`[CACHE] Removed ${removedCount} files (${(removedSize / 1024 / 1024 / 1024).toFixed(2)}GB)`);
     }
-  } catch (err) {
-    console.error(`[CACHE] Cleanup error:`, err.message);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[CACHE] Cleanup error:", msg);
   }
 }
 
@@ -166,7 +158,7 @@ if (!fs.existsSync(uploadDir)) {
 const upload = multer({ dest: uploadDir });
 
 // Make a stable cache filename from the FULL raw URL (path + query)
-function cachePathFromUrl(originalUrl) {
+function cachePathFromUrl(originalUrl: string) {
   const hash = crypto.createHash("sha1").update(originalUrl).digest("hex");
 
   // try to preserve the real extension; default to .png
@@ -183,7 +175,15 @@ function cachePathFromUrl(originalUrl) {
 
 // -------------------- API: fetch images for cards --------------------
 
-imageRouter.post("/", async (req, res) => {
+interface ImageRequestBody {
+  cardQueries?: CardInfo[];
+  cardNames?: string[];
+  cardArt?: string;
+  language?: string;
+  fallbackToEnglish?: boolean;
+}
+
+imageRouter.post("/", async (req: Request<unknown, unknown, ImageRequestBody>, res: Response) => {
   const cardQueries = Array.isArray(req.body.cardQueries) ? req.body.cardQueries : null;
   const cardNames = Array.isArray(req.body.cardNames) ? req.body.cardNames : null;
 
@@ -196,14 +196,7 @@ imageRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "Provide cardQueries (preferred) or cardNames." });
   }
 
-  const infos = cardQueries
-    ? cardQueries.map((q) => ({
-      name: q.name,
-      set: q.set,
-      number: q.number,
-      language: (q.language || language || "en").toLowerCase(),
-    }))
-    : cardNames.map((name) => ({ name, language }));
+  const infos = normalizeCardInfos(cardQueries, cardNames, language);
 
   const started = Date.now();
 
@@ -234,21 +227,22 @@ imageRouter.post("/", async (req, res) => {
     );
 
     return res.json(results);
-  } catch (err) {
-    console.error("Fetch error:", err?.message);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Fetch error:", msg);
     return res.status(500).json({ error: "Failed to fetch images from Scryfall." });
   } finally {
     console.log(`[POST /images] ${infos.length} cards in ${Date.now() - started}ms`);
   }
 });
 
-imageRouter.post("/images-stream", async (req, res) => {
+imageRouter.post("/images-stream", async (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const cardQueries = Array.isArray(req.body.cardQueries)
+  const cardQueries: CardInfo[] = Array.isArray(req.body.cardQueries)
     ? req.body.cardQueries
     : [];
 
@@ -259,12 +253,7 @@ imageRouter.post("/images-stream", async (req, res) => {
       ? req.body.fallbackToEnglish
       : true;
 
-  const infos = cardQueries.map((q) => ({
-    name: q.name,
-    set: q.set,
-    number: q.number,
-    language: (q.language || language || "en").toLowerCase(),
-  }));
+  const infos = normalizeCardInfos(cardQueries, null, language);
 
   const total = infos.length;
   let count = 0;
@@ -285,7 +274,7 @@ imageRouter.post("/images-stream", async (req, res) => {
         language: ci.language,
       };
       res.write(`event: card\ndata: ${JSON.stringify(card)}\n\n`);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(`[SSE] failed to fetch ${ci.name}:`, e);
       // Send an error event for this card
       res.write(
@@ -305,7 +294,7 @@ imageRouter.post("/images-stream", async (req, res) => {
 
 // -------------------- proxy (cached) --------------------
 
-imageRouter.get("/proxy", async (req, res) => {
+imageRouter.get("/proxy", async (req: Request, res: Response) => {
   const url = req.query.url;
   if (!url || typeof url !== "string") {
     return res.status(400).json({ error: "Missing or invalid ?url" });
@@ -318,7 +307,7 @@ imageRouter.get("/proxy", async (req, res) => {
   const localPath = cachePathFromUrl(originalUrl);
 
   // Check cache size periodically
-  checkAndCleanCache().catch(err => console.error('[CACHE] Cleanup failed:', err));
+  checkAndCleanCache().catch((err: unknown) => console.error("[CACHE] Cleanup failed:", err));
 
   try {
     if (fs.existsSync(localPath)) {
@@ -326,7 +315,7 @@ imageRouter.get("/proxy", async (req, res) => {
       try {
         const now = new Date();
         fs.utimesSync(localPath, now, now);
-      } catch (e) {
+      } catch {
         // Ignore access time update errors
       }
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -336,6 +325,9 @@ imageRouter.get("/proxy", async (req, res) => {
     const response = await getWithRetry(originalUrl, { responseType: "arraybuffer", timeout: 12000 }, 3);
     if (response.status >= 400 || !response.data) {
       return res.status(502).json({ error: "Upstream error", status: response.status });
+    }
+    if (response.data.length === 0) {
+      return res.status(502).json({ error: "Upstream is a 0-byte image" });
     }
 
     const ct = String(response.headers["content-type"] || "").toLowerCase();
@@ -348,15 +340,16 @@ imageRouter.get("/proxy", async (req, res) => {
     res.setHeader("Content-Type", ct);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     return res.sendFile(localPath);
-  } catch (err) {
-    console.error("Proxy error:", { message: err.message, from: originalUrl });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Proxy error:", { message: msg, from: originalUrl });
     return res.status(502).json({ error: "Failed to download image", from: originalUrl });
   }
 });
 
 // -------------------- maintenance & uploads --------------------
 
-imageRouter.delete("/", (req, res) => {
+imageRouter.delete("/", (_req: Request, res: Response) => {
   const started = Date.now();
   fs.readdir(cacheDir, (err, files) => {
     if (err) {
@@ -368,7 +361,7 @@ imageRouter.delete("/", (req, res) => {
     res.json({ message: "Cached images clearing started.", count: files.length });
 
     if (!files.length) {
-      console.log(`[DELETE /images] no files (0ms)`);
+      console.log("[DELETE /images] no files (0ms)");
       return;
     }
 
@@ -385,16 +378,16 @@ imageRouter.delete("/", (req, res) => {
   });
 });
 
-imageRouter.post("/upload", upload.array("images"), (req, res) => {
+imageRouter.post("/upload", upload.array("images"), (req: Request, res: Response) => {
   return res.json({
-    uploaded: req.files.map((file) => ({
+    uploaded: (req.files as Express.Multer.File[]).map((file) => ({
       name: file.originalname,
       path: file.filename,
     })),
   });
 });
 
-imageRouter.get("/diag", (req, res) => {
+imageRouter.get("/diag", (req: Request, res: Response) => {
   res.json({
     ok: true,
     now: new Date().toISOString(),
@@ -406,7 +399,7 @@ imageRouter.get("/diag", (req, res) => {
 
 // -------------------- Google Drive helper --------------------
 
-imageRouter.get("/front", async (req, res) => {
+imageRouter.get("/front", async (req: Request, res: Response) => {
   const id = String(req.query.id || "").trim();
   if (!id) return res.status(400).send("Missing id");
 
@@ -436,7 +429,7 @@ imageRouter.get("/front", async (req, res) => {
       res.setHeader("Content-Type", ct);
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       return r.data.pipe(res);
-    } catch (_) {
+    } catch {
       // try next candidate
     }
   }
@@ -444,4 +437,4 @@ imageRouter.get("/front", async (req, res) => {
   return res.status(502).send("Could not fetch Google Drive image");
 });
 
-module.exports = { imageRouter };
+export { imageRouter };

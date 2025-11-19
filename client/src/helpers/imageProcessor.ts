@@ -33,6 +33,14 @@ interface WorkerErrorResponse {
 type WorkerResponse = WorkerSuccessResponse | WorkerErrorResponse;
 
 export class ImageProcessor {
+  static getInstance() {
+    if (!ImageProcessor.instance) {
+      ImageProcessor.instance = new ImageProcessor();
+    }
+    return ImageProcessor.instance;
+  }
+  private static instance: ImageProcessor;
+  private static instances: Set<ImageProcessor> = new Set();
   private allWorkers: Set<Worker> = new Set();
   private idleWorkers: IdleWorker[] = [];
   private taskQueue: {
@@ -41,9 +49,13 @@ export class ImageProcessor {
     reject: (reason?: ErrorEvent) => void;
   }[] = [];
   private maxWorkers: number;
+  static mockProcess: unknown;
 
-  constructor() {
-    this.maxWorkers = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
+  private constructor() {
+    // Cap at 8 workers to prevent network request storms and memory issues
+    const concurrency = navigator.hardwareConcurrency || 4;
+    this.maxWorkers = Math.min(18, Math.max(1, concurrency - 1));
+    ImageProcessor.instances.add(this);
   }
 
   private createWorker(): Worker {
@@ -107,6 +119,7 @@ export class ImageProcessor {
       };
 
       worker.onerror = (e: ErrorEvent) => {
+        console.error("Worker error, terminating:", e);
         this.terminateWorker(worker);
         task.reject(e);
         this.processNextTask(); // Try to process another task with a new worker if available
@@ -134,5 +147,12 @@ export class ImageProcessor {
       worker.terminate();
     });
     this.allWorkers.clear();
+    ImageProcessor.instances.delete(this);
+  }
+
+  static destroyAll() {
+    for (const instance of ImageProcessor.instances) {
+      instance.destroy();
+    }
   }
 }

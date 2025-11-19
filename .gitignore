@@ -1,4 +1,7 @@
 server/src/cached-images/*
 server/src/uploaded-images/*
+server/coverage/*
+client/coverage/*
+coverage/*
 
 node_modules

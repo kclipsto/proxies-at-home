@@ -1,16 +1,21 @@
-export {}; 
+import {
+    NEAR_BLACK,
+    NEAR_WHITE,
+    ALPHA_EMPTY,
+    IN,
+    MM_TO_PX,
+    toProxied,
+    loadImage,
+    trimExistingBleedIfAny,
+    blackenAllNearBlackPixels,
+    getPatchNearCorner,
+} from "./imageProcessing";
+
+export { };
 declare const self: DedicatedWorkerGlobalScope;
 
-const NEAR_BLACK = 16;
-const NEAR_WHITE = 239;
-const ALPHA_EMPTY = 10;
-
-const IN = (inches: number, dpi: number) => Math.round(inches * dpi);
-const MM_TO_IN = (mm: number) => mm / 25.4;
-const MM_TO_PX = (mm: number, dpi: number) => IN(MM_TO_IN(mm), dpi);
-
 function getLocalBleedImageUrl(originalUrl: string, apiBase: string) {
-    return `${apiBase}/api/cards/images/proxy?url=${encodeURIComponent(originalUrl)}`;
+    return toProxied(originalUrl, apiBase);
 }
 
 function cornerNeedsFill(ctx: OffscreenCanvasRenderingContext2D, x: number, y: number, cornerSize: number) {
@@ -56,66 +61,9 @@ function detectFlatBorderColor(ctx: OffscreenCanvasRenderingContext2D, contentW:
     return null;
 }
 
-async function loadImage(src: string): Promise<ImageBitmap> {
-    const resp = await fetch(src, { mode: "cors", credentials: "omit" });
-    if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status} for URL ${src}`);
-    const blob = await resp.blob();
-    return createImageBitmap(blob);
-}
-
-function bucketDpiFromHeight(h: number) {
-    if (h >= 4440) return 1200;
-    if (h >= 2960) return 800;
-    if (h >= 2220) return 600;
-    return 300;
-}
-
-function calibratedBleedTrimPxForHeight(h: number) {
-    const dpi = bucketDpiFromHeight(h);
-    if (dpi === 300) return 72;
-    if (dpi === 600) return 78;
-    if (dpi === 800) return 104;
-    return 156;
-}
-
-async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number): Promise<ImageBitmap> {
-    const img = await loadImage(src);
-    const trim = bleedTrimPx ?? calibratedBleedTrimPxForHeight(img.height);
-    const w = img.width - trim * 2;
-    const h = img.height - trim * 2;
-    if (w <= 0 || h <= 0) return img;
-    const newImg = await createImageBitmap(img, trim, trim, w, h);
-    img.close();
-    return newImg;
-}
-
-function blackenAllNearBlackPixels(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, threshold: number, dpi: number) {
-    const borderThickness = { top: 48, bottom: 48, left: 48, right: 48 };
-    const scale = dpi / 300;
-    const bt = {
-        top: Math.round(borderThickness.top * scale),
-        bottom: Math.round(borderThickness.bottom * scale),
-        left: Math.round(borderThickness.left * scale),
-        right: Math.round(borderThickness.right * scale),
-    };
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    for (let y = 0; y < height; y++) {
-        const inY = y < bt.top || y >= height - bt.bottom;
-        for (let x = 0; x < width; x++) {
-            const inX = x < bt.left || x >= width - bt.right;
-            if (!(inY || inX)) continue;
-            const i = (y * width + x) * 4;
-            const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
-            if (r < threshold && g < threshold && b < threshold) {
-                data[i] = 0;
-                data[i + 1] = 0;
-                data[i + 2] = 0;
-            }
-        }
-    }
-    ctx.putImageData(imageData, 0, 0);
-}
+// Removed local definitions of:
+// IN, MM_TO_IN, MM_TO_PX, loadImage, bucketDpiFromHeight, calibratedBleedTrimPxForHeight,
+// trimExistingBleedIfAny, blackenAllNearBlackPixels
 
 function drawEdgeStubs(ctx: OffscreenCanvasRenderingContext2D, pageW: number, pageH: number, startX: number, startY: number, columns: number, rows: number, contentW: number, contentH: number, cardW: number, cardH: number, bleedPx: number, guideWidthPx: number, spacingPx = 0) {
     const xCuts: number[] = [];
@@ -170,10 +118,6 @@ function drawCornerGuides(ctx: OffscreenCanvasRenderingContext2D, x: number, y: 
     ctx.fillRect(gx + contentW - guideLenPx, gy + contentH, guideLenPx, guideWidthPx);
     ctx.fillRect(gx + contentW, gy + contentH - guideLenPx, guideWidthPx, guideLenPx);
     ctx.restore();
-}
-
-function getPatchNearCorner(seedX: number, seedY: number) {
-    return { sx: seedX, sy: seedY };
 }
 
 
@@ -235,7 +179,7 @@ async function buildCardWithBleed(
         dst.globalAlpha = 1;
         dst.restore();
     }
-    const corners = [{ x: 0, y: 0 }, { x: contentWidthPx - cornerSize, y: 0 }, { x: 0, y: contentHeightPx - cornerSize }, { x: contentWidthPx - cornerSize, y: contentHeightPx - cornerSize }, ];
+    const corners = [{ x: 0, y: 0 }, { x: contentWidthPx - cornerSize, y: 0 }, { x: 0, y: contentHeightPx - cornerSize }, { x: contentWidthPx - cornerSize, y: contentHeightPx - cornerSize },];
     for (const { x, y } of corners) {
         if (!cornerNeedsFill(bctx, x, y, cornerSize)) continue;
         const flat = detectFlatBorderColor(bctx, contentWidthPx, contentHeightPx, x, y, Math.round(40 * dpiFactor), Math.round(6 * dpiFactor));
@@ -249,7 +193,9 @@ async function buildCardWithBleed(
         }
         const seedX = x < contentWidthPx / 2 ? sampleInset : contentWidthPx - sampleInset - patchSize;
         const seedY = y < contentHeightPx / 2 ? sampleInset : contentHeightPx - sampleInset - patchSize;
-        const { sx, sy } = getPatchNearCorner(seedX, seedY);
+
+        const { sx, sy } = getPatchNearCorner(bctx, seedX, seedY, patchSize);
+
         bctx.save();
         bctx.globalCompositeOperation = "destination-over";
         for (let ty = y; ty < y + cornerSize; ty += patchSize) {
@@ -320,11 +266,11 @@ self.onmessage = async (event: MessageEvent) => {
             const row = Math.floor(idx / columns);
             const x = startX + col * (cardWidthPx + spacingPx);
             const y = startY + row * (cardHeightPx + spacingPx);
-    
+
             let finalCardCanvas: OffscreenCanvas | ImageBitmap;
             const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
 
-            const isCacheValid = 
+            const isCacheValid =
                 imageInfo?.exportBlob &&
                 imageInfo?.exportDpi === DPI &&
                 imageInfo?.exportBleedWidth === bleedEdgeWidthMm;
@@ -333,7 +279,7 @@ self.onmessage = async (event: MessageEvent) => {
                 finalCardCanvas = await createImageBitmap(imageInfo.exportBlob!);
             } else {
                 let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
-        
+
                 if (!src) {
                     const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
                     const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
@@ -360,7 +306,7 @@ self.onmessage = async (event: MessageEvent) => {
                     if (src.startsWith("blob:")) URL.revokeObjectURL(src);
                 }
             }
-    
+
             ctx.drawImage(finalCardCanvas, x, y, cardWidthPx, cardHeightPx);
             if (finalCardCanvas instanceof ImageBitmap) {
                 finalCardCanvas.close();
