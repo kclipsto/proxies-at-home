@@ -93,11 +93,12 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
 
   // Cleanup on unmount
   useEffect(() => {
+    const cache = urlCacheRef.current;
     return () => {
-      for (const cached of urlCacheRef.current.values()) {
+      for (const cached of cache.values()) {
         URL.revokeObjectURL(cached.url);
       }
-      urlCacheRef.current.clear();
+      cache.clear();
     };
   }, []);
 

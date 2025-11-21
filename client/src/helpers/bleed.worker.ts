@@ -1,159 +1,20 @@
 declare const self: DedicatedWorkerGlobalScope;
 
-const NEAR_BLACK = 16;
-
-async function fetchWithRetry(url: string, retries = 3, baseDelay = 250): Promise<Response> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        return response;
-      }
-      if (response.status >= 400 && response.status < 500) {
-        throw new Error(`Client error: ${response.status} ${response.statusText}`);
-      }
-    } catch (error) {
-      if (i === retries - 1) throw error;
-    }
-    
-    const exponentialDelay = baseDelay * (2 ** i);
-    const jitter = Math.random() * baseDelay;
-    const totalDelay = exponentialDelay + jitter;
-    
-    console.log(`Fetch failed for ${url}. Retrying in ${Math.round(totalDelay)}ms... (Attempt ${i + 1}/${retries})`);
-    
-    await new Promise(res => setTimeout(res, totalDelay));
-  }
-  throw new Error(`Fetch failed for ${url} after ${retries} attempts.`);
-}
-
+import {
+  IN,
+  toProxied,
+  getBleedInPixels,
+  trimExistingBleedIfAny,
+  loadImage,
+  blackenAllNearBlackPixels,
+  getPatchNearCorner,
+} from "./imageProcessing";
 
 let API_BASE = "";
-const IN = (inches: number, dpi: number) => Math.round(inches * dpi);
 
-function toProxied(url: string) {
-  if (!url) return url;
-  if (url.startsWith("data:")) return url;
-  const prefix = `${API_BASE}/api/cards/images/proxy?url=`;
-  if (url.startsWith(prefix)) return url;
-  return `${prefix}${encodeURIComponent(url)}`;
-}
-
-function getBleedInPixels(
-  bleedEdgeWidth: number,
-  unit: string,
-  dpi: number
-): number {
-  return unit === "mm"
-    ? IN(bleedEdgeWidth / 25.4, dpi)
-    : IN(bleedEdgeWidth, dpi);
-}
-
-function calibratedBleedTrimPxForHeight(h: number) {
-    if (h >= 4440) return 156;
-    if (h >= 2960) return 104;
-    if (h >= 2220) return 78;
-    return 72;
-}
-
-async function trimExistingBleedIfAny(src: string): Promise<ImageBitmap> {
-    const img = await loadImage(src);
-    const trim = calibratedBleedTrimPxForHeight(img.height);
-    const w = img.width - trim * 2;
-    const h = img.height - trim * 2;
-    if (w <= 0 || h <= 0) return img;
-    const newImg = await createImageBitmap(img, trim, trim, w, h);
-    img.close();
-    return newImg;
-}
-
-async function loadImage(src: string): Promise<ImageBitmap> {
-    const response = await fetchWithRetry(src);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.status}`);
-    }
-    const blob = await response.blob();
-    return await createImageBitmap(blob);
-}
-
-function blackenAllNearBlackPixels(
-  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  width: number,
-  height: number,
-  threshold: number,
-  dpi: number
-) {
-  const borderThickness = { top: 48, bottom: 48, left: 48, right: 48 };
-  const scale = dpi / 300;
-  const bt = {
-    top: Math.round(borderThickness.top * scale),
-    bottom: Math.round(borderThickness.bottom * scale),
-    left: Math.round(borderThickness.left * scale),
-    right: Math.round(borderThickness.right * scale),
-  };
-
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-
-  for (let y = 0; y < height; y++) {
-    const inY = y < bt.top || y >= height - bt.bottom;
-    for (let x = 0; x < width; x++) {
-      const inX = x < bt.left || x >= width - bt.right;
-      if (!(inY || inX)) continue;
-
-      const i = (y * width + x) * 4;
-      const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
-
-      if (r < threshold && g < threshold && b < threshold) {
-        data[i] = 0;
-        data[i + 1] = 0;
-        data[i + 2] = 0;
-      }
-    }
-  }
-  ctx.putImageData(imageData, 0, 0);
-}
-
-function getPatchNearCorner(
-  ctx: OffscreenCanvasRenderingContext2D,
-  seedX: number,
-  seedY: number,
-  patchSize: number
-) {
-  const sampleSize = patchSize * 2;
-  let bestPatch = { x: seedX, y: seedY, score: -1 };
-
-  for (let y = 0; y < sampleSize - patchSize; y += 4) {
-    for (let x = 0; x < sampleSize - patchSize; x += 4) {
-      let score = 0;
-      let blackPixels = 0;
-      const patch = ctx.getImageData(
-        seedX + x,
-        seedY + y,
-        patchSize,
-        patchSize
-      ).data;
-
-      for (let i = 0; i < patch.length; i += 4) {
-        const r = patch[i];
-        const g = patch[i + 1];
-        const b = patch[i + 2];
-        if (r < NEAR_BLACK && g < NEAR_BLACK && b < NEAR_BLACK) {
-          blackPixels++;
-        }
-        score += Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
-      }
-
-      if (blackPixels / (patchSize * patchSize) < 0.75) {
-        if (bestPatch.score === -1 || score < bestPatch.score) {
-          bestPatch = { x: seedX + x, y: seedY + y, score };
-        }
-      }
-    }
-  }
-
-  return { sx: bestPatch.x, sy: bestPatch.y };
-}
+// Removed local definitions of:
+// fetchWithRetry, IN, toProxied, getBleedInPixels, calibratedBleedTrimPxForHeight,
+// trimExistingBleedIfAny, loadImage, blackenAllNearBlackPixels, getPatchNearCorner
 
 async function addBleedEdge(
   img: ImageBitmap,
@@ -169,7 +30,7 @@ async function addBleedEdge(
 }> {
   const exportDpi = opts?.dpi ?? 300;
   const exportBleedWidth = bleedOverride ?? opts?.bleedEdgeWidth ?? 0;
-  
+
   const displayDpi = 300;
   const displayBleedWidth = exportBleedWidth;
 
@@ -351,14 +212,19 @@ self.onmessage = async (e: MessageEvent) => {
   } = e.data;
   API_BASE = apiBase; // Set the API_BASE for the worker
 
+  if (typeof OffscreenCanvas === "undefined") {
+    self.postMessage({ uuid, error: "OffscreenCanvas is not supported in this environment." });
+    return;
+  }
+
   try {
-    const proxiedUrl = url.startsWith("http") ? toProxied(url) : url;
-    
+    const proxiedUrl = url.startsWith("http") ? toProxied(url, API_BASE) : url;
+
     let imageBitmap: ImageBitmap;
     if (isUserUpload && hasBakedBleed) {
-        imageBitmap = await trimExistingBleedIfAny(proxiedUrl);
+      imageBitmap = await trimExistingBleedIfAny(proxiedUrl);
     } else {
-        imageBitmap = await loadImage(proxiedUrl);
+      imageBitmap = await loadImage(proxiedUrl);
     }
 
     const result = await addBleedEdge(imageBitmap, bleedEdgeWidth, {

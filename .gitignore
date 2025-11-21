@@ -1,4 +1,8 @@
 server/src/cached-images/*
 server/src/uploaded-images/*
-
+server/coverage/*
+client/coverage/*
+coverage/*
+client/playwright-report/
+client/test-results/
 node_modules
