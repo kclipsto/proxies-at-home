@@ -14,7 +14,7 @@ import { useState, useEffect } from "react";
 import { API_BASE } from "../constants";
 import { db } from "../db";
 import { useArtworkModalStore } from "../store";
-import type { ScryfallCard } from "../types/Card";
+import type { ScryfallCard } from "../../../shared/types";
 import { ArrowLeft } from "lucide-react";
 
 export function ArtworkModal() {

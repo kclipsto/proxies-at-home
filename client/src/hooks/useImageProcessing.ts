@@ -2,7 +2,7 @@ import { API_BASE } from "@/constants";
 import { db } from "../db"; // Import the Dexie database instance
 import { ImageProcessor } from "../helpers/imageProcessor";
 import { useSettingsStore } from "../store";
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
 
 export function useImageProcessing({

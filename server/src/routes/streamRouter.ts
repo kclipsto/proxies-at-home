@@ -1,9 +1,11 @@
-const express = require("express");
-const { getImagesForCardInfo } = require("../utils/getCardImagesPaged");
+import express, { type Request, type Response } from "express";
+import { getImagesForCardInfo } from "../utils/getCardImagesPaged";
+import { normalizeCardInfos } from "../utils/cardUtils";
+import { type ScryfallCard } from "../../../shared/types";
 
 const streamRouter = express.Router();
 
-streamRouter.post("/cards", async (req, res) => {
+streamRouter.post("/cards", async (req: Request, res: Response) => {
   // 1. Set SSE headers for a persistent connection
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -23,8 +25,12 @@ streamRouter.post("/cards", async (req, res) => {
   });
 
   try {
-    const cardQueries = Array.isArray(req.body.cardQueries) ? req.body.cardQueries : [];
     const language = (req.body.language || "en").toLowerCase();
+    const cardQueries = normalizeCardInfos(
+      Array.isArray(req.body.cardQueries) ? req.body.cardQueries : null,
+      null,
+      language
+    );
     const total = cardQueries.length;
 
     // 4. Handshake: Inform the client how many cards to expect
@@ -38,7 +44,7 @@ streamRouter.post("/cards", async (req, res) => {
         // Fetch all unique arts for the card (default behavior)
         const imageUrls = await getImagesForCardInfo(ci, "art", language);
         if (imageUrls && imageUrls.length > 0) {
-          const cardToSend = {
+          const cardToSend: ScryfallCard = {
             name: ci.name,
             set: ci.set,
             number: ci.number,
@@ -50,9 +56,10 @@ streamRouter.post("/cards", async (req, res) => {
         } else {
           throw new Error("Card not found on Scryfall.");
         }
-      } catch (e) {
-        console.error(`[STREAM] Error fetching ${ci.name}:`, e.message);
-        res.write(`event: card-error\ndata: ${JSON.stringify({ query: ci, error: e.message })}\n\n`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[STREAM] Error fetching ${ci.name}:`, msg);
+        res.write(`event: card-error\ndata: ${JSON.stringify({ query: ci, error: msg })}\n\n`);
       } finally {
         res.write(`event: progress\ndata: ${JSON.stringify({ processed, total })}\n\n`);
       }
@@ -64,7 +71,7 @@ streamRouter.post("/cards", async (req, res) => {
     clearInterval(keepAliveInterval);
     res.end();
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[STREAM] A fatal error occurred:", error);
     res.write(`event: fatal-error\ndata: ${JSON.stringify({ message: "An unexpected server error occurred." })}\n\n`);
     clearInterval(keepAliveInterval);
@@ -72,4 +79,4 @@ streamRouter.post("/cards", async (req, res) => {
   }
 });
 
-module.exports = { streamRouter };
+export { streamRouter };

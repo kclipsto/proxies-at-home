@@ -1,5 +1,5 @@
 import { API_BASE } from "@/constants";
-import type { CardOption } from "@/types/Card";
+import type { CardOption } from "../../../shared/types";
 import { PDFDocument } from "pdf-lib";
 
 function* pageGenerator(
