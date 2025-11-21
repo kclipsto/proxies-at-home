@@ -61,7 +61,8 @@ export function UploadSection() {
     > = [];
 
     for (const file of fileArray) {
-      const imageId = await addCustomImage(file);
+      const suffix = opts.hasBakedBleed ? "-mpc" : "-std";
+      const imageId = await addCustomImage(file, suffix);
       cardsToAdd.push({
         name: inferCardNameFromFilename(file.name) || `Custom Art`,
         imageId: imageId,

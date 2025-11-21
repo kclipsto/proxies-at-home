@@ -11,16 +11,16 @@ type PresetOption = {
 };
 
 const layoutPresets: PresetOption[] = [
-  { name: "Letter",  width: 8.5,  height: 11,  unit: "in" },
-  { name: "Legal",   width: 14,   height: 8.5, unit: "in" },
-  { name: "Tabloid", width: 11,   height: 17,  unit: "in" },
-  { name: "SuperB",  width: 13,   height: 19,  unit: "in" },
-  { name: "ArchA",   width: 9,    height: 12,  unit: "in" },
-  { name: "ArchB",   width: 18,   height: 12,  unit: "in" },
-  { name: "A4",      width: 210,  height: 297, unit: "mm" },
-  { name: "A3",      width: 297,  height: 420, unit: "mm" },
-  { name: "A2",      width: 420,  height: 594, unit: "mm" },
-  { name: "A1",      width: 594,  height: 841, unit: "mm" },
+  { name: "Letter", width: 8.5, height: 11, unit: "in" },
+  { name: "Legal", width: 14, height: 8.5, unit: "in" },
+  { name: "Tabloid", width: 11, height: 17, unit: "in" },
+  { name: "SuperB", width: 13, height: 19, unit: "in" },
+  { name: "ArchA", width: 9, height: 12, unit: "in" },
+  { name: "ArchB", width: 18, height: 12, unit: "in" },
+  { name: "A4", width: 210, height: 297, unit: "mm" },
+  { name: "A3", width: 297, height: 420, unit: "mm" },
+  { name: "A2", width: 420, height: 594, unit: "mm" },
+  { name: "A1", width: 594, height: 841, unit: "mm" },
 ];
 
 const getPresetLabel = (preset: PresetOption, orientation: PageOrientation) => {
@@ -49,9 +49,10 @@ export function PageSizeControl() {
 
   return (
     <div className="space-y-4">
-      <Label className="block mb-1">Page size</Label>
+      <Label htmlFor="page-size-select" className="block mb-1">Page size</Label>
 
       <Select
+        id="page-size-select"
         value={pageSizePreset}
         onChange={(e) => {
           const value = e.target.value as LayoutPreset;
@@ -66,13 +67,13 @@ export function PageSizeControl() {
       </Select>
 
       <div className="grid grid-cols-[1fr_min-content_1fr] gap-x-2 gap-y-1 items-center">
-        <Label>Page width ({pageSizeUnit})</Label>
+        <Label htmlFor="page-width-input">Page width ({pageSizeUnit})</Label>
         <div />
-        <Label>Page height ({pageSizeUnit})</Label>
+        <Label htmlFor="page-height-input">Page height ({pageSizeUnit})</Label>
 
-        <TextInput disabled value={pageWidthIn} />
+        <TextInput id="page-width-input" disabled value={pageWidthIn} />
         <div className="text-white">×</div>
-        <TextInput disabled value={pageHeightIn} />
+        <TextInput id="page-height-input" disabled value={pageHeightIn} />
       </div>
 
       <Button className="w-full" color="blue" onClick={swapPageOrientation}>

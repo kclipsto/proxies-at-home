@@ -1,4 +1,4 @@
-import type { CardInfo } from "@/types";
+import type { CardInfo } from "../../../shared/types.js";
 
 /**
  * Normalizes incoming card queries or names into a standard CardInfo array.

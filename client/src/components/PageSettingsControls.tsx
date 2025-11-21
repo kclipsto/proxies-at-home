@@ -365,8 +365,9 @@ export function PageSettingsControls({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Columns</Label>
+            <Label htmlFor="columns-input">Columns</Label>
             <TextInput
+              id="columns-input"
               key={columns}
               ref={columnsInput.inputRef}
               className="w-full"
@@ -380,8 +381,9 @@ export function PageSettingsControls({
             />
           </div>
           <div>
-            <Label>Rows</Label>
+            <Label htmlFor="rows-input">Rows</Label>
             <TextInput
+              id="rows-input"
               key={rows}
               ref={rowsInput.inputRef}
               className="w-full"

@@ -1,5 +1,5 @@
 
-import { describe, it, expect } from 'vitest';
+import { describe, it } from 'vitest';
 
 const DRIVE_ID_RE = /^[A-Za-z0-9_-]{12,}$/;
 
@@ -17,7 +17,7 @@ function oldExtract(s: string | null | undefined): string | undefined {
 
             const last = u.pathname.split("/").filter(Boolean).pop();
             if (last && DRIVE_ID_RE.test(last)) return last;
-        } catch (e) {
+        } catch {
             return undefined;
         }
     }
@@ -48,7 +48,7 @@ function newExtract(s: string | null | undefined): string | undefined {
 
             const last = u.pathname.split("/").filter(Boolean).pop();
             if (last && DRIVE_ID_RE.test(last)) return last;
-        } catch (e) {
+        } catch {
             return undefined;
         }
     }

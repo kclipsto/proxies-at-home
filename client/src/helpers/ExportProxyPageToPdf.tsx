@@ -239,8 +239,7 @@ export async function exportProxyPagesToPdf({
             if (nextPageIndexToAdd !== chunkPages.length) {
               return Promise.reject(
                 new Error(
-                  `PDF assembly failed. Expected ${
-                    chunkPages.length
+                  `PDF assembly failed. Expected ${chunkPages.length
                   } pages, but only processed ${nextPageIndexToAdd}.`
                 )
               );
@@ -283,7 +282,8 @@ export async function exportProxyPagesToPdf({
   const date = new Date().toISOString().slice(0, 10);
   const filename = `proxxies_${date}.pdf`;
 
-  const blob = new Blob([mergedPdfFile], { type: "application/pdf" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blob = new Blob([mergedPdfFile as any], { type: "application/pdf" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = filename;

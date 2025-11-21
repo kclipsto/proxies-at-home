@@ -1,5 +1,5 @@
 import axios, { type AxiosResponse } from "axios";
-import type { CardInfo } from "@/types";
+import type { CardInfo } from "../../../shared/types.js";
 
 const SCRYFALL_API = "https://api.scryfall.com/cards/search";
 

@@ -8,7 +8,7 @@
     "test:ui": "vitest --ui --coverage.enabled=true",
     "dev": "nodemon --exec tsx src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "node dist/server/src/index.js",
     "lint": "eslint ."
   },
   "keywords": [],

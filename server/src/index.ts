@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
-import { imageRouter } from "./routes/imageRouter";
-import { streamRouter } from "./routes/streamRouter";
+import { imageRouter } from "./routes/imageRouter.js";
+import { streamRouter } from "./routes/streamRouter.js";
 
 const app = express();
 

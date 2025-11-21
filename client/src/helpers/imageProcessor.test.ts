@@ -5,9 +5,9 @@ describe("ImageProcessor", () => {
     beforeEach(() => {
         // Reset the singleton instance before each test
         // We need to access the private static instance to reset it
-        // @ts-ignore
+        // @ts-expect-error: Accessing private member for testing
         ImageProcessor.instance = undefined;
-        // @ts-ignore
+        // @ts-expect-error: Accessing private member for testing
         ImageProcessor.instances = new Set();
 
         // Mock Worker
@@ -44,7 +44,7 @@ describe("ImageProcessor", () => {
 
         const instance = ImageProcessor.getInstance();
         // Access private maxWorkers
-        // @ts-ignore
+        // @ts-expect-error: Accessing private member for testing
         expect(instance.maxWorkers).toBe(18);
     });
 
@@ -55,7 +55,7 @@ describe("ImageProcessor", () => {
         });
 
         const instance = ImageProcessor.getInstance();
-        // @ts-ignore
+        // @ts-expect-error: Accessing private member for testing
         expect(instance.maxWorkers).toBe(7);
     });
 
@@ -66,7 +66,7 @@ describe("ImageProcessor", () => {
         });
 
         const instance = ImageProcessor.getInstance();
-        // @ts-ignore
+        // @ts-expect-error: Accessing private member for testing
         expect(instance.maxWorkers).toBe(1);
     });
 });

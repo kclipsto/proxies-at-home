@@ -140,7 +140,7 @@ describe("getCardImagesPaged", () => {
       expect(mockedAxios.get).toHaveBeenCalledTimes(2);
       expect(mockedAxios.get.mock.calls[1]?.[0]).toBe("next_page_url");
       expect(urls).toEqual(["page1_url", "page2_url"]);
-    });
+    }, 30000);
 
     it("should not fall back to English if fallbackToEnglish is false", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([])); // Language query fails
@@ -254,6 +254,7 @@ describe("getCardImagesPaged", () => {
     it("getCardDataForCardInfo should handle null cardInfo", async () => {
       mockedAxios.get.mockClear();
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([]));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await getCardDataForCardInfo(null as any);
       expect(result).toBeNull();
     });

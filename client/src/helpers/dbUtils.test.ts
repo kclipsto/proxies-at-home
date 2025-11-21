@@ -125,6 +125,26 @@ describe('dbUtils', () => {
             expect(img?.refCount).toBe(3);
         });
 
+        it('addCustomImage should create distinct IDs with different suffixes', async () => {
+            const { addCustomImage } = await import('./dbUtils');
+            const blob = new Blob(['test image content'], { type: 'image/png' });
+
+            const id1 = await addCustomImage(blob, '-mpc');
+            const id2 = await addCustomImage(blob, '-std');
+
+            expect(id1).not.toBe(id2);
+            expect(id1).toContain('-mpc');
+            expect(id2).toContain('-std');
+
+            const img1 = await db.images.get(id1);
+            const img2 = await db.images.get(id2);
+
+            expect(img1).toBeDefined();
+            expect(img2).toBeDefined();
+            expect(img1!.refCount).toBe(1);
+            expect(img2!.refCount).toBe(1);
+        });
+
         it('removeImageRef should decrement ref count and delete if 0', async () => {
             const blob = new Blob(['delete me'], { type: 'image/png' });
             const { addCustomImage, removeImageRef } = await import('./dbUtils');

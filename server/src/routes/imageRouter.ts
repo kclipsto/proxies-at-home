@@ -5,9 +5,9 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import multer from "multer";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { getImagesForCardInfo } from "../utils/getCardImagesPaged";
-import { normalizeCardInfos } from "../utils/cardUtils";
-import type { CardInfo } from "@/types";
+import { getImagesForCardInfo } from "../utils/getCardImagesPaged.js";
+import { normalizeCardInfos } from "../utils/cardUtils.js";
+import type { CardInfo } from "../../../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

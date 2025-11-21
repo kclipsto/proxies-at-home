@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
-import { getImagesForCardInfo } from "../utils/getCardImagesPaged";
-import { normalizeCardInfos } from "../utils/cardUtils";
-import { type ScryfallCard } from "../../../shared/types";
+import { getImagesForCardInfo } from "../utils/getCardImagesPaged.js";
+import { normalizeCardInfos } from "../utils/cardUtils.js";
+import { type ScryfallCard } from "../../../shared/types.js";
 
 const streamRouter = express.Router();
 

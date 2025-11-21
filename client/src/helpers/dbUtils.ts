@@ -22,8 +22,12 @@ export async function hashBlob(blob: Blob): Promise<string> {
  * @param blob The image blob to add.
  * @returns The ID (hash) of the image in the database.
  */
-export async function addCustomImage(blob: Blob): Promise<string> {
-  const imageId = await hashBlob(blob);
+export async function addCustomImage(
+  blob: Blob,
+  suffix: string = ""
+): Promise<string> {
+  const hash = await hashBlob(blob);
+  const imageId = suffix ? `${hash}${suffix}` : hash;
 
   await db.transaction("rw", db.images, async () => {
     const existingImage = await db.images.get(imageId);

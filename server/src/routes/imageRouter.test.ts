@@ -1,6 +1,6 @@
 import { vi, describe, beforeEach, afterEach, it, expect, type Mock } from 'vitest';
 import request from "supertest";
-import express, { type Express } from "express";
+import express, { type Express, type Response } from "express";
 import fs from "fs";
 import axios from "axios";
 import { Writable } from "stream";
@@ -97,7 +97,7 @@ describe("getWithRetry logic", () => {
 
     it("should serve from cache if file exists", async () => {
         (fs.existsSync as unknown as Mock).mockReturnValue(true);
-        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: any) {
+        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
             this.type("image/jpeg").send("cached image data");
         });
 
@@ -115,7 +115,7 @@ describe("getWithRetry logic", () => {
             headers: { "content-type": "image/jpeg" },
         });
 
-        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: any) {
+        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
             this.type("image/jpeg").send("image data");
         });
 
@@ -134,7 +134,7 @@ describe("getWithRetry logic", () => {
                 headers: { "content-type": "image/jpeg" },
             });
 
-        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: any) {
+        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
             this.type("image/jpeg").send("image data");
         });
 
@@ -153,7 +153,7 @@ describe("getWithRetry logic", () => {
                 headers: { "content-type": "image/jpeg" },
             });
 
-        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: any) {
+        const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
             this.type("image/jpeg").send("image data");
         });
 
@@ -250,7 +250,7 @@ describe("getWithRetry logic", () => {
         it("should proxy image from Google Drive", async () => {
             mockedAxios.get.mockResolvedValue({
                 headers: { "content-type": "image/jpeg" },
-                data: { pipe: (res: any) => res.end("image data") },
+                data: { pipe: (res: Writable) => res.end("image data") },
             });
 
             const res = await request(app).get("/images/front?id=123");
