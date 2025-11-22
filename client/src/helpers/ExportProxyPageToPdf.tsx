@@ -1,5 +1,5 @@
 import { API_BASE } from "@/constants";
-import type { CardOption } from "@/types/Card";
+import type { CardOption } from "../../../shared/types";
 import { PDFDocument } from "pdf-lib";
 
 function* pageGenerator(
@@ -30,6 +30,7 @@ export async function exportProxyPagesToPdf({
   onProgress,
   pagesPerPdf,
   cancellationPromise,
+  darkenNearBlack,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
@@ -50,6 +51,7 @@ export async function exportProxyPagesToPdf({
   onProgress?: (progress: number) => void;
   pagesPerPdf: number;
   cancellationPromise: Promise<void>;
+  darkenNearBlack: boolean;
 }): Promise<void> {
   if (!cards || !cards.length) {
     return;
@@ -147,6 +149,7 @@ export async function exportProxyPagesToPdf({
             reject(error);
           };
 
+
           for (let i = 0; i < maxWorkers; i++) {
             const worker = new Worker(
               new URL("./pdf.worker.ts", import.meta.url),
@@ -175,6 +178,7 @@ export async function exportProxyPagesToPdf({
                   DPI: dpi,
                   imagesById,
                   API_BASE,
+                  darkenNearBlack,
                 };
                 worker.postMessage({
                   pageCards: task.pageCards,
@@ -239,8 +243,7 @@ export async function exportProxyPagesToPdf({
             if (nextPageIndexToAdd !== chunkPages.length) {
               return Promise.reject(
                 new Error(
-                  `PDF assembly failed. Expected ${
-                    chunkPages.length
+                  `PDF assembly failed. Expected ${chunkPages.length
                   } pages, but only processed ${nextPageIndexToAdd}.`
                 )
               );
@@ -283,7 +286,8 @@ export async function exportProxyPagesToPdf({
   const date = new Date().toISOString().slice(0, 10);
   const filename = `proxxies_${date}.pdf`;
 
-  const blob = new Blob([mergedPdfFile], { type: "application/pdf" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blob = new Blob([mergedPdfFile as any], { type: "application/pdf" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = filename;

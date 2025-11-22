@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import type { CardOption } from "@/types/Card";
+import type { CardOption } from "../../../shared/types";
 
 /**
  * Calculates the SHA-256 hash of a file or blob.
@@ -22,8 +22,12 @@ export async function hashBlob(blob: Blob): Promise<string> {
  * @param blob The image blob to add.
  * @returns The ID (hash) of the image in the database.
  */
-export async function addCustomImage(blob: Blob): Promise<string> {
-  const imageId = await hashBlob(blob);
+export async function addCustomImage(
+  blob: Blob,
+  suffix: string = ""
+): Promise<string> {
+  const hash = await hashBlob(blob);
+  const imageId = suffix ? `${hash}${suffix}` : hash;
 
   await db.transaction("rw", db.images, async () => {
     const existingImage = await db.images.get(imageId);
@@ -52,7 +56,8 @@ export async function addCustomImage(blob: Blob): Promise<string> {
  * @returns The ID (URL) of the image in the database.
  */
 export async function addRemoteImage(
-  imageUrls: string[]
+  imageUrls: string[],
+  count: number = 1
 ): Promise<string | undefined> {
   if (!imageUrls || imageUrls.length === 0) return undefined;
 
@@ -63,14 +68,14 @@ export async function addRemoteImage(
 
     if (existingImage) {
       await db.images.update(imageId, {
-        refCount: existingImage.refCount + 1,
+        refCount: existingImage.refCount + count,
       });
     } else {
       await db.images.add({
         id: imageId,
         sourceUrl: imageUrls[0],
         imageUrls: imageUrls,
-        refCount: 1,
+        refCount: count,
       });
     }
   });
@@ -302,13 +307,13 @@ export async function rebalanceCardOrders(): Promise<void> {
       (card) => !Number.isInteger(card.order)
     );
 
-        if (needsRebalance) {
-          const rebalancedCards = sortedCards.map((card, index) => ({
-            ...card,
-            order: (index + 1) * 10, // Space out by 10 for future inserts
-          }));
+    if (needsRebalance) {
+      const rebalancedCards = sortedCards.map((card, index) => ({
+        ...card,
+        order: (index + 1) * 10, // Space out by 10 for future inserts
+      }));
 
-          await db.cards.bulkPut(rebalancedCards);
-        }
+      await db.cards.bulkPut(rebalancedCards);
+    }
   });
 }

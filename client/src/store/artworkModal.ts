@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
 
 type ArtworkModalData = {
   card: CardOption | null;

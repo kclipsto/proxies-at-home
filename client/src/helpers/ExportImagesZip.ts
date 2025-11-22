@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
 import { API_BASE } from "@/constants";
 import type { Image } from "@/db";
 
@@ -20,7 +20,7 @@ function getLocalBleedImageUrl(originalUrl: string) {
 }
 
 // Scryfall thumbs sometimes come as .jpg; prefer .png for fewer artifacts
-function preferPng(url:string) {
+function preferPng(url: string) {
   try {
     const u = new URL(url);
     if (
@@ -56,7 +56,7 @@ export async function ExportImagesZip(opts: ExportOpts) {
 
     let url = image?.sourceUrl || "";
 
-    if (!url) {
+    if (!url && !image?.originalBlob) {
       return async () => null; // empty slot
     }
 
@@ -70,12 +70,20 @@ export async function ExportImagesZip(opts: ExportOpts) {
 
     return async () => {
       try {
-        const res = await fetch(url, { mode: "cors", credentials: "omit" });
-        if (!res.ok) {
-          console.warn(`[Export skipped] Could not fetch: ${url}`);
+        let blob: Blob;
+
+        if (image?.originalBlob) {
+          blob = image.originalBlob;
+        } else if (url) {
+          const res = await fetch(url, { mode: "cors", credentials: "omit" });
+          if (!res.ok) {
+            console.warn(`[Export skipped] Could not fetch: ${url}`);
+            return null;
+          }
+          blob = await res.blob();
+        } else {
           return null;
         }
-        const blob = await res.blob();
 
         // de-dupe filenames per printed order
         const count = (usedNames.get(baseName) ?? 0) + 1;
@@ -87,8 +95,8 @@ export async function ExportImagesZip(opts: ExportOpts) {
           blob.type === "image/jpeg"
             ? "jpg"
             : blob.type === "image/webp"
-            ? "webp"
-            : "png";
+              ? "webp"
+              : "png";
 
         const filename = `${idx} - ${baseName}${suffix}.${ext}`;
         zip.file(filename, blob);

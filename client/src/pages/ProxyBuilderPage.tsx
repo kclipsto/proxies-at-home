@@ -23,13 +23,15 @@ function PageViewLoader() {
 
 export default function ProxyBuilderPage() {
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
-  const imageProcessor = useMemo(() => new ImageProcessor(), []);
+  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
+  const imageProcessor = useMemo(() => ImageProcessor.getInstance(), []);
 
   const { loadingMap, ensureProcessed, reprocessSelectedImages } =
     useImageProcessing({
       unit: "mm",
       bleedEdgeWidth,
       imageProcessor,
+      darkenNearBlack,
     });
 
   // On startup, rebalance card orders to prevent floating point issues.
@@ -62,12 +64,6 @@ export default function ProxyBuilderPage() {
     const timer = setTimeout(() => processAllUnprocessed(), 100);
     return () => clearTimeout(timer);
   }, [ensureProcessed]);
-
-  useEffect(() => {
-    return () => {
-      imageProcessor.destroy();
-    };
-  }, [imageProcessor]);
 
   return (
     <div className="flex flex-row h-screen justify-between overflow-hidden">

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { CardOption } from './types/Card';
+import type { CardOption } from '@/types';
 
 // Define a type for the image data to be stored
 export interface Image {
