@@ -11,23 +11,32 @@ button {
 /* Custom Scrollbar Styles */
 /* For Webkit browsers (Chrome, Safari) */
 ::-webkit-scrollbar {
-  width: 8px; /* width of the scrollbar */
+  width: 8px;
+  /* width of the scrollbar */
 }
 
 ::-webkit-scrollbar-track {
-  background: #2d3748; /* color of the track (dark gray) */
+  background: #2d3748;
+  /* color of the track (dark gray) */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4a5568; /* color of the scroll thumb (lighter dark gray) */
+  background: #4a5568;
+  /* color of the scroll thumb (lighter dark gray) */
   border-radius: 10px;
+}
+
+::-webkit-scrollbar-corner {
+  background: #2d3748;
+  /* match track color */
 }
 
 /* For Firefox */
 /* Note: Firefox scrollbar styling is more limited */
 /* You can target the scrollbar-color property */
-/* scrollbar-color: #4a5568 #2d3748; */ /* thumb color track color */
+/* scrollbar-color: #4a5568 #2d3748; */
+/* thumb color track color */
 
 @keyframes sheen-flow {
   100% {
@@ -36,14 +45,35 @@ button {
 }
 
 .animate-sheen {
-  background-color: rgb(14, 159, 110); /* bg-green-500 */
-  background-image: linear-gradient(
-    to right,
-    transparent 10%,
-    rgba(255, 255, 255, 0.4) 50%,
-    transparent 90%
-  );
-  /* background-repeat: no-repeat; */
+  background-color: rgb(14, 159, 110);
+  /* bg-green-500 */
+  background-image: linear-gradient(to right,
+      transparent 10%,
+      rgba(255, 255, 255, 0.4) 50%,
+      transparent 90%);
   background-size: 50% 100%;
   animation: sheen-flow 1.5s linear infinite;
+}
+
+/* Zoom Slider Thumb Styling */
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 32px;
+  height: 16px;
+  background: #2563eb;
+  /* blue-600 */
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.zoom-slider::-moz-range-thumb {
+  width: 32px;
+  height: 16px;
+  background: #2563eb;
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: none;
 }

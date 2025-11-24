@@ -361,7 +361,7 @@ export function PageSettingsControls({
   const guideWidthInput = useNormalizedInput(guideWidth, setGuideWidth);
 
   return (
-    <div className="w-1/4 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
+    <div className="w-1/5 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
       <h2 className="text-2xl font-semibold dark:text-white">Settings</h2>
 
       <div className="space-y-4">
@@ -563,24 +563,78 @@ export function PageSettingsControls({
 
         <div>
           <Label>Zoom</Label>
-          <div className="flex items-center gap-2 justify-between w-full">
-            <Button
-              size="xs"
-              className="w-full"
-              color="blue"
-              onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
-            >
-              <ZoomOut className="size-4" />
-            </Button>
-            <Label className="w-full text-center">{zoom.toFixed(1)}x</Label>
-            <Button
-              size="xs"
-              className="w-full"
-              color="blue"
-              onClick={() => setZoom(zoom + 0.1)}
-            >
-              <ZoomIn className="size-4" />
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 justify-between w-full">
+              <Button
+                size="xs"
+                className="w-full"
+                color="blue"
+                onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
+              >
+                <ZoomOut className="size-4" />
+              </Button>
+              <Label className="w-full text-center">{zoom.toFixed(1)}x</Label>
+              <Button
+                size="xs"
+                className="w-full"
+                color="blue"
+                onClick={() => setZoom(zoom + 0.1)}
+              >
+                <ZoomIn className="size-4" />
+              </Button>
+            </div>
+            <div className="relative w-full h-6 flex items-center">
+              {/* Center Tick Mark (1x) */}
+              <div className="absolute left-1/2 -translate-x-1/2 w-1 h-8 bg-gray-600 rounded pointer-events-none" />
+
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={(() => {
+                  if (zoom <= 1.0) return ((zoom - 0.1) / 0.9) * 50;
+                  return 50 + ((zoom - 1.0) / 4.0) * 50;
+                })()}
+                onDoubleClick={() => setZoom(1.0)}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+
+                  // Helper to convert slider value to zoom
+                  const toZoom = (v: number) => {
+                    if (v <= 50) return 0.1 + (v / 50) * 0.9;
+                    return 1.0 + ((v - 50) / 50) * 4.0;
+                  };
+
+                  // Helper to convert zoom to slider value
+                  const toSlider = (z: number) => {
+                    if (z <= 1.0) return ((z - 0.1) / 0.9) * 50;
+                    return 50 + ((z - 1.0) / 4.0) * 50;
+                  };
+
+                  // Define snap points
+                  // 0.1 to 0.9 in 0.1 steps
+                  // 1.0 to 5.0 in 0.5 steps
+                  const snapZooms: number[] = [];
+                  for (let z = 0.1; z < 1.0; z += 0.1) snapZooms.push(z);
+                  for (let z = 1.0; z <= 5.0; z += 0.5) snapZooms.push(z);
+
+                  let newZoom = toZoom(val);
+
+                  // Check for snapping
+                  for (const snapZoom of snapZooms) {
+                    const snapSliderVal = toSlider(snapZoom);
+                    if (Math.abs(val - snapSliderVal) < 3) { // Snap threshold of 3 units
+                      newZoom = snapZoom;
+                      break;
+                    }
+                  }
+
+                  setZoom(newZoom);
+                }}
+                className="zoom-slider w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 accent-blue-600 relative z-10"
+              />
+            </div>
           </div>
         </div>
 

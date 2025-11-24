@@ -32,13 +32,22 @@ export default function SortableCard({
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const guideColor = useSettingsStore((state) => state.guideColor);
+  const zoom = useSettingsStore((state) => state.zoom);
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: card.uuid });
 
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
+  const scaledTransform = transform
+    ? {
+      ...transform,
+      x: transform.x * (1 / zoom),
+      y: transform.y * (1 / zoom),
+    }
+    : null;
+
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(scaledTransform),
     transition,
     width: `${totalCardWidth}mm`,
     height: `${totalCardHeight}mm`,
