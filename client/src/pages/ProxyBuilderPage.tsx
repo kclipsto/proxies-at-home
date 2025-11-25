@@ -1,4 +1,6 @@
-import { Suspense, lazy, useEffect, useMemo } from "react";
+import { Suspense, lazy, useEffect, useMemo, useCallback } from "react";
+import { ChevronRight } from "lucide-react";
+import { ResizeHandle } from "../components/ResizeHandle";
 import { PageSettingsControls } from "../components/PageSettingsControls";
 import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
@@ -25,7 +27,72 @@ export default function ProxyBuilderPage() {
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
+  const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
+  const setSettingsPanelWidth = useSettingsStore((state) => state.setSettingsPanelWidth);
+  const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
+  const toggleSettingsPanel = useSettingsStore((state) => state.toggleSettingsPanel);
   const imageProcessor = useMemo(() => ImageProcessor.getInstance(), []);
+
+  const isUploadPanelCollapsed = useSettingsStore((state) => state.isUploadPanelCollapsed);
+  const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
+  const uploadPanelWidth = useSettingsStore((state) => state.uploadPanelWidth);
+  const setUploadPanelWidth = useSettingsStore((state) => state.setUploadPanelWidth);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = settingsPanelWidth;
+    let hasExpanded = !isSettingsPanelCollapsed;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = startX - e.clientX;
+
+      // If collapsed and dragged more than 3px, expand
+      if (!hasExpanded && Math.abs(delta) > 3) {
+        toggleSettingsPanel();
+        hasExpanded = true;
+      }
+
+      const newWidth = startWidth + delta;
+      setSettingsPanelWidth(Math.max(250, Math.min(600, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [settingsPanelWidth, setSettingsPanelWidth, isSettingsPanelCollapsed, toggleSettingsPanel]);
+
+  const handleUploadPanelMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = uploadPanelWidth;
+    let hasExpanded = !isUploadPanelCollapsed;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX;
+
+      // If collapsed and dragged more than 3px, expand
+      if (!hasExpanded && Math.abs(delta) > 3) {
+        toggleUploadPanel();
+        hasExpanded = true;
+      }
+
+      const newWidth = startWidth + delta;
+      setUploadPanelWidth(Math.max(250, Math.min(600, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [uploadPanelWidth, setUploadPanelWidth, isUploadPanelCollapsed, toggleUploadPanel]);
 
   const { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
     useImageProcessing({
@@ -68,14 +135,53 @@ export default function ProxyBuilderPage() {
 
   return (
     <div className="flex flex-row h-screen justify-between overflow-hidden">
-      <UploadSection />
+      <div
+        className="relative transition-all duration-200 ease-in-out z-30"
+        style={{
+          width: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
+          minWidth: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
+        }}
+      >
+        <UploadSection isCollapsed={isUploadPanelCollapsed} />
+      </div>
+      <ResizeHandle
+        isCollapsed={isUploadPanelCollapsed}
+        onToggle={toggleUploadPanel}
+        onResizeStart={handleUploadPanelMouseDown}
+        onReset={() => {
+          setUploadPanelWidth(320);
+          if (isUploadPanelCollapsed) toggleUploadPanel();
+        }}
+        className="-ml-2 -mr-2"
+        side="left"
+      />
+
       <Suspense fallback={<PageViewLoader />}>
         <PageView loadingMap={loadingMap} ensureProcessed={ensureProcessed} />
       </Suspense>
-      <PageSettingsControls
-        reprocessSelectedImages={reprocessSelectedImages}
-        cancelProcessing={cancelProcessing}
+      <ResizeHandle
+        isCollapsed={isSettingsPanelCollapsed}
+        onToggle={toggleSettingsPanel}
+        onResizeStart={handleMouseDown}
+        onReset={() => {
+          setSettingsPanelWidth(320);
+          if (isSettingsPanelCollapsed) toggleSettingsPanel();
+        }}
+        className="-ml-2 -mr-2"
+        side="right"
       />
-    </div>
+      <div
+        style={{
+          width: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
+          minWidth: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
+          transition: "width 0.2s ease-in-out",
+        }}
+      >
+        <PageSettingsControls
+          reprocessSelectedImages={reprocessSelectedImages}
+          cancelProcessing={cancelProcessing}
+        />
+      </div>
+    </div >
   );
 }

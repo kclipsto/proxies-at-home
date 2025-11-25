@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Button, Label } from "flowbite-react";
-import { Copy, Trash } from "lucide-react";
+import { Copy, Trash, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import fullLogo from "../assets/fullLogo.png";
 import CardCellLazy from "../components/CardCellLazy";
@@ -24,6 +24,7 @@ import { getBleedInPixels } from "../helpers/ImageHelper";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useArtworkModalStore, useSettingsStore } from "../store";
 import { ArtworkModal } from "./ArtworkModal";
+import { ZoomControls } from "./ZoomControls";
 
 const unit = "mm";
 const baseCardWidthMm = 63;
@@ -45,6 +46,9 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
   const effectiveBleedWidth = bleedEdge ? bleedEdgeWidth : 0;
 
   const zoom = useSettingsStore((state) => state.zoom);
+  const setZoom = useSettingsStore((state) => state.setZoom);
+  const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
+  const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
 
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -232,6 +236,32 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     window.addEventListener("resize", updateCenterOffset);
     return () => window.removeEventListener("resize", updateCenterOffset);
   }, [updateCenterOffset]);
+
+  // Handle Ctrl+Scroll to zoom
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        // Standard mouse wheel delta is usually around 100.
+        // We want a reasonable zoom speed.
+        // Negative deltaY means scrolling up (zooming in).
+        const sensitivity = 0.002;
+        const delta = -e.deltaY * sensitivity;
+
+        const newZoom = Math.min(Math.max(0.1, zoom + delta), 5);
+        setZoom(newZoom);
+      }
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+    };
+  }, [zoom, setZoom]);
 
   // Center the view when page dimensions change (e.g. orientation swap)
   useEffect(() => {
@@ -456,6 +486,24 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
           </DndContext>
         </div>
       )}
+
+      {/* Floating Zoom Controls */}
+      <div
+        className="group fixed bottom-6 z-40"
+        style={{
+          right: `${(isSettingsPanelCollapsed ? 60 : settingsPanelWidth) + 20}px`
+        }}
+      >
+        {/* Icon-only collapsed state */}
+        <div className="absolute bottom-0 right-0 p-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg cursor-pointer opacity-70 group-hover:opacity-0 transition-opacity duration-500 pointer-events-none">
+          <ZoomIn className="size-5 text-gray-600 dark:text-gray-400" />
+        </div>
+
+        {/* Full controls on hover */}
+        <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 min-w-[250px]">
+          <ZoomControls />
+        </div>
+      </div>
 
       <ArtworkModal />
     </div>

@@ -42,6 +42,20 @@ type Store = {
   setCutLineStyle: (value: 'none' | 'edges' | 'full') => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
+  settingsPanelState: {
+    order: string[];
+    collapsed: Record<string, boolean>;
+  };
+  setPanelOrder: (order: string[]) => void;
+  togglePanelCollapse: (id: string) => void;
+  settingsPanelWidth: number;
+  setSettingsPanelWidth: (width: number) => void;
+  isSettingsPanelCollapsed: boolean;
+  toggleSettingsPanel: () => void;
+  isUploadPanelCollapsed: boolean;
+  toggleUploadPanel: () => void;
+  uploadPanelWidth: number;
+  setUploadPanelWidth: (width: number) => void;
 };
 
 const defaultPageSettings = {
@@ -64,6 +78,14 @@ const defaultPageSettings = {
   dpi: 900,
   cutLineStyle: "full",
   globalLanguage: "en",
+  settingsPanelState: {
+    order: ["layout", "bleed", "guides", "card", "application"],
+    collapsed: {},
+  },
+  settingsPanelWidth: 320,
+  isSettingsPanelCollapsed: false,
+  uploadPanelWidth: 320,
+  isUploadPanelCollapsed: false,
 } as Store;
 
 const layoutPresetsSizes: Record<
@@ -121,6 +143,31 @@ export const useSettingsStore = create<Store>()(
       setDpi: (dpi) => set({ dpi }),
       setCutLineStyle: (value) => set({ cutLineStyle: value }),
       setGlobalLanguage: (lang) => set({ globalLanguage: lang }),
+      setPanelOrder: (order) =>
+        set((state) => ({
+          settingsPanelState: { ...state.settingsPanelState, order },
+        })),
+      togglePanelCollapse: (id) =>
+        set((state) => ({
+          settingsPanelState: {
+            ...state.settingsPanelState,
+            collapsed: {
+              ...state.settingsPanelState.collapsed,
+              [id]: !state.settingsPanelState.collapsed[id],
+            },
+          },
+        })),
+      setSettingsPanelWidth: (width) => set({ settingsPanelWidth: width }),
+      toggleSettingsPanel: () =>
+        set((state) => ({
+          isSettingsPanelCollapsed: !state.isSettingsPanelCollapsed,
+        })),
+      toggleUploadPanel: () =>
+        set((state) => ({
+          isUploadPanelCollapsed: !state.isUploadPanelCollapsed,
+        })),
+      uploadPanelWidth: 320,
+      setUploadPanelWidth: (width) => set({ uploadPanelWidth: width }),
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {

@@ -2,6 +2,7 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import React, { useRef, useState } from "react";
 import { db } from "../db";
 import fullLogo from "@/assets/fullLogo.png";
+import logo from "../../public/logo.png";
 import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
 import {
   cardKey,
@@ -39,7 +40,12 @@ async function readText(file: File): Promise<string> {
   });
 }
 
-export function UploadSection() {
+type Props = {
+  isCollapsed?: boolean;
+  onToggle?: () => void;
+};
+
+export function UploadSection(props: Props) {
   const [deckText, setDeckText] = useState("");
   const fetchController = useRef<AbortController | null>(null);
 
@@ -316,11 +322,36 @@ export function UploadSection() {
     }
   };
 
-  return (
-    <div className="w-1/5 dark:bg-gray-700 bg-gray-100 flex flex-col">
-      <img src={fullLogo} alt="Proxxied Logo" />
+  const { isCollapsed } = props;
+  const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
 
-      <div className="flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4">
+  if (isCollapsed) {
+    return (
+      <div
+        className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 border-r border-gray-200 dark:border-gray-600"
+        onDoubleClick={() => toggleUploadPanel()}
+      >
+        <Tooltip content="Proxxied" placement="right">
+          <button
+            onClick={() => {
+              toggleUploadPanel();
+            }}
+            className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          >
+            <img src={logo} alt="Proxxied" className="size-8" />
+          </button>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-full dark:bg-gray-700 bg-gray-100 flex flex-col border-r border-gray-200 dark:border-gray-600">
+      <div>
+        <img src={fullLogo} alt="Proxxied Logo" className="w-full" />
+      </div>
+
+      <div className="flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4 pt-4">
         <div className="flex flex-col gap-4">
           <div className="space-y-1">
             <h6 className="font-medium dark:text-white">
