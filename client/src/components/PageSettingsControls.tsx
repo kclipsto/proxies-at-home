@@ -1,11 +1,10 @@
-import { useCardsStore, useSettingsStore } from "@/store";
+import { useSettingsStore } from "@/store";
 import {
   Button,
   Checkbox,
   HR,
   Label,
   Select,
-  TextInput,
   Tooltip,
 } from "flowbite-react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -15,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExportActions } from "./LayoutSettings/ExportActions";
 import { PageSizeControl } from "./LayoutSettings/PageSizeControl";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
+import { NumberInput } from "./NumberInput";
 
 const INCH_TO_MM = 25.4;
 const CARD_W_IN = 2.5;
@@ -29,9 +29,10 @@ function inToMm(inches: number) {
 const useNormalizedInput = (
   initialValue: number,
   onValueChange: (value: number) => void,
-  isInteger = false
+  options: { min?: number; max?: number; isInteger?: boolean } = {}
 ) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { min, max, isInteger } = options;
 
   const normalizeValue = useCallback((value: string): string => {
     if (!value.trim()) return ""; // Don't return default values during typing
@@ -47,27 +48,54 @@ const useNormalizedInput = (
     return normalized;
   }, []);
 
+  const [warning, setWarning] = useState<string | null>(null);
+  const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       const normalized = normalizeValue(value);
+      let finalValue = normalized;
 
-      // Only update the input if normalization changed the value
-      if (normalized !== value) {
-        e.target.value = normalized;
-      }
-
-      // Only update state if there's a valid value
       if (normalized.trim()) {
-        const numValue = isInteger
+        let numValue = isInteger
           ? parseInt(normalized, 10)
           : parseFloat(normalized);
+
         if (!isNaN(numValue)) {
+          // Clamp value if min/max are provided
+          let clamped = false;
+          if (typeof min === "number" && numValue < min) {
+            numValue = min;
+            clamped = true;
+          }
+          if (typeof max === "number" && numValue > max) {
+            numValue = max;
+            clamped = true;
+          }
+
+          if (clamped) {
+            setWarning(`Value limited to ${min !== undefined && numValue === min ? min : max}`);
+            if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+            warningTimeoutRef.current = setTimeout(() => setWarning(null), 2000);
+          }
+
           onValueChange(numValue);
+
+          // If the value was clamped or normalized differently, update the input
+          const parsedOriginal = isInteger ? parseInt(normalized, 10) : parseFloat(normalized);
+          if (numValue !== parsedOriginal) {
+            finalValue = numValue.toString();
+          }
         }
       }
+
+      // Only update the input if we changed something
+      if (finalValue !== value) {
+        e.target.value = finalValue;
+      }
     },
-    [normalizeValue, onValueChange, isInteger]
+    [normalizeValue, onValueChange, isInteger, min, max]
   );
 
   const handleBlur = useCallback(
@@ -81,16 +109,57 @@ const useNormalizedInput = (
           ? parseInt(placeholder, 10)
           : parseFloat(placeholder);
         onValueChange(isNaN(numValue) ? (isInteger ? 1 : 0) : numValue);
+      } else {
+        // Also clamp on blur just in case
+        let numValue = isInteger
+          ? parseInt(value, 10)
+          : parseFloat(value);
+        if (!isNaN(numValue)) {
+          if (typeof min === "number") numValue = Math.max(min, numValue);
+          if (typeof max === "number") numValue = Math.min(max, numValue);
+          e.target.value = numValue.toString();
+          onValueChange(numValue);
+        }
       }
     },
-    [onValueChange, isInteger]
+    [onValueChange, isInteger, min, max]
   );
+
+  // Sync input value with state when state changes externally
+  useEffect(() => {
+    if (inputRef.current) {
+      const currentString = inputRef.current.value;
+      const parsedCurrent = isInteger ? parseInt(currentString, 10) : parseFloat(currentString);
+      const isFocused = document.activeElement === inputRef.current;
+
+      if (isFocused) {
+        // If focused, only update if the values are actually different numbers
+        // AND the input is not in an intermediate state (like empty or ending in decimal)
+        if (!isNaN(parsedCurrent) && parsedCurrent !== initialValue) {
+          inputRef.current.value = initialValue.toString();
+        }
+      } else {
+        // If not focused, always sync to the state (e.g. Reset button clicked)
+        if (currentString !== initialValue.toString()) {
+          inputRef.current.value = initialValue.toString();
+        }
+      }
+    }
+  }, [initialValue, isInteger]);
+
+  // Cleanup timeout
+  useEffect(() => {
+    return () => {
+      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+    };
+  }, []);
 
   return {
     inputRef,
     handleChange,
     handleBlur,
-    defaultValue: initialValue.toString(),
+    defaultValue: initialValue,
+    warning,
   };
 };
 
@@ -155,6 +224,25 @@ const usePositionInput = (
     [onValueChange]
   );
 
+  // Sync input value with state when state changes externally
+  useEffect(() => {
+    if (inputRef.current) {
+      const currentString = inputRef.current.value;
+      const parsedCurrent = parseFloat(currentString);
+      const isFocused = document.activeElement === inputRef.current;
+
+      if (isFocused) {
+        if (!isNaN(parsedCurrent) && parsedCurrent !== initialValue) {
+          inputRef.current.value = initialValue.toString();
+        }
+      } else {
+        if (currentString !== initialValue.toString()) {
+          inputRef.current.value = initialValue.toString();
+        }
+      }
+    }
+  }, [initialValue]);
+
   return {
     inputRef,
     handleChange,
@@ -167,10 +255,12 @@ type PageSettingsControlsProps = {
   reprocessSelectedImages: ReturnType<
     typeof useImageProcessing
   >["reprocessSelectedImages"];
+  cancelProcessing: ReturnType<typeof useImageProcessing>["cancelProcessing"];
 };
 
 export function PageSettingsControls({
   reprocessSelectedImages,
+  cancelProcessing,
 }: PageSettingsControlsProps) {
   const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []) || [];
 
@@ -189,6 +279,7 @@ export function PageSettingsControls({
   const cardPositionX = useSettingsStore((s) => s.cardPositionX);
   const cardPositionY = useSettingsStore((s) => s.cardPositionY);
   const dpi = useSettingsStore((s) => s.dpi);
+  const cutLineStyle = useSettingsStore((s) => s.cutLineStyle);
 
   const setColumns = useSettingsStore((state) => state.setColumns);
   const setRows = useSettingsStore((state) => state.setRows);
@@ -207,10 +298,9 @@ export function PageSettingsControls({
   const setCardPositionX = useSettingsStore((s) => s.setCardPositionX);
   const setCardPositionY = useSettingsStore((s) => s.setCardPositionY);
   const setDpi = useSettingsStore((s) => s.setDpi);
+  const setCutLineStyle = useSettingsStore((s) => s.setCutLineStyle);
 
-  const clearAllCardsAndImages = useCardsStore(
-    (state) => state.clearAllCardsAndImages
-  );
+
 
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
 
@@ -221,8 +311,14 @@ export function PageSettingsControls({
   const confirmReset = async () => {
     setShowResetConfirmModal(false);
     try {
-      // Clear all data from IndexedDB
-      await clearAllCardsAndImages();
+      // Delete the entire database to ensure a full reset
+      await db.delete();
+
+      // Re-open the database (Dexie handles this automatically on next access, 
+      // but explicit open is good practice if we were staying on the page, 
+      // though we reload below anyway)
+      await db.open();
+
       resetSettings(); // Reset settings store to defaults
 
       if ("caches" in window) {
@@ -329,36 +425,35 @@ export function PageSettingsControls({
   // Input handlers using custom hooks
   const columnsInput = useNormalizedInput(
     columns,
-    (value) => {
-      const v = Math.max(1, Math.min(10, value));
-      setColumns(v);
-    },
-    true
+    (value) => setColumns(value),
+    { min: 1, max: 10, isInteger: true }
   );
 
   const rowsInput = useNormalizedInput(
     rows,
-    (value) => {
-      const v = Math.max(1, Math.min(10, value));
-      setRows(v);
-    },
-    true
+    (value) => setRows(value),
+    { min: 1, max: 10, isInteger: true }
   );
 
-  const bleedEdgeInput = useNormalizedInput(bleedEdgeWidth, (value) => {
-    setBleedEdgeWidth(value);
-    debouncedReprocess(value, darkenNearBlack);
-  });
+  const bleedEdgeInput = useNormalizedInput(
+    bleedEdgeWidth,
+    (value) => {
+      setBleedEdgeWidth(value);
+      debouncedReprocess(value, darkenNearBlack);
+    },
+    { min: 0, max: 2 }
+  );
 
-  const cardSpacingInput = useNormalizedInput(cardSpacingMm, (value) => {
-    const mm = Math.max(0, Math.min(value, maxSpacingMm));
-    setCardSpacingMm(mm);
-  });
+  const cardSpacingInput = useNormalizedInput(
+    cardSpacingMm,
+    (value) => setCardSpacingMm(value),
+    { min: 0, max: maxSpacingMm }
+  );
 
   const cardPositionXInput = usePositionInput(cardPositionX, setCardPositionX);
   const cardPositionYInput = usePositionInput(cardPositionY, setCardPositionY);
 
-  const guideWidthInput = useNormalizedInput(guideWidth, setGuideWidth);
+  const guideWidthInput = useNormalizedInput(guideWidth, setGuideWidth, { min: 0 });
 
   return (
     <div className="w-1/5 min-w-[18rem] max-w-[26rem] p-4 bg-gray-100 dark:bg-gray-700 h-full flex flex-col gap-4 overflow-y-auto">
@@ -370,12 +465,10 @@ export function PageSettingsControls({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="columns-input">Columns</Label>
-            <TextInput
+            <NumberInput
               id="columns-input"
-              key={columns}
               ref={columnsInput.inputRef}
               className="w-full"
-              type="number"
               min={1}
               max={10}
               defaultValue={columnsInput.defaultValue}
@@ -386,12 +479,10 @@ export function PageSettingsControls({
           </div>
           <div>
             <Label htmlFor="rows-input">Rows</Label>
-            <TextInput
+            <NumberInput
               id="rows-input"
-              key={rows}
               ref={rowsInput.inputRef}
               className="w-full"
-              type="number"
               min={1}
               max={10}
               defaultValue={rowsInput.defaultValue}
@@ -403,18 +494,23 @@ export function PageSettingsControls({
         </div>
 
         <div>
-          <Label>Bleed Edge (mm)</Label>
-          <TextInput
-            key={bleedEdgeWidth}
+          <div className="flex justify-between items-center mb-2">
+            <Label>Bleed Edge (mm)</Label>
+            {bleedEdgeInput.warning && (
+              <span className="text-xs text-red-500 animate-pulse">
+                {bleedEdgeInput.warning}
+              </span>
+            )}
+          </div>
+          <NumberInput
             ref={bleedEdgeInput.inputRef}
             className="w-full"
-            type="number"
-            max={2}
             step={0.1}
             defaultValue={bleedEdgeInput.defaultValue}
             onChange={bleedEdgeInput.handleChange}
             onBlur={bleedEdgeInput.handleBlur}
             placeholder={bleedEdgeWidth.toString()}
+            disabled={!bleedEdge}
           />
         </div>
 
@@ -424,6 +520,10 @@ export function PageSettingsControls({
             checked={bleedEdge}
             onChange={(e) => {
               setBleedEdge(e.target.checked);
+              if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+              if (!e.target.checked) {
+                cancelProcessing();
+              }
               reprocessSelectedImages(
                 cards,
                 e.target.checked ? bleedEdgeWidth : 0,
@@ -463,19 +563,26 @@ export function PageSettingsControls({
         </div>
 
         <div>
-          <div className="flex items-center justify-between">
-            <Label>Distance between cards (mm)</Label>
+          <div className="flex items-center justify-between relative">
+            <Label>Card Spacing (mm)</Label>
+            {cardSpacingInput.warning && (
+              <span className="absolute right-8 text-xs text-red-500 font-medium animate-pulse">
+                {cardSpacingInput.warning}
+              </span>
+            )}
             <Tooltip
-              content={`Max that fits with current layout: ${maxSpacingMm} mm`}
+              content={
+                <div className="whitespace-nowrap">
+                  Max that fits with current layout: {maxSpacingMm} mm
+                </div>
+              }
             >
               <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
             </Tooltip>
           </div>
-          <TextInput
-            key={cardSpacingMm}
+          <NumberInput
             ref={cardSpacingInput.inputRef}
             className="w-full"
-            type="number"
             min={0}
             step={0.5}
             defaultValue={cardSpacingInput.defaultValue}
@@ -501,11 +608,9 @@ export function PageSettingsControls({
                   <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
                 </Tooltip>
               </div>
-              <TextInput
-                key={cardPositionX}
+              <NumberInput
                 ref={cardPositionXInput.inputRef}
                 className="w-full"
-                type="number"
                 step={0.1}
                 defaultValue={cardPositionXInput.defaultValue}
                 onChange={cardPositionXInput.handleChange}
@@ -520,11 +625,9 @@ export function PageSettingsControls({
                   <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
                 </Tooltip>
               </div>
-              <TextInput
-                key={cardPositionY}
+              <NumberInput
                 ref={cardPositionYInput.inputRef}
                 className="w-full"
-                type="number"
                 step={0.1}
                 defaultValue={cardPositionYInput.defaultValue}
                 onChange={cardPositionYInput.handleChange}
@@ -541,24 +644,34 @@ export function PageSettingsControls({
             type="color"
             value={guideColor}
             onChange={(e) => setGuideColor(e.target.value)}
-            className="w-full h-10 p-0 border rounded"
+            className="color-input w-full h-10 p-0 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500 cursor-pointer"
           />
         </div>
 
         <div>
           <Label>Guides Width (px)</Label>
-          <TextInput
-            key={guideWidth}
+          <NumberInput
             ref={guideWidthInput.inputRef}
             className="w-full"
-            type="number"
-            step="0.1"
-            min="0"
+            step={0.1}
+            min={0}
             defaultValue={guideWidthInput.defaultValue}
             onChange={guideWidthInput.handleChange}
             onBlur={guideWidthInput.handleBlur}
             placeholder={guideWidth.toString()}
           />
+        </div>
+
+        <div>
+          <Label>Cut Line Style</Label>
+          <Select
+            value={cutLineStyle}
+            onChange={(e) => setCutLineStyle(e.target.value as "none" | "edges" | "full")}
+          >
+            <option value="none">None</option>
+            <option value="edges">Edges Only</option>
+            <option value="full">Full Lines</option>
+          </Select>
         </div>
 
         <div>
@@ -585,7 +698,7 @@ export function PageSettingsControls({
             </div>
             <div className="relative w-full h-6 flex items-center">
               {/* Center Tick Mark (1x) */}
-              <div className="absolute left-1/2 -translate-x-1/2 w-1 h-8 bg-gray-600 rounded pointer-events-none" />
+              <div className="absolute left-1/2 -translate-x-1/2 w-1 h-8 bg-gray-300 dark:bg-gray-600 rounded pointer-events-none" />
 
               <input
                 type="range"

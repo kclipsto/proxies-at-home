@@ -26,6 +26,7 @@ export function ExportActions() {
   const cardPositionX = useSettingsStore((state) => state.cardPositionX);
   const cardPositionY = useSettingsStore((state) => state.cardPositionY);
   const dpi = useSettingsStore((state) => state.dpi);
+  const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
 
   const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
@@ -95,6 +96,7 @@ export function ExportActions() {
         pagesPerPdf: effectivePagesPerPdf,
         cancellationPromise,
         darkenNearBlack,
+        cutLineStyle,
       });
     } catch (err: unknown) {
       if (err instanceof Error && err.message !== "Cancelled by user") {

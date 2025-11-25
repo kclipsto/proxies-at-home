@@ -22,14 +22,15 @@ function PageViewLoader() {
 }
 
 export default function ProxyBuilderPage() {
+  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
   const imageProcessor = useMemo(() => ImageProcessor.getInstance(), []);
 
-  const { loadingMap, ensureProcessed, reprocessSelectedImages } =
+  const { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
     useImageProcessing({
       unit: "mm",
-      bleedEdgeWidth,
+      bleedEdgeWidth: bleedEdge ? bleedEdgeWidth : 0,
       imageProcessor,
       darkenNearBlack,
     });
@@ -71,7 +72,10 @@ export default function ProxyBuilderPage() {
       <Suspense fallback={<PageViewLoader />}>
         <PageView loadingMap={loadingMap} ensureProcessed={ensureProcessed} />
       </Suspense>
-      <PageSettingsControls reprocessSelectedImages={reprocessSelectedImages} />
+      <PageSettingsControls
+        reprocessSelectedImages={reprocessSelectedImages}
+        cancelProcessing={cancelProcessing}
+      />
     </div>
   );
 }

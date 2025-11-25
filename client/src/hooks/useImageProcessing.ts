@@ -161,5 +161,11 @@ export function useImageProcessing({
     [imageProcessor, unit, dpi]
   );
 
-  return { loadingMap, ensureProcessed, reprocessSelectedImages };
+  const cancelProcessing = useCallback(() => {
+    imageProcessor.cancelAll();
+    inFlight.current = {};
+    setLoadingMap({});
+  }, [imageProcessor]);
+
+  return { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing };
 }

@@ -9,27 +9,52 @@ button {
 }
 
 /* Custom Scrollbar Styles */
-/* For Webkit browsers (Chrome, Safari) */
+/* Light Mode (Default) */
 ::-webkit-scrollbar {
   width: 8px;
-  /* width of the scrollbar */
 }
 
 ::-webkit-scrollbar-track {
-  background: #2d3748;
-  /* color of the track (dark gray) */
+  background: #f1f5f9;
+  /* slate-100 */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4a5568;
-  /* color of the scroll thumb (lighter dark gray) */
+  background: #cbd5e1;
+  /* slate-300 */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-corner {
+  background: #f1f5f9;
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: #2d3748;
+  }
+}
+
+.dark ::-webkit-scrollbar-track {
   background: #2d3748;
-  /* match track color */
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4a5568;
+}
+
+.dark ::-webkit-scrollbar-corner {
+  background: #2d3748;
 }
 
 /* For Firefox */
@@ -76,4 +101,21 @@ button {
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   border: none;
+}
+
+/* Color Input Styling */
+.color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 0.5rem;
+  /* rounded-lg */
+}
+
+.color-input::-moz-color-swatch {
+  border: none;
+  border-radius: 0.5rem;
+  /* rounded-lg */
 }

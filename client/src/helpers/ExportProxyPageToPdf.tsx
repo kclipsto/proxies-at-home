@@ -31,6 +31,7 @@ export async function exportProxyPagesToPdf({
   pagesPerPdf,
   cancellationPromise,
   darkenNearBlack,
+  cutLineStyle,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
@@ -52,6 +53,7 @@ export async function exportProxyPagesToPdf({
   pagesPerPdf: number;
   cancellationPromise: Promise<void>;
   darkenNearBlack: boolean;
+  cutLineStyle: 'none' | 'edges' | 'full';
 }): Promise<void> {
   if (!cards || !cards.length) {
     return;
@@ -179,6 +181,7 @@ export async function exportProxyPagesToPdf({
                   imagesById,
                   API_BASE,
                   darkenNearBlack,
+                  cutLineStyle,
                 };
                 worker.postMessage({
                   pageCards: task.pageCards,

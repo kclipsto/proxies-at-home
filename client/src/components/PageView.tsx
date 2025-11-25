@@ -40,7 +40,9 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
   const pageHeight = useSettingsStore((state) => state.pageHeight);
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
+  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const effectiveBleedWidth = bleedEdge ? bleedEdgeWidth : 0;
 
   const zoom = useSettingsStore((state) => state.zoom);
 
@@ -52,6 +54,8 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
   const images = useLiveQuery(() => db.images.toArray(), []);
 
   const urlCacheRef = useRef<Map<string, { blob: Blob; url: string }>>(new Map());
+
+  const revocationQueueRef = useRef<string[]>([]);
 
   const processedImageUrls: Record<string, string> = useMemo(() => {
     const urls: Record<string, string> = {};
@@ -69,9 +73,9 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
         if (cached && cached.blob === img.displayBlob) {
           urls[img.id] = cached.url;
         } else {
-          // Revoke old URL if it exists
+          // Queue old URL for revocation
           if (cached) {
-            URL.revokeObjectURL(cached.url);
+            revocationQueueRef.current.push(cached.url);
           }
           // Create new URL
           const newUrl = URL.createObjectURL(img.displayBlob);
@@ -84,13 +88,31 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     // Clean up URLs for images that no longer exist or don't have blobs
     for (const [id, cached] of currentCache.entries()) {
       if (!usedIds.has(id)) {
-        URL.revokeObjectURL(cached.url);
+        revocationQueueRef.current.push(cached.url);
         currentCache.delete(id);
       }
     }
 
     return urls;
   }, [images]);
+
+  // Process revocation queue after render
+  useEffect(() => {
+    const queue = revocationQueueRef.current;
+    if (queue.length > 0) {
+      // Small delay to ensure DOM has updated
+      const timer = setTimeout(() => {
+        queue.forEach((url) => URL.revokeObjectURL(url));
+        // Clear the queue in the ref (though we are iterating a local reference, the ref should be cleared)
+      }, 2000);
+
+      // Clear the ref immediately so we don't process again, 
+      // but we need to keep the local array for the timeout.
+      revocationQueueRef.current = [];
+
+      return () => clearTimeout(timer);
+    }
+  });
 
   // Cleanup on unmount
   useEffect(() => {
@@ -105,10 +127,10 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
 
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
-  const bleedPixels = getBleedInPixels(bleedEdgeWidth, unit);
+  const bleedPixels = getBleedInPixels(effectiveBleedWidth, unit);
   const guideOffset = `${(bleedPixels * (25.4 / 300)).toFixed(3)}mm`;
-  const totalCardWidth = baseCardWidthMm + bleedEdgeWidth * 2;
-  const totalCardHeight = baseCardHeightMm + bleedEdgeWidth * 2;
+  const totalCardWidth = baseCardWidthMm + effectiveBleedWidth * 2;
+  const totalCardHeight = baseCardHeightMm + effectiveBleedWidth * 2;
   const pageCapacity = columns * rows;
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
 
@@ -147,12 +169,6 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     }
     return chunks;
   }
-
-  useEffect(() => {
-    return () => {
-      Object.values(processedImageUrls).forEach(URL.revokeObjectURL);
-    };
-  }, [processedImageUrls]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevZoomRef = useRef(zoom);
@@ -217,6 +233,22 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     return () => window.removeEventListener("resize", updateCenterOffset);
   }, [updateCenterOffset]);
 
+  // Center the view when page dimensions change (e.g. orientation swap)
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Allow layout to update
+    requestAnimationFrame(() => {
+      const x = (container.scrollWidth - container.clientWidth) / 2;
+      const y = (container.scrollHeight - container.clientHeight) / 2;
+      container.scrollTo(x, y);
+
+      // Update the center offset ref so subsequent zooms are correct
+      updateCenterOffset();
+    });
+  }, [pageWidth, pageHeight, updateCenterOffset]);
+
   return (
     <div
       ref={scrollContainerRef}
@@ -225,7 +257,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     >
       {contextMenu.visible && contextMenu.cardUuid && (
         <div
-          className="fixed bg-white border rounded-xl border-gray-300 shadow-md z-50 text-sm flex flex-col gap-1"
+          className="fixed bg-white dark:bg-gray-800 border rounded-xl border-gray-300 dark:border-gray-700 shadow-md z-50 text-sm flex flex-col gap-1"
           style={{
             top: contextMenu.y,
             left: contextMenu.x,
@@ -260,7 +292,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
       )}
 
       {(!cards || cards.length === 0) ? (
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center mx-auto">
           <div className="flex flex-row items-center">
             <Label className="text-7xl justify-center font-bold whitespace-nowrap">
               Welcome to
@@ -331,6 +363,14 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
                   }}
                 >
                   <div className="relative w-full h-full flex flex-col justify-center items-center">
+                    <EdgeCutLines
+                      totalCardWidthMm={totalCardWidth}
+                      totalCardHeightMm={totalCardHeight}
+                      baseCardWidthMm={baseCardWidthMm}
+                      baseCardHeightMm={baseCardHeightMm}
+                      bleedEdgeWidthMm={effectiveBleedWidth}
+                      cardCount={page.length}
+                    />
                     <div
                       style={{
                         display: "grid",
@@ -408,13 +448,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
                       })}
                     </div>
 
-                    <EdgeCutLines
-                      totalCardWidthMm={totalCardWidth}
-                      totalCardHeightMm={totalCardHeight}
-                      baseCardWidthMm={baseCardWidthMm}
-                      baseCardHeightMm={baseCardHeightMm}
-                      bleedEdgeWidthMm={bleedEdgeWidth}
-                    />
+
                   </div>
                 </div>
               ))}

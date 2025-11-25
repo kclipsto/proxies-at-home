@@ -14,6 +14,7 @@ import {
   tryParseMpcSchemaXml,
 } from "@/helpers/Mpc";
 import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
+import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
 import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
@@ -49,6 +50,8 @@ export function UploadSection() {
   const setGlobalLanguage = useSettingsStore(
     (s) => s.setGlobalLanguage ?? (() => { })
   );
+
+  const cardCount = useLiveQuery(() => db.cards.count(), []) ?? 0;
 
 
   async function addUploadedFiles(
@@ -414,7 +417,7 @@ export function UploadSection() {
             </h6>
 
             <Textarea
-              className="h-64"
+              className="h-64 resize-none"
               placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
               value={deckText}
               onChange={(e) => setDeckText(e.target.value)}
@@ -425,7 +428,11 @@ export function UploadSection() {
             <Button color="blue" onClick={handleSubmit}>
               Fetch Cards
             </Button>
-            <Button color="red" onClick={handleClear}>
+            <Button
+              color="red"
+              onClick={handleClear}
+              disabled={cardCount === 0}
+            >
               Clear Cards
             </Button>
           </div>

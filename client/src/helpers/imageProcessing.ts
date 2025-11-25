@@ -77,14 +77,19 @@ export function calibratedBleedTrimPxForHeight(h: number) {
     return 156;
 }
 
-export async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number, init?: RequestInit): Promise<ImageBitmap> {
-    const img = await loadImage(src, init);
+export async function trimBleedFromBitmap(img: ImageBitmap, bleedTrimPx?: number): Promise<ImageBitmap> {
     const trim = bleedTrimPx ?? calibratedBleedTrimPxForHeight(img.height);
     const w = img.width - trim * 2;
     const h = img.height - trim * 2;
     if (w <= 0 || h <= 0) return img;
     const newImg = await createImageBitmap(img, trim, trim, w, h);
-    img.close();
+    return newImg;
+}
+
+export async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number, init?: RequestInit): Promise<ImageBitmap> {
+    const img = await loadImage(src, init);
+    const newImg = await trimBleedFromBitmap(img, bleedTrimPx);
+    if (newImg !== img) img.close();
     return newImg;
 }
 

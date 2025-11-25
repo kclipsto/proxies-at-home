@@ -151,6 +151,26 @@ export class ImageProcessor {
     ImageProcessor.instances.delete(this);
   }
 
+  cancelAll() {
+    // Reject all pending tasks
+    this.taskQueue.forEach((task) => {
+      task.reject(new Error("Cancelled") as unknown as ErrorEvent);
+    });
+    this.taskQueue = [];
+
+    // Terminate all workers to stop current processing
+    this.idleWorkers.forEach(({ worker, timeoutId }) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      worker.terminate();
+    });
+    this.idleWorkers = [];
+
+    this.allWorkers.forEach((worker) => {
+      worker.terminate();
+    });
+    this.allWorkers.clear();
+  }
+
   static destroyAll() {
     for (const instance of ImageProcessor.instances) {
       instance.destroy();

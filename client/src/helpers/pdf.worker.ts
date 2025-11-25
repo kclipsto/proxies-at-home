@@ -1,15 +1,12 @@
 import {
-    NEAR_BLACK,
-    NEAR_WHITE,
-    ALPHA_EMPTY,
     IN,
     MM_TO_PX,
     toProxied,
     loadImage,
     trimExistingBleedIfAny,
     blackenAllNearBlackPixels,
-    getPatchNearCorner,
 } from "./imageProcessing";
+import { applyJFA } from "./jfa";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
@@ -18,77 +15,61 @@ function getLocalBleedImageUrl(originalUrl: string, apiBase: string) {
     return toProxied(originalUrl, apiBase);
 }
 
-function cornerNeedsFill(ctx: OffscreenCanvasRenderingContext2D, x: number, y: number, cornerSize: number) {
-    const data = ctx.getImageData(x, y, cornerSize, cornerSize).data;
-    const total = cornerSize * cornerSize;
-    let empty = 0;
-    for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] <= ALPHA_EMPTY) empty++;
-    }
-    return empty / total >= 0.05;
-}
 
-function detectFlatBorderColor(ctx: OffscreenCanvasRenderingContext2D, contentW: number, contentH: number, cornerX: number, cornerY: number, sampleLen: number, strip: number): "black" | "white" | null {
-    const leftEdge = cornerX === 0;
-    const topEdge = cornerY === 0;
-    const rightEdge = cornerX >= contentW - strip;
-    const bottomEdge = cornerY >= contentH - strip;
-
-    const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
-    if (leftEdge) rects.push({ x: 0, y: cornerY, w: strip, h: Math.min(sampleLen, contentH - cornerY) });
-    if (topEdge) rects.push({ x: cornerX, y: 0, w: Math.min(sampleLen, contentW - cornerX), h: strip });
-    if (rightEdge) rects.push({ x: contentW - strip, y: Math.max(0, cornerY - (sampleLen - strip)), w: strip, h: Math.min(sampleLen, contentH - (cornerY - (sampleLen - strip))) });
-    if (bottomEdge) rects.push({ x: Math.max(0, cornerX - (sampleLen - strip)), y: contentH - strip, w: Math.min(sampleLen, contentW - (cornerX - (sampleLen - strip))), h: strip });
-
-    if (!rects.length) return null;
-
-    let black = 0, white = 0, total = 0;
-    for (const r of rects) {
-        const { data } = ctx.getImageData(r.x, r.y, r.w, r.h);
-        for (let i = 0; i < data.length; i += 4) {
-            const a = data[i + 3];
-            if (a <= ALPHA_EMPTY) continue;
-            const R = data[i], G = data[i + 1], B = data[i + 2];
-            total++;
-            if (R <= NEAR_BLACK && G <= NEAR_BLACK && B <= NEAR_BLACK) black++;
-            else if (R >= NEAR_WHITE && G >= NEAR_WHITE && B >= NEAR_WHITE) white++;
-        }
-    }
-
-    if (total === 0) return null;
-    if (black / total >= 0.9) return "black";
-    if (white / total >= 0.9) return "white";
-    return null;
-}
-
-
-
-function drawEdgeStubs(ctx: OffscreenCanvasRenderingContext2D, pageW: number, pageH: number, startX: number, startY: number, columns: number, rows: number, contentW: number, contentH: number, cardW: number, cardH: number, bleedPx: number, guideWidthPx: number, spacingPx = 0) {
+function drawFullPageGuides(ctx: OffscreenCanvasRenderingContext2D, pageW: number, pageH: number, startX: number, startY: number, columns: number, rows: number, contentW: number, contentH: number, cardW: number, cardH: number, bleedPx: number, guideWidthPx: number, spacingPx = 0, occupiedCols?: Set<number>, occupiedRows?: Set<number>, cutLineStyle: 'none' | 'edges' | 'full' = 'full') {
+    if (cutLineStyle === 'none') return;
     const xCuts: number[] = [];
     for (let c = 0; c < columns; c++) {
-        const cellLeft = startX + c * (cardW + spacingPx);
-        xCuts.push(cellLeft + bleedPx);
-        xCuts.push(cellLeft + bleedPx + contentW);
+        if (!occupiedCols || occupiedCols.has(c)) {
+            const cellLeft = startX + c * (cardW + spacingPx);
+            xCuts.push(cellLeft + bleedPx);
+            xCuts.push(cellLeft + bleedPx + contentW);
+        }
     }
     const yCuts: number[] = [];
     for (let r = 0; r < rows; r++) {
-        const cellTop = startY + r * (cardH + spacingPx);
-        yCuts.push(cellTop + bleedPx);
-        yCuts.push(cellTop + bleedPx + contentH);
+        if (!occupiedRows || occupiedRows.has(r)) {
+            const cellTop = startY + r * (cardH + spacingPx);
+            yCuts.push(cellTop + bleedPx);
+            yCuts.push(cellTop + bleedPx + contentH);
+        }
     }
-    const topStubH = startY;
-    const botStubH = pageH - (startY + rows * cardH + (rows - 1) * spacingPx);
-    const leftStubW = startX;
-    const rightStubW = pageW - (startX + columns * cardW + (columns - 1) * spacingPx);
+
     ctx.save();
     ctx.fillStyle = "#000000";
+
+    // Draw vertical lines
     for (const x of xCuts) {
-        if (topStubH > 0) ctx.fillRect(x, 0, guideWidthPx, topStubH);
-        if (botStubH > 0) ctx.fillRect(x, pageH - botStubH, guideWidthPx, botStubH);
+        if (cutLineStyle === 'full') {
+            ctx.fillRect(x, 0, guideWidthPx, pageH);
+        } else {
+            // Edges only
+            if (startY > 0) {
+                ctx.fillRect(x, 0, guideWidthPx, startY);
+            }
+            const botStubStart = startY + rows * cardH + (rows - 1) * spacingPx;
+            const botStubH = pageH - botStubStart;
+            if (botStubH > 0) {
+                ctx.fillRect(x, botStubStart, guideWidthPx, botStubH);
+            }
+        }
     }
+
+    // Draw horizontal lines
     for (const y of yCuts) {
-        if (leftStubW > 0) ctx.fillRect(0, y, leftStubW, guideWidthPx);
-        if (rightStubW > 0) ctx.fillRect(pageW - rightStubW, y, rightStubW, guideWidthPx);
+        if (cutLineStyle === 'full') {
+            ctx.fillRect(0, y, pageW, guideWidthPx);
+        } else {
+            // Edges only
+            if (startX > 0) {
+                ctx.fillRect(0, y, startX, guideWidthPx);
+            }
+            const rightStubStart = startX + columns * cardW + (columns - 1) * spacingPx;
+            const rightStubW = pageW - rightStubStart;
+            if (rightStubW > 0) {
+                ctx.fillRect(rightStubStart, y, rightStubW, guideWidthPx);
+            }
+        }
     }
     ctx.restore();
 }
@@ -124,7 +105,6 @@ async function buildCardWithBleed(
     bleedPx: number,
     contentWidthPx: number,
     contentHeightPx: number,
-    dpi: number,
     opts: { isUserUpload: boolean; hasBakedBleed?: boolean },
     darkenNearBlack?: boolean
 ): Promise<OffscreenCanvas> {
@@ -146,88 +126,28 @@ async function buildCardWithBleed(
         offY = Math.round((drawH - contentHeightPx) / 2);
     }
 
-    const base = new OffscreenCanvas(contentWidthPx, contentHeightPx);
-    const bctx = base.getContext("2d", { willReadFrequently: true })!;
-    bctx.imageSmoothingEnabled = true;
-    bctx.imageSmoothingQuality = "high";
-    bctx.drawImage(baseImg, -offX, -offY, drawW, drawH);
+    // Create a canvas for the content + bleed area
+    const canvas = new OffscreenCanvas(finalW, finalH);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+
+    // Draw the image centered in the content area (offset by bleedPx)
+    // We draw it at (bleedPx - offX, bleedPx - offY) with size (drawW, drawH)
+    // This places the "content" part of the image in the "content" part of the canvas
+    ctx.drawImage(baseImg, bleedPx - offX, bleedPx - offY, drawW, drawH);
     baseImg.close();
 
-    const dpiFactor = dpi / 300;
-    const cornerSize = Math.round(30 * dpiFactor);
-    const sampleInset = Math.round(10 * dpiFactor);
-    const patchSize = Math.round(20 * dpiFactor);
-    const blurPx = Math.max(1, Math.round(1.5 * dpiFactor));
-    const blackThreshold = 30;
-
-    function drawFeatheredPatch(dst: OffscreenCanvasRenderingContext2D, sx: number, sy: number, tx: number, ty: number, dw: number, dh: number) {
-        const buf = new OffscreenCanvas(dw, dh);
-        const bctx2 = buf.getContext("2d")!;
-        bctx2.imageSmoothingEnabled = true;
-        bctx2.imageSmoothingQuality = "high";
-        bctx2.drawImage(dst.canvas, sx, sy, dw, dh, 0, 0, dw, dh);
-        dst.save();
-        dst.imageSmoothingEnabled = true;
-        dst.imageSmoothingQuality = "high";
-        dst.filter = `blur(${blurPx}px)`;
-        dst.globalAlpha = 0.85;
-        dst.drawImage(buf, tx, ty, dw, dh);
-        dst.filter = "none";
-        dst.globalAlpha = 0.9;
-        dst.drawImage(buf, tx, ty, dw, dh);
-        dst.globalAlpha = 1;
-        dst.restore();
-    }
-    const corners = [{ x: 0, y: 0 }, { x: contentWidthPx - cornerSize, y: 0 }, { x: 0, y: contentHeightPx - cornerSize }, { x: contentWidthPx - cornerSize, y: contentHeightPx - cornerSize },];
-    for (const { x, y } of corners) {
-        if (!cornerNeedsFill(bctx, x, y, cornerSize)) continue;
-        const flat = detectFlatBorderColor(bctx, contentWidthPx, contentHeightPx, x, y, Math.round(40 * dpiFactor), Math.round(6 * dpiFactor));
-        if (flat) {
-            bctx.save();
-            bctx.globalCompositeOperation = "destination-over";
-            bctx.fillStyle = flat === "black" ? "#000000" : "#FFFFFF";
-            bctx.fillRect(x, y, cornerSize, cornerSize);
-            bctx.restore();
-            continue;
-        }
-        const seedX = x < contentWidthPx / 2 ? sampleInset : contentWidthPx - sampleInset - patchSize;
-        const seedY = y < contentHeightPx / 2 ? sampleInset : contentHeightPx - sampleInset - patchSize;
-
-        const { sx, sy } = getPatchNearCorner(bctx, seedX, seedY, patchSize);
-
-        bctx.save();
-        bctx.globalCompositeOperation = "destination-over";
-        for (let ty = y; ty < y + cornerSize; ty += patchSize) {
-            for (let tx = x; tx < x + cornerSize; tx += patchSize) {
-                const dw = Math.min(patchSize, x + cornerSize - tx);
-                const dh = Math.min(patchSize, y + cornerSize - ty);
-                const jx = sx + Math.floor((Math.random() - 0.5) * (patchSize * 0.25));
-                const jy = sy + Math.floor((Math.random() - 0.5) * (patchSize * 0.25));
-                const csx = Math.max(0, Math.min(contentWidthPx - dw, jx));
-                const csy = Math.max(0, Math.min(contentHeightPx - dh, jy));
-                drawFeatheredPatch(bctx, csx, csy, tx, ty, dw, dh);
-            }
-        }
-        bctx.restore();
-    }
-    if (darkenNearBlack) {
-        blackenAllNearBlackPixels(bctx, contentWidthPx, contentHeightPx, blackThreshold);
-    }
-    const out = new OffscreenCanvas(finalW, finalH);
-    const ctx = out.getContext("2d")!;
-    ctx.drawImage(base, bleedPx, bleedPx);
     if (bleedPx > 0) {
-        const slice = Math.min(8, Math.floor(contentWidthPx / 100));
-        ctx.drawImage(base, 0, 0, slice, contentHeightPx, 0, bleedPx, bleedPx, contentHeightPx);
-        ctx.drawImage(base, contentWidthPx - slice, 0, slice, contentHeightPx, contentWidthPx + bleedPx, bleedPx, bleedPx, contentHeightPx);
-        ctx.drawImage(base, 0, 0, contentWidthPx, slice, bleedPx, 0, contentWidthPx, bleedPx);
-        ctx.drawImage(base, 0, contentHeightPx - slice, contentWidthPx, slice, bleedPx, contentHeightPx + bleedPx, contentWidthPx, bleedPx);
-        ctx.drawImage(base, 0, 0, slice, slice, 0, 0, bleedPx, bleedPx);
-        ctx.drawImage(base, contentWidthPx - slice, 0, slice, slice, contentWidthPx + bleedPx, 0, bleedPx, bleedPx);
-        ctx.drawImage(base, 0, contentHeightPx - slice, slice, slice, 0, contentHeightPx + bleedPx, bleedPx, bleedPx);
-        ctx.drawImage(base, contentWidthPx - slice, contentHeightPx - slice, slice, slice, contentWidthPx + bleedPx, contentHeightPx + bleedPx, bleedPx, bleedPx);
+        const imageData = ctx.getImageData(0, 0, finalW, finalH);
+        applyJFA(imageData);
+        ctx.putImageData(imageData, 0, 0);
     }
-    return out;
+
+    if (darkenNearBlack) {
+        const blackThreshold = 30;
+        blackenAllNearBlackPixels(ctx, finalW, finalH, blackThreshold);
+    }
+
+    return canvas;
 }
 
 self.onmessage = async (event: MessageEvent) => {
@@ -236,7 +156,7 @@ self.onmessage = async (event: MessageEvent) => {
         const {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthPx, DPI,
-            imagesById, API_BASE, darkenNearBlack
+            imagesById, API_BASE, darkenNearBlack, cutLineStyle
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -261,6 +181,17 @@ self.onmessage = async (event: MessageEvent) => {
 
         let imagesProcessed = 0;
         const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthPx, 96, DPI);
+
+        // Determine occupied rows and columns
+        const occupiedCols = new Set<number>();
+        const occupiedRows = new Set<number>();
+        for (let i = 0; i < pageCards.length; i++) {
+            occupiedCols.add(i % columns);
+            occupiedRows.add(Math.floor(i / columns));
+        }
+
+        // Draw full page guides (behind cards)
+        drawFullPageGuides(ctx, pageWidthPx, pageHeightPx, startX, startY, columns, rows, contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx, bleedPx, scaledGuideWidth, spacingPx, occupiedCols, occupiedRows, cutLineStyle);
 
         for (const [idx, card] of pageCards.entries()) {
             const col = idx % columns;
@@ -300,7 +231,7 @@ self.onmessage = async (event: MessageEvent) => {
                     if (!card.isUserUpload) {
                         src = getLocalBleedImageUrl(src, API_BASE);
                     }
-                    finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, DPI, {
+                    finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, {
                         isUserUpload: !!card.isUserUpload,
                         hasBakedBleed: !!card.hasBakedBleed,
                     }, darkenNearBlack);
@@ -313,17 +244,13 @@ self.onmessage = async (event: MessageEvent) => {
                 finalCardCanvas.close();
             }
 
-            if (bleedEdge) {
-                drawCornerGuides(ctx, x, y, contentWidthInPx, contentHeightInPx, bleedPx, guideColor, scaledGuideWidth, DPI);
-            }
+            drawCornerGuides(ctx, x, y, contentWidthInPx, contentHeightInPx, bleedPx, guideColor, scaledGuideWidth, DPI);
 
             imagesProcessed++;
             self.postMessage({ type: 'progress', pageIndex, imagesProcessed });
         }
 
-        if (bleedEdge) {
-            drawEdgeStubs(ctx, pageWidthPx, pageHeightPx, startX, startY, columns, rows, contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx, bleedPx, scaledGuideWidth, spacingPx);
-        }
+
 
         const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.98 });
         if (blob) {

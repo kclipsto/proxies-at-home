@@ -29,7 +29,6 @@ export default function SortableCard({
   guideOffset,
   setContextMenu,
 }: SortableCardProps) {
-  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const guideColor = useSettingsStore((state) => state.guideColor);
   const zoom = useSettingsStore((state) => state.zoom);
@@ -89,93 +88,91 @@ export default function SortableCard({
         ⠿
       </div>
 
-      {bleedEdge && (
-        <>
-          <div
-            style={{
-              position: "absolute",
-              top: guideOffset,
-              left: guideOffset,
-              width: `${guideWidth}px`,
-              height: "2mm",
-              backgroundColor: guideColor,
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              top: guideOffset,
-              left: guideOffset,
-              width: "2mm",
-              height: `${guideWidth}px`,
-              backgroundColor: guideColor,
-            }}
-          />
+      <>
+        <div
+          style={{
+            position: "absolute",
+            top: guideOffset,
+            left: guideOffset,
+            width: `${guideWidth}px`,
+            height: "2mm",
+            backgroundColor: guideColor,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: guideOffset,
+            left: guideOffset,
+            width: "2mm",
+            height: `${guideWidth}px`,
+            backgroundColor: guideColor,
+          }}
+        />
 
-          <div
-            style={{
-              position: "absolute",
-              top: guideOffset,
-              right: guideOffset,
-              width: `${guideWidth}px`,
-              height: "2mm",
-              backgroundColor: guideColor,
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              top: guideOffset,
-              right: guideOffset,
-              width: "2mm",
-              height: `${guideWidth}px`,
-              backgroundColor: guideColor,
-            }}
-          />
+        <div
+          style={{
+            position: "absolute",
+            top: guideOffset,
+            right: guideOffset,
+            width: `${guideWidth}px`,
+            height: "2mm",
+            backgroundColor: guideColor,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: guideOffset,
+            right: guideOffset,
+            width: "2mm",
+            height: `${guideWidth}px`,
+            backgroundColor: guideColor,
+          }}
+        />
 
-          <div
-            style={{
-              position: "absolute",
-              bottom: guideOffset,
-              left: guideOffset,
-              width: `${guideWidth}px`,
-              height: "2mm",
-              backgroundColor: guideColor,
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              bottom: guideOffset,
-              left: guideOffset,
-              width: "2mm",
-              height: `${guideWidth}px`,
-              backgroundColor: guideColor,
-            }}
-          />
+        <div
+          style={{
+            position: "absolute",
+            bottom: guideOffset,
+            left: guideOffset,
+            width: `${guideWidth}px`,
+            height: "2mm",
+            backgroundColor: guideColor,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: guideOffset,
+            left: guideOffset,
+            width: "2mm",
+            height: `${guideWidth}px`,
+            backgroundColor: guideColor,
+          }}
+        />
 
-          <div
-            style={{
-              position: "absolute",
-              bottom: guideOffset,
-              right: guideOffset,
-              width: `${guideWidth}px`,
-              height: "2mm",
-              backgroundColor: guideColor,
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              bottom: guideOffset,
-              right: guideOffset,
-              width: "2mm",
-              height: `${guideWidth}px`,
-              backgroundColor: guideColor,
-            }}
-          />
-        </>
-      )}
+        <div
+          style={{
+            position: "absolute",
+            bottom: guideOffset,
+            right: guideOffset,
+            width: `${guideWidth}px`,
+            height: "2mm",
+            backgroundColor: guideColor,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: guideOffset,
+            right: guideOffset,
+            width: "2mm",
+            height: `${guideWidth}px`,
+            backgroundColor: guideColor,
+          }}
+        />
+      </>
     </div>
   );
 }

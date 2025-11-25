@@ -38,6 +38,8 @@ type Store = {
   setCardPositionY: (mm: number) => void;
   dpi: number;
   setDpi: (value: number) => void;
+  cutLineStyle: 'none' | 'edges' | 'full';
+  setCutLineStyle: (value: 'none' | 'edges' | 'full') => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
 };
@@ -60,6 +62,7 @@ const defaultPageSettings = {
   cardPositionY: 0,
   zoom: 1,
   dpi: 900,
+  cutLineStyle: "full",
   globalLanguage: "en",
 } as Store;
 
@@ -116,6 +119,7 @@ export const useSettingsStore = create<Store>()(
       setCardPositionX: (mm) => set({ cardPositionX: mm }),
       setCardPositionY: (mm) => set({ cardPositionY: mm }),
       setDpi: (dpi) => set({ dpi }),
+      setCutLineStyle: (value) => set({ cutLineStyle: value }),
       setGlobalLanguage: (lang) => set({ globalLanguage: lang }),
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
