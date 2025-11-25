@@ -2,14 +2,16 @@ import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import { Button } from "flowbite-react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../../db";
+
+
+import { useFilteredAndSortedCards } from "@/hooks/useFilteredAndSortedCards";
 
 export function ExportActions() {
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const setProgress = useLoadingStore((state) => state.setProgress);
 
-  const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []) || [];
+  const { filteredAndSortedCards: cards } = useFilteredAndSortedCards();
 
   const pageOrientation = useSettingsStore((state) => state.pageOrientation);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);

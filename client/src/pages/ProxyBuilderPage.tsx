@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useCallback } from "react";
-import { ChevronRight } from "lucide-react";
+
 import { ResizeHandle } from "../components/ResizeHandle";
 import { PageSettingsControls } from "../components/PageSettingsControls";
 import { UploadSection } from "../components/UploadSection";

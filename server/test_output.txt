@@ -1,0 +1,698 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.10 [39m[90m/home/nathan/code/proxies-at-home/server[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged_repro.test.ts[2m > [22m[2mgetCardsWithImagesForCardInfo - Kefka Reproduction[2m > [22m[2mshould fetch CMC for Kefka, Court Mage
+[22m[39mKefka results: [
+  {
+    "object": "card",
+    "id": "5c4b8e1d-f1a0-4b74-9edd-a477459a1211",
+    "oracle_id": "38394933-a0d8-46c2-8327-fd8000eb4181",
+    "multiverse_ids": [],
+    "name": "Kefka, Court Mage // Kefka, Court Mage",
+    "lang": "en",
+    "released_at": "2025-06-13",
+    "uri": "https://api.scryfall.com/cards/5c4b8e1d-f1a0-4b74-9edd-a477459a1211",
+    "scryfall_uri": "https://scryfall.com/card/afin/46/kefka-court-mage-kefka-court-mage?utm_source=api",
+    "layout": "art_series",
+    "highres_image": true,
+    "image_status": "highres_scan",
+    "cmc": 0,
+    "type_line": "Card // Card",
+    "color_identity": [],
+    "keywords": [],
+    "card_faces": [
+      {
+        "object": "card_face",
+        "name": "Kefka, Court Mage",
+        "mana_cost": "",
+        "type_line": "Card",
+        "oracle_text": "",
+        "colors": [],
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/front/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "normal": "https://cards.scryfall.io/normal/front/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "large": "https://cards.scryfall.io/large/front/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "png": "https://cards.scryfall.io/png/front/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.png?1748707657",
+          "art_crop": "https://cards.scryfall.io/art_crop/front/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "border_crop": "https://cards.scryfall.io/border_crop/front/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657"
+        }
+      },
+      {
+        "object": "card_face",
+        "name": "Kefka, Court Mage",
+        "mana_cost": "",
+        "type_line": "Card",
+        "oracle_text": "",
+        "colors": [],
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/back/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "normal": "https://cards.scryfall.io/normal/back/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "large": "https://cards.scryfall.io/large/back/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "png": "https://cards.scryfall.io/png/back/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.png?1748707657",
+          "art_crop": "https://cards.scryfall.io/art_crop/back/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657",
+          "border_crop": "https://cards.scryfall.io/border_crop/back/5/c/5c4b8e1d-f1a0-4b74-9edd-a477459a1211.jpg?1748707657"
+        }
+      }
+    ],
+    "legalities": {
+      "standard": "not_legal",
+      "future": "not_legal",
+      "historic": "not_legal",
+      "timeless": "not_legal",
+      "gladiator": "not_legal",
+      "pioneer": "not_legal",
+      "modern": "not_legal",
+      "legacy": "not_legal",
+      "pauper": "not_legal",
+      "vintage": "not_legal",
+      "penny": "not_legal",
+      "commander": "not_legal",
+      "oathbreaker": "not_legal",
+      "standardbrawl": "not_legal",
+      "brawl": "not_legal",
+      "alchemy": "not_legal",
+      "paupercommander": "not_legal",
+      "duel": "not_legal",
+      "oldschool": "not_legal",
+      "premodern": "not_legal",
+      "predh": "not_legal"
+    },
+    "games": [
+      "paper"
+    ],
+    "reserved": false,
+    "game_changer": false,
+    "foil": true,
+    "nonfoil": true,
+    "finishes": [
+      "nonfoil",
+      "foil"
+    ],
+    "oversized": false,
+    "promo": false,
+    "reprint": false,
+    "variation": false,
+    "set_id": "77b0f33a-10f6-4559-b53a-1c9f0e15149c",
+    "set": "afin",
+    "set_name": "Final Fantasy Art Series",
+    "set_type": "memorabilia",
+    "set_uri": "https://api.scryfall.com/sets/77b0f33a-10f6-4559-b53a-1c9f0e15149c",
+    "set_search_uri": "https://api.scryfall.com/cards/search?order=set&q=e%3Aafin&unique=prints",
+    "scryfall_set_uri": "https://scryfall.com/sets/afin?utm_source=api",
+    "rulings_uri": "https://api.scryfall.com/cards/5c4b8e1d-f1a0-4b74-9edd-a477459a1211/rulings",
+    "prints_search_uri": "https://api.scryfall.com/cards/search?order=released&q=oracleid%3A38394933-a0d8-46c2-8327-fd8000eb4181&unique=prints",
+    "collector_number": "46",
+    "digital": false,
+    "rarity": "common",
+    "artist": "",
+    "border_color": "borderless",
+    "frame": "2015",
+    "frame_effects": [
+      "inverted"
+    ],
+    "full_art": false,
+    "textless": false,
+    "booster": false,
+    "story_spotlight": false,
+    "prices": {
+      "usd": null,
+      "usd_foil": null,
+      "usd_etched": null,
+      "eur": null,
+      "eur_foil": null,
+      "tix": null
+    },
+    "related_uris": {
+      "tcgplayer_infinite_articles": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Farticles&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Farticles%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BCourt%2BMage",
+      "tcgplayer_infinite_decks": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Fdecks&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fdecks%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BCourt%2BMage",
+      "edhrec": "https://edhrec.com/route/?cc=Kefka%2C+Court+Mage"
+    },
+    "purchase_uris": {
+      "tcgplayer": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fmagic%2Fproduct%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%26view%3Dgrid",
+      "cardmarket": "https://www.cardmarket.com/en/Magic/Products/Search?referrer=scryfall&searchString=Kefka%2C+Court+Mage&utm_campaign=card_prices&utm_medium=text&utm_source=scryfall",
+      "cardhoarder": "https://www.cardhoarder.com/cards?affiliate_id=scryfall&data%5Bsearch%5D=Kefka%2C+Court+Mage&ref=card-profile&utm_campaign=affiliate&utm_medium=card&utm_source=scryfall"
+    }
+  },
+  {
+    "object": "card",
+    "id": "8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8",
+    "oracle_id": "6d3ca5cb-781d-4608-b7f1-38c020536376",
+    "multiverse_ids": [],
+    "resource_id": "DAF7C9B4C5585E9CBEA0F59FC8C0028DCD10C8DF2B56A5EB1C89EB3D2EEE99E4",
+    "mtgo_id": 141419,
+    "tcgplayer_id": 631006,
+    "cardmarket_id": 824159,
+    "name": "Kefka, Court Mage // Kefka, Ruler of Ruin",
+    "lang": "en",
+    "released_at": "2025-06-13",
+    "uri": "https://api.scryfall.com/cards/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8",
+    "scryfall_uri": "https://scryfall.com/card/fin/231/kefka-court-mage-kefka-ruler-of-ruin?utm_source=api",
+    "layout": "transform",
+    "highres_image": true,
+    "image_status": "highres_scan",
+    "cmc": 5,
+    "type_line": "Legendary Creature — Human Wizard // Legendary Creature — Avatar Wizard",
+    "color_identity": [
+      "B",
+      "R",
+      "U"
+    ],
+    "keywords": [
+      "Flying",
+      "Transform"
+    ],
+    "card_faces": [
+      {
+        "object": "card_face",
+        "name": "Kefka, Court Mage",
+        "mana_cost": "{2}{U}{B}{R}",
+        "type_line": "Legendary Creature — Human Wizard",
+        "oracle_text": "Whenever Kefka enters or attacks, each player discards a card. Then you draw a card for each card type among cards discarded this way.\n{8}: Each opponent sacrifices a permanent of their choice. Transform Kefka. Activate only as a sorcery.",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "power": "4",
+        "toughness": "5",
+        "artist": "Xui Ton",
+        "artist_id": "2349ac50-eafc-443e-b0ff-1b646175f017",
+        "illustration_id": "455961aa-6636-424e-9c45-ce183146f72d",
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/front/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "normal": "https://cards.scryfall.io/normal/front/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "large": "https://cards.scryfall.io/large/front/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "png": "https://cards.scryfall.io/png/front/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.png?1748707830",
+          "art_crop": "https://cards.scryfall.io/art_crop/front/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "border_crop": "https://cards.scryfall.io/border_crop/front/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830"
+        }
+      },
+      {
+        "object": "card_face",
+        "name": "Kefka, Ruler of Ruin",
+        "mana_cost": "",
+        "type_line": "Legendary Creature — Avatar Wizard",
+        "oracle_text": "Flying\nWhenever an opponent loses life during your turn, you draw that many cards.",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "color_indicator": [
+          "B",
+          "R",
+          "U"
+        ],
+        "power": "5",
+        "toughness": "7",
+        "flavor_text": "The end draws near.",
+        "artist": "Xui Ton",
+        "artist_id": "2349ac50-eafc-443e-b0ff-1b646175f017",
+        "illustration_id": "eb11f846-3db2-492f-8130-9cb4a298b1b6",
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/back/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "normal": "https://cards.scryfall.io/normal/back/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "large": "https://cards.scryfall.io/large/back/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "png": "https://cards.scryfall.io/png/back/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.png?1748707830",
+          "art_crop": "https://cards.scryfall.io/art_crop/back/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830",
+          "border_crop": "https://cards.scryfall.io/border_crop/back/8/f/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8.jpg?1748707830"
+        }
+      }
+    ],
+    "legalities": {
+      "standard": "legal",
+      "future": "legal",
+      "historic": "legal",
+      "timeless": "legal",
+      "gladiator": "legal",
+      "pioneer": "legal",
+      "modern": "legal",
+      "legacy": "legal",
+      "pauper": "not_legal",
+      "vintage": "legal",
+      "penny": "legal",
+      "commander": "legal",
+      "oathbreaker": "legal",
+      "standardbrawl": "legal",
+      "brawl": "legal",
+      "alchemy": "legal",
+      "paupercommander": "not_legal",
+      "duel": "legal",
+      "oldschool": "not_legal",
+      "premodern": "not_legal",
+      "predh": "not_legal"
+    },
+    "games": [
+      "paper",
+      "arena",
+      "mtgo"
+    ],
+    "reserved": false,
+    "game_changer": false,
+    "foil": true,
+    "nonfoil": true,
+    "finishes": [
+      "nonfoil",
+      "foil"
+    ],
+    "oversized": false,
+    "promo": false,
+    "reprint": false,
+    "variation": false,
+    "set_id": "d7beb4b7-e1ff-4d35-ab07-5700f17ea1ea",
+    "set": "fin",
+    "set_name": "Final Fantasy",
+    "set_type": "expansion",
+    "set_uri": "https://api.scryfall.com/sets/d7beb4b7-e1ff-4d35-ab07-5700f17ea1ea",
+    "set_search_uri": "https://api.scryfall.com/cards/search?order=set&q=e%3Afin&unique=prints",
+    "scryfall_set_uri": "https://scryfall.com/sets/fin?utm_source=api",
+    "rulings_uri": "https://api.scryfall.com/cards/8fcf3fbb-1ddd-437e-81c1-f5a3133f5ee8/rulings",
+    "prints_search_uri": "https://api.scryfall.com/cards/search?order=released&q=oracleid%3A6d3ca5cb-781d-4608-b7f1-38c020536376&unique=prints",
+    "collector_number": "231",
+    "digital": false,
+    "rarity": "mythic",
+    "artist": "Xui Ton",
+    "artist_ids": [
+      "2349ac50-eafc-443e-b0ff-1b646175f017"
+    ],
+    "border_color": "black",
+    "frame": "2015",
+    "frame_effects": [
+      "legendary"
+    ],
+    "security_stamp": "triangle",
+    "full_art": false,
+    "textless": false,
+    "booster": true,
+    "story_spotlight": false,
+    "promo_types": [
+      "ffvi",
+      "universesbeyond"
+    ],
+    "edhrec_rank": 4507,
+    "prices": {
+      "usd": "5.01",
+      "usd_foil": "9.12",
+      "usd_etched": null,
+      "eur": "6.38",
+      "eur_foil": "8.47",
+      "tix": "0.02"
+    },
+    "related_uris": {
+      "tcgplayer_infinite_articles": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Farticles&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Farticles%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BRuler%2Bof%2BRuin",
+      "tcgplayer_infinite_decks": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Fdecks&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fdecks%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BRuler%2Bof%2BRuin",
+      "edhrec": "https://edhrec.com/route/?cc=Kefka%2C+Court+Mage"
+    },
+    "purchase_uris": {
+      "tcgplayer": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&u=https%3A%2F%2Fwww.tcgplayer.com%2Fproduct%2F631006%3Fpage%3D1",
+      "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=824159&referrer=scryfall&utm_campaign=card_prices&utm_medium=text&utm_source=scryfall",
+      "cardhoarder": "https://www.cardhoarder.com/cards/141419?affiliate_id=scryfall&ref=card-profile&utm_campaign=affiliate&utm_medium=card&utm_source=scryfall"
+    }
+  },
+  {
+    "object": "card",
+    "id": "0cadfe0e-9cdf-4e64-b143-f996c76bf93b",
+    "oracle_id": "6d3ca5cb-781d-4608-b7f1-38c020536376",
+    "multiverse_ids": [],
+    "resource_id": "CCFC3797D10A32AD02665775A4B86D7EFC914FBC557DCC573AD07665B8BEED4A",
+    "mtgo_id": 141613,
+    "tcgplayer_id": 630851,
+    "cardmarket_id": 824258,
+    "name": "Kefka, Court Mage // Kefka, Ruler of Ruin",
+    "lang": "en",
+    "released_at": "2025-06-13",
+    "uri": "https://api.scryfall.com/cards/0cadfe0e-9cdf-4e64-b143-f996c76bf93b",
+    "scryfall_uri": "https://scryfall.com/card/fin/322/kefka-court-mage-kefka-ruler-of-ruin?utm_source=api",
+    "layout": "transform",
+    "highres_image": true,
+    "image_status": "highres_scan",
+    "cmc": 5,
+    "type_line": "Legendary Creature — Human Wizard // Legendary Creature — Avatar Wizard",
+    "color_identity": [
+      "B",
+      "R",
+      "U"
+    ],
+    "keywords": [
+      "Flying",
+      "Transform"
+    ],
+    "card_faces": [
+      {
+        "object": "card_face",
+        "name": "Kefka, Court Mage",
+        "mana_cost": "{2}{U}{B}{R}",
+        "type_line": "Legendary Creature — Human Wizard",
+        "oracle_text": "Whenever Kefka enters or attacks, each player discards a card. Then you draw a card for each card type among cards discarded this way.\n{8}: Each opponent sacrifices a permanent of their choice. Transform Kefka. Activate only as a sorcery.",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "power": "4",
+        "toughness": "5",
+        "artist": "Yoshitaka Amano",
+        "artist_id": "71c0c461-d1a6-4d7f-b01f-352e7228cf8a",
+        "illustration_id": "bc5cb355-fe4f-4b89-92d5-8581392e1363",
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/front/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "normal": "https://cards.scryfall.io/normal/front/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "large": "https://cards.scryfall.io/large/front/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "png": "https://cards.scryfall.io/png/front/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.png?1748707842",
+          "art_crop": "https://cards.scryfall.io/art_crop/front/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "border_crop": "https://cards.scryfall.io/border_crop/front/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842"
+        }
+      },
+      {
+        "object": "card_face",
+        "name": "Kefka, Ruler of Ruin",
+        "mana_cost": "",
+        "type_line": "Legendary Creature — Avatar Wizard",
+        "oracle_text": "Flying\nWhenever an opponent loses life during your turn, you draw that many cards.",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "color_indicator": [
+          "B",
+          "R",
+          "U"
+        ],
+        "power": "5",
+        "toughness": "7",
+        "flavor_text": "\"Life... Dreams... Hope... Where do they come from? And where do they go? Such meaningless things... I'll destroy them all!\"",
+        "artist": "Yoshitaka Amano",
+        "artist_id": "71c0c461-d1a6-4d7f-b01f-352e7228cf8a",
+        "illustration_id": "c8c53244-8997-479a-9959-874af949b68a",
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/back/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "normal": "https://cards.scryfall.io/normal/back/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "large": "https://cards.scryfall.io/large/back/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "png": "https://cards.scryfall.io/png/back/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.png?1748707842",
+          "art_crop": "https://cards.scryfall.io/art_crop/back/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842",
+          "border_crop": "https://cards.scryfall.io/border_crop/back/0/c/0cadfe0e-9cdf-4e64-b143-f996c76bf93b.jpg?1748707842"
+        }
+      }
+    ],
+    "legalities": {
+      "standard": "legal",
+      "future": "legal",
+      "historic": "legal",
+      "timeless": "legal",
+      "gladiator": "legal",
+      "pioneer": "legal",
+      "modern": "legal",
+      "legacy": "legal",
+      "pauper": "not_legal",
+      "vintage": "legal",
+      "penny": "legal",
+      "commander": "legal",
+      "oathbreaker": "legal",
+      "standardbrawl": "legal",
+      "brawl": "legal",
+      "alchemy": "legal",
+      "paupercommander": "not_legal",
+      "duel": "legal",
+      "oldschool": "not_legal",
+      "premodern": "not_legal",
+      "predh": "not_legal"
+    },
+    "games": [
+      "paper",
+      "arena",
+      "mtgo"
+    ],
+    "reserved": false,
+    "game_changer": false,
+    "foil": true,
+    "nonfoil": true,
+    "finishes": [
+      "nonfoil",
+      "foil"
+    ],
+    "oversized": false,
+    "promo": false,
+    "reprint": false,
+    "variation": false,
+    "set_id": "d7beb4b7-e1ff-4d35-ab07-5700f17ea1ea",
+    "set": "fin",
+    "set_name": "Final Fantasy",
+    "set_type": "expansion",
+    "set_uri": "https://api.scryfall.com/sets/d7beb4b7-e1ff-4d35-ab07-5700f17ea1ea",
+    "set_search_uri": "https://api.scryfall.com/cards/search?order=set&q=e%3Afin&unique=prints",
+    "scryfall_set_uri": "https://scryfall.com/sets/fin?utm_source=api",
+    "rulings_uri": "https://api.scryfall.com/cards/0cadfe0e-9cdf-4e64-b143-f996c76bf93b/rulings",
+    "prints_search_uri": "https://api.scryfall.com/cards/search?order=released&q=oracleid%3A6d3ca5cb-781d-4608-b7f1-38c020536376&unique=prints",
+    "collector_number": "322",
+    "digital": false,
+    "rarity": "mythic",
+    "artist": "Yoshitaka Amano",
+    "artist_ids": [
+      "71c0c461-d1a6-4d7f-b01f-352e7228cf8a"
+    ],
+    "border_color": "borderless",
+    "frame": "2015",
+    "frame_effects": [
+      "legendary",
+      "inverted"
+    ],
+    "security_stamp": "triangle",
+    "full_art": true,
+    "textless": false,
+    "booster": false,
+    "story_spotlight": false,
+    "promo_types": [
+      "ffvi",
+      "universesbeyond",
+      "boosterfun"
+    ],
+    "edhrec_rank": 4507,
+    "prices": {
+      "usd": "26.94",
+      "usd_foil": "82.71",
+      "usd_etched": null,
+      "eur": "32.76",
+      "eur_foil": "87.90",
+      "tix": "0.09"
+    },
+    "related_uris": {
+      "tcgplayer_infinite_articles": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Farticles&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Farticles%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BRuler%2Bof%2BRuin",
+      "tcgplayer_infinite_decks": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Fdecks&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fdecks%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BRuler%2Bof%2BRuin",
+      "edhrec": "https://edhrec.com/route/?cc=Kefka%2C+Court+Mage"
+    },
+    "purchase_uris": {
+      "tcgplayer": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&u=https%3A%2F%2Fwww.tcgplayer.com%2Fproduct%2F630851%3Fpage%3D1",
+      "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=824258&referrer=scryfall&utm_campaign=card_prices&utm_medium=text&utm_source=scryfall",
+      "cardhoarder": "https://www.cardhoarder.com/cards/141613?affiliate_id=scryfall&ref=card-profile&utm_campaign=affiliate&utm_medium=card&utm_source=scryfall"
+    }
+  },
+  {
+    "object": "card",
+    "id": "53756218-bcdb-498a-8c61-654183153487",
+    "oracle_id": "6d3ca5cb-781d-4608-b7f1-38c020536376",
+    "multiverse_ids": [],
+    "resource_id": "75607FB179E933E9E44A1FD037D18C605F65CB5628F8DE58AEEB62DC72C88C18",
+    "mtgo_id": 141689,
+    "tcgplayer_id": 631020,
+    "cardmarket_id": 824287,
+    "name": "Kefka, Court Mage // Kefka, Ruler of Ruin",
+    "lang": "en",
+    "released_at": "2025-06-13",
+    "uri": "https://api.scryfall.com/cards/53756218-bcdb-498a-8c61-654183153487",
+    "scryfall_uri": "https://scryfall.com/card/fin/398/kefka-court-mage-kefka-ruler-of-ruin?utm_source=api",
+    "layout": "transform",
+    "highres_image": true,
+    "image_status": "highres_scan",
+    "cmc": 5,
+    "type_line": "Legendary Creature — Human Wizard // Legendary Creature — Avatar Wizard",
+    "color_identity": [
+      "B",
+      "R",
+      "U"
+    ],
+    "keywords": [
+      "Flying",
+      "Transform"
+    ],
+    "card_faces": [
+      {
+        "object": "card_face",
+        "name": "Kefka, Court Mage",
+        "mana_cost": "{2}{U}{B}{R}",
+        "type_line": "Legendary Creature — Human Wizard",
+        "oracle_text": "Whenever Kefka enters or attacks, each player discards a card. Then you draw a card for each card type among cards discarded this way.\n{8}: Each opponent sacrifices a permanent of their choice. Transform Kefka. Activate only as a sorcery.",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "power": "4",
+        "toughness": "5",
+        "artist": "Rorubei",
+        "artist_id": "42e7262b-6320-4007-a6b4-dd4ba4bd2b67",
+        "illustration_id": "5b05e1b8-8344-4873-87ad-d12b804345e6",
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/front/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "normal": "https://cards.scryfall.io/normal/front/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "large": "https://cards.scryfall.io/large/front/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "png": "https://cards.scryfall.io/png/front/5/3/53756218-bcdb-498a-8c61-654183153487.png?1748707866",
+          "art_crop": "https://cards.scryfall.io/art_crop/front/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "border_crop": "https://cards.scryfall.io/border_crop/front/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866"
+        }
+      },
+      {
+        "object": "card_face",
+        "name": "Kefka, Ruler of Ruin",
+        "mana_cost": "",
+        "type_line": "Legendary Creature — Avatar Wizard",
+        "oracle_text": "Flying\nWhenever an opponent loses life during your turn, you draw that many cards.",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "color_indicator": [
+          "B",
+          "R",
+          "U"
+        ],
+        "power": "5",
+        "toughness": "7",
+        "artist": "Rorubei",
+        "artist_id": "42e7262b-6320-4007-a6b4-dd4ba4bd2b67",
+        "illustration_id": "69224ca5-af4f-4133-b374-1fe0fca6de1f",
+        "image_uris": {
+          "small": "https://cards.scryfall.io/small/back/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "normal": "https://cards.scryfall.io/normal/back/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "large": "https://cards.scryfall.io/large/back/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "png": "https://cards.scryfall.io/png/back/5/3/53756218-bcdb-498a-8c61-654183153487.png?1748707866",
+          "art_crop": "https://cards.scryfall.io/art_crop/back/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866",
+          "border_crop": "https://cards.scryfall.io/border_crop/back/5/3/53756218-bcdb-498a-8c61-654183153487.jpg?1748707866"
+        }
+      }
+    ],
+    "legalities": {
+      "standard": "legal",
+      "future": "legal",
+      "historic": "legal",
+      "timeless": "legal",
+      "gladiator": "legal",
+      "pioneer": "legal",
+      "modern": "legal",
+      "legacy": "legal",
+      "pauper": "not_legal",
+      "vintage": "legal",
+      "penny": "legal",
+      "commander": "legal",
+      "oathbreaker": "legal",
+      "standardbrawl": "legal",
+      "brawl": "legal",
+      "alchemy": "legal",
+      "paupercommander": "not_legal",
+      "duel": "legal",
+      "oldschool": "not_legal",
+      "premodern": "not_legal",
+      "predh": "not_legal"
+    },
+    "games": [
+      "paper",
+      "arena",
+      "mtgo"
+    ],
+    "reserved": false,
+    "game_changer": false,
+    "foil": true,
+    "nonfoil": true,
+    "finishes": [
+      "nonfoil",
+      "foil"
+    ],
+    "oversized": false,
+    "promo": false,
+    "reprint": false,
+    "variation": false,
+    "set_id": "d7beb4b7-e1ff-4d35-ab07-5700f17ea1ea",
+    "set": "fin",
+    "set_name": "Final Fantasy",
+    "set_type": "expansion",
+    "set_uri": "https://api.scryfall.com/sets/d7beb4b7-e1ff-4d35-ab07-5700f17ea1ea",
+    "set_search_uri": "https://api.scryfall.com/cards/search?order=set&q=e%3Afin&unique=prints",
+    "scryfall_set_uri": "https://scryfall.com/sets/fin?utm_source=api",
+    "rulings_uri": "https://api.scryfall.com/cards/53756218-bcdb-498a-8c61-654183153487/rulings",
+    "prints_search_uri": "https://api.scryfall.com/cards/search?order=released&q=oracleid%3A6d3ca5cb-781d-4608-b7f1-38c020536376&unique=prints",
+    "collector_number": "398",
+    "digital": false,
+    "rarity": "mythic",
+    "artist": "Rorubei",
+    "artist_ids": [
+      "42e7262b-6320-4007-a6b4-dd4ba4bd2b67"
+    ],
+    "border_color": "borderless",
+    "frame": "2015",
+    "frame_effects": [
+      "legendary",
+      "inverted"
+    ],
+    "security_stamp": "triangle",
+    "full_art": true,
+    "textless": false,
+    "booster": false,
+    "story_spotlight": false,
+    "promo_types": [
+      "ffvi",
+      "universesbeyond",
+      "boosterfun"
+    ],
+    "edhrec_rank": 4507,
+    "prices": {
+      "usd": "14.34",
+      "usd_foil": "19.73",
+      "usd_etched": null,
+      "eur": "15.01",
+      "eur_foil": "23.02",
+      "tix": "0.24"
+    },
+    "related_uris": {
+      "tcgplayer_infinite_articles": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Farticles&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Farticles%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BRuler%2Bof%2BRuin",
+      "tcgplayer_infinite_decks": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&trafcat=tcgplayer.com%2Fsearch%2Fdecks&u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fdecks%3FproductLineName%3Dmagic%26q%3DKefka%252C%2BCourt%2BMage%2B%252F%252F%2BKefka%252C%2BRuler%2Bof%2BRuin",
+      "edhrec": "https://edhrec.com/route/?cc=Kefka%2C+Court+Mage"
+    },
+    "purchase_uris": {
+      "tcgplayer": "https://partner.tcgplayer.com/c/4931599/1830156/21018?subId1=api&u=https%3A%2F%2Fwww.tcgplayer.com%2Fproduct%2F631020%3Fpage%3D1",
+      "cardmarket": "https://www.cardmarket.com/en/Magic/Products?idProduct=824287&referrer=scryfall&utm_campaign=card_prices&utm_medium=text&utm_source=scryfall",
+      "cardhoarder": "https://www.cardhoarder.com/cards/141689?affiliate_id=scryfall&ref=card-profile&utm_campaign=affiliate&utm_medium=card&utm_source=scryfall"
+    }
+  }
+]
+
+ [31m❯[39m src/utils/getCardImagesPaged_repro.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 126[2mms[22m[39m
+[31m     [31m×[31m should fetch CMC for Kefka, Court Mage[39m[32m 125[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/utils/getCardImagesPaged_repro.test.ts[2m > [22mgetCardsWithImagesForCardInfo - Kefka Reproduction[2m > [22mshould fetch CMC for Kefka, Court Mage
+[31m[1mAssertionError[22m: expected +0 to be 5 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 5[39m
+[31m+ 0[39m
+
+[36m [2m❯[22m src/utils/getCardImagesPaged_repro.test.ts:[2m39:36[22m[39m
+    [90m 37| [39m
+    [90m 38| [39m        [35mif[39m (results[33m.[39mlength [33m>[39m [34m0[39m) {
+    [90m 39| [39m            [34mexpect[39m(results[[34m0[39m][33m.[39mcmc)[33m.[39m[34mtoBe[39m([34m5[39m)[33m;[39m
+    [90m   | [39m                                   [31m^[39m
+    [90m 40| [39m        } [35melse[39m {
+    [90m 41| [39m            console[33m.[39m[34mlog[39m([32m"Kefka not found on Scryfall"[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m   Start at [22m 13:58:07
+[2m   Duration [22m 278ms[2m (transform 27ms, setup 0ms, collect 76ms, tests 126ms, environment 0ms, prepare 4ms)[22m
+

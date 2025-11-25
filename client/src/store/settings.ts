@@ -56,12 +56,23 @@ type Store = {
   toggleUploadPanel: () => void;
   uploadPanelWidth: number;
   setUploadPanelWidth: (width: number) => void;
+  // Sort & Filter
+  sortBy: "name" | "type" | "cmc" | "color" | "manual" | "rarity";
+  setSortBy: (value: "manual" | "name" | "type" | "cmc" | "color" | "rarity") => void;
+  sortOrder: "asc" | "desc";
+  setSortOrder: (value: "asc" | "desc") => void;
+  filterManaCost: number[];
+  setFilterManaCost: (value: number[]) => void;
+  filterColors: string[];
+  setFilterColors: (value: string[]) => void;
+  filterMatchType: "partial" | "exact";
+  setFilterMatchType: (value: "partial" | "exact") => void;
 };
 
 const defaultPageSettings = {
-  pageSizeUnit: "in",
-  pageOrientation: "portrait",
-  pageSizePreset: "Letter",
+  pageSizeUnit: "in" as "in" | "mm",
+  pageOrientation: "portrait" as "portrait" | "landscape",
+  pageSizePreset: "Letter" as LayoutPreset,
   pageWidth: 8.5,
   pageHeight: 11,
   columns: 3,
@@ -76,17 +87,22 @@ const defaultPageSettings = {
   cardPositionY: 0,
   zoom: 1,
   dpi: 900,
-  cutLineStyle: "full",
+  cutLineStyle: "full" as "full" | "edges" | "none",
   globalLanguage: "en",
   settingsPanelState: {
-    order: ["layout", "bleed", "guides", "card", "application"],
+    order: ["layout", "bleed", "guides", "card", "filterSort", "application"],
     collapsed: {},
   },
   settingsPanelWidth: 320,
   isSettingsPanelCollapsed: false,
   uploadPanelWidth: 320,
   isUploadPanelCollapsed: false,
-} as Store;
+  sortBy: "manual" as "name" | "type" | "cmc" | "color" | "manual" | "rarity",
+  sortOrder: "asc" as "asc" | "desc",
+  filterManaCost: [] as number[],
+  filterColors: [] as string[],
+  filterMatchType: "partial" as "partial" | "exact",
+};
 
 const layoutPresetsSizes: Record<
   LayoutPreset,
@@ -168,12 +184,25 @@ export const useSettingsStore = create<Store>()(
         })),
       uploadPanelWidth: 320,
       setUploadPanelWidth: (width) => set({ uploadPanelWidth: width }),
+
+      // Sort & Filter
+      sortBy: "manual",
+      setSortBy: (value) => set({ sortBy: value }),
+      sortOrder: "asc",
+      setSortOrder: (value) => set({ sortOrder: value }),
+      filterManaCost: [],
+      setFilterManaCost: (value) => set({ filterManaCost: value }),
+      filterColors: [],
+      setFilterColors: (value) => set({ filterColors: value }),
+      filterMatchType: "partial",
+      setFilterMatchType: (value) => set({ filterMatchType: value }),
+
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 2,
+      version: 4, // Increment version for new fields
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -190,7 +219,19 @@ export const useSettingsStore = create<Store>()(
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { pageWidth, pageHeight, pageSizeUnit, ...rest } =
             persistedState as Partial<Store>;
-          return rest;
+          return { ...defaultPageSettings, ...rest };
+        }
+
+        if (version < 3) {
+          return { ...defaultPageSettings, ...(persistedState as Partial<Store>) };
+        }
+
+        if (version < 4) {
+          return {
+            ...defaultPageSettings,
+            ...(persistedState as Partial<Store>),
+            sortBy: "manual",
+          };
         }
 
         return persistedState as Partial<Store>;

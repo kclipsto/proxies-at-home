@@ -20,10 +20,12 @@ import { LayoutSection } from "./SettingsPanel/sections/LayoutSection";
 import { BleedSection } from "./SettingsPanel/sections/BleedSection";
 import { GuidesSection } from "./SettingsPanel/sections/GuidesSection";
 import { CardSection } from "./SettingsPanel/sections/CardSection";
+import { FilterSortSection } from "./SettingsPanel/sections/FilterSortSection";
 import { ApplicationSection } from "./SettingsPanel/sections/ApplicationSection";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
 import {
   Droplet,
+  Filter,
   Grid3X3,
   LayoutTemplate,
   ScanLine,
@@ -141,6 +143,19 @@ export function PageSettingsControls({
             <CardSection />
           </SettingsPanel>
         );
+      case "filterSort":
+        return (
+          <SettingsPanel
+            key={id}
+            id={id}
+            title="Filter & Sort"
+            isOpen={isOpen}
+            onToggle={onToggle}
+            icon={Filter}
+          >
+            <FilterSortSection />
+          </SettingsPanel>
+        );
       case "application":
         return (
           <SettingsPanel
@@ -184,6 +199,10 @@ export function PageSettingsControls({
             case "card":
               Icon = Grid3X3;
               label = "Card";
+              break;
+            case "filterSort":
+              Icon = Filter;
+              label = "Filter & Sort";
               break;
             case "application":
               Icon = Settings;

@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from "express";
-import { getImagesForCardInfo } from "../utils/getCardImagesPaged.js";
+import { getCardsWithImagesForCardInfo } from "../utils/getCardImagesPaged.js";
 import { normalizeCardInfos } from "../utils/cardUtils.js";
 import { type ScryfallCard } from "../../../shared/types.js";
 
@@ -19,7 +19,9 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
   }, 15000);
 
   // 3. Cleanup when the client disconnects
-  req.on("close", () => {
+  let isClosed = false;
+  res.on("close", () => {
+    isClosed = true;
     clearInterval(keepAliveInterval);
     console.log("[STREAM] Connection closed by client.");
   });
@@ -39,20 +41,65 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
     let processed = 0;
     for (const ci of cardQueries) {
+      if (isClosed) {
+        console.log("[STREAM] Aborting fetch loop due to client disconnect.");
+        break;
+      }
       processed++;
       try {
         // Fetch all unique arts for the card (default behavior)
-        const imageUrls = await getImagesForCardInfo(ci, "art", language);
-        if (imageUrls && imageUrls.length > 0) {
-          const cardToSend: ScryfallCard = {
-            name: ci.name,
-            set: ci.set,
-            number: ci.number,
-            lang: language,
-            imageUrls,
-          };
-          res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
-          console.log(`[STREAM] Found ${imageUrls.length} arts for: ${ci.name}`);
+        const scryfallCards = await getCardsWithImagesForCardInfo(ci, "art", language);
+
+        if (scryfallCards && scryfallCards.length > 0) {
+          // We might get multiple cards (arts). We need to send them.
+          // The current API expects one "card-found" event per card query, 
+          // but with multiple image URLs.
+          // We need to aggregate the image URLs, but what about metadata?
+          // Usually metadata is shared across arts (except maybe flavor text/artist).
+          // Colors, CMC, Type should be consistent.
+
+          const primaryCard = scryfallCards[0];
+          const imageUrls: string[] = [];
+
+          for (const c of scryfallCards) {
+            if (c.image_uris?.png) {
+              imageUrls.push(c.image_uris.png);
+            } else if (c.card_faces) {
+              for (const face of c.card_faces) {
+                if (face.image_uris?.png) {
+                  imageUrls.push(face.image_uris.png);
+                }
+              }
+            }
+          }
+
+          if (imageUrls.length > 0) {
+            // Extract colors and mana_cost from top-level or first face (for DFCs)
+            let colors = primaryCard.colors;
+            let mana_cost = primaryCard.mana_cost;
+
+            if ((!colors || !mana_cost) && primaryCard.card_faces && primaryCard.card_faces.length > 0) {
+              if (!colors) colors = primaryCard.card_faces[0].colors;
+              if (!mana_cost) mana_cost = primaryCard.card_faces[0].mana_cost;
+            }
+
+            const cardToSend: ScryfallCard = {
+              name: ci.name,
+              set: ci.set,
+              number: ci.number,
+              lang: language,
+              imageUrls,
+              colors: colors,
+              mana_cost: mana_cost,
+              cmc: primaryCard.cmc,
+              type_line: primaryCard.type_line,
+              rarity: primaryCard.rarity,
+            };
+            res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
+            console.log(`[STREAM] Found ${imageUrls.length} arts for: ${ci.name}`);
+          } else {
+            throw new Error("No images found for card on Scryfall.");
+          }
         } else {
           throw new Error("Card not found on Scryfall.");
         }

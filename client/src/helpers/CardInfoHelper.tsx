@@ -1,6 +1,6 @@
 import type { CardInfo } from "../../../shared/types";
 
-export function extractCardInfo(input: string, quantity: number= 1): CardInfo {
+export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
   let s = input.trim();
 
   s = s.replace(/^\s*\d+\s*x?\s+/i, "");
@@ -17,12 +17,33 @@ export function extractCardInfo(input: string, quantity: number= 1): CardInfo {
 
   let setCode: string | undefined;
   let number: string | undefined;
-  const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
-  const m = s.match(setNumTail);
-  if (m) {
-    setCode = m[1]?.toLowerCase();
-    number = m[2] ?? undefined;
-    s = s.replace(setNumTail, "").trim();
+
+  // Check for [Set] {Number} format (e.g. [FIC] {7})
+  const setNumBrackets = /\s*\[([a-z0-9]+)\]\s*\{([a-z0-9]+)\}\s*$/i;
+  const mBrackets = s.match(setNumBrackets);
+  if (mBrackets) {
+    setCode = mBrackets[1]?.toLowerCase();
+    number = mBrackets[2];
+    s = s.replace(setNumBrackets, "").trim();
+  }
+
+  // Check for {Number} only format (e.g. Name {123}) - User requested to drop number
+  const numBracketsOnly = /\s*\{([a-z0-9]+)\}\s*$/i;
+  const mNumOnly = s.match(numBracketsOnly);
+  if (mNumOnly) {
+    // Just remove it
+    s = s.replace(numBracketsOnly, "").trim();
+  }
+
+  // Check for (Set) Number format (e.g. (ABC) 123)
+  if (!setCode && !number) {
+    const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
+    const m = s.match(setNumTail);
+    if (m) {
+      setCode = m[1]?.toLowerCase();
+      number = m[2] ?? undefined;
+      s = s.replace(setNumTail, "").trim();
+    }
   }
 
   return { name: s, quantity, set: setCode, number };

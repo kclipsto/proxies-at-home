@@ -17,6 +17,7 @@ type SortableCardProps = {
     y: number;
     cardUuid: string;
   }) => void;
+  disabled?: boolean;
 };
 
 export default function SortableCard({
@@ -28,12 +29,13 @@ export default function SortableCard({
   totalCardHeight,
   guideOffset,
   setContextMenu,
+  disabled,
 }: SortableCardProps) {
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const guideColor = useSettingsStore((state) => state.guideColor);
   const zoom = useSettingsStore((state) => state.zoom);
   const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: card.uuid });
+    useSortable({ id: card.uuid, disabled });
 
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
@@ -80,13 +82,15 @@ export default function SortableCard({
       />
 
       {/* ⠿ Drag Handle */}
-      <div
-        {...listeners}
-        className="absolute right-[4px] top-1 w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50 select-none"
-        title="Drag"
-      >
-        ⠿
-      </div>
+      {!disabled && (
+        <div
+          {...listeners}
+          className="absolute right-[4px] top-1 w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50 select-none"
+          title="Drag"
+        >
+          ⠿
+        </div>
+      )}
 
       <>
         <div

@@ -8,15 +8,38 @@ const AX = axios.create({
   headers: { "User-Agent": "Proxxied/1.0 (contact: your-email@example.com)" },
 });
 
-// 100ms delay between Scryfall requests (their recommendation)
-let lastScryfallRequest = 0;
-async function delayScryfallRequest() {
-  const now = Date.now();
-  const elapsed = now - lastScryfallRequest;
-  if (elapsed < 100) {
-    await new Promise(r => setTimeout(r, 100 - elapsed));
+// Simple Mutex to serialize requests
+class Mutex {
+  private mutex = Promise.resolve();
+
+  lock(): Promise<() => void> {
+    let unlock: () => void = () => { };
+    const nextMutex = new Promise<void>((resolve) => {
+      unlock = resolve;
+    });
+    // The caller gets the unlock function when the *previous* mutex resolves
+    const willLock = this.mutex.then(() => unlock);
+    // The next caller will wait for *this* mutex (which resolves when unlock is called)
+    this.mutex = nextMutex;
+    return willLock;
   }
-  lastScryfallRequest = Date.now();
+}
+
+const scryfallMutex = new Mutex();
+let lastScryfallRequest = 0;
+
+async function delayScryfallRequest() {
+  const unlock = await scryfallMutex.lock();
+  try {
+    const now = Date.now();
+    const elapsed = now - lastScryfallRequest;
+    if (elapsed < 100) {
+      await new Promise(r => setTimeout(r, 100 - elapsed));
+    }
+    lastScryfallRequest = Date.now();
+  } finally {
+    unlock();
+  }
 }
 
 /** Escape colon in collector numbers like "321a" (safe) */
@@ -28,6 +51,8 @@ interface ScryfallCardFace {
   image_uris?: {
     png?: string;
   };
+  colors?: string[];
+  mana_cost?: string;
 }
 
 interface ScryfallCard {
@@ -35,6 +60,12 @@ interface ScryfallCard {
     png?: string;
   };
   card_faces?: ScryfallCardFace[];
+  colors?: string[];
+  mana_cost?: string;
+  cmc?: number;
+  type_line?: string;
+  layout?: string;
+  rarity?: string;
 }
 
 interface ScryfallResponse {
@@ -166,6 +197,55 @@ export async function getImagesForCardInfo(
 }
 
 /**
+ * Returns full card data (including images and metadata) for a CardInfo.
+ */
+export async function getCardsWithImagesForCardInfo(
+  cardInfo: CardInfo,
+  unique = "art",
+  language = "en",
+  fallbackToEnglish = true
+): Promise<ScryfallCard[]> {
+  const { name, set, number } = cardInfo || {};
+
+  const executeStrategy = (queryTemplate: (lang: string) => string) => {
+    return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
+  };
+
+  // 1) Exact printing
+  if (unique === "prints" && set && number) {
+    const results = await executeStrategy((lang) =>
+      `set:${set} number:${escapeColon(number)} name:"${name}" include:extras unique:prints lang:${lang}`
+    );
+    if (results.length) return results;
+  }
+
+  // 2) Set + name
+  if (unique === "prints" && set && !number) {
+    const results = await executeStrategy((lang) =>
+      `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
+    );
+    if (results.length) return results;
+  }
+
+  // 3) Name-only
+  const results = await executeStrategy((lang) =>
+    `!"${name}" include:extras unique:${unique} lang:${lang}`
+  );
+
+  // Prioritize non-art-series cards
+  // Art series cards often have CMC 0 and type "Card", which is not useful for metadata
+  results.sort((a, b) => {
+    const aIsArt = a.layout === "art_series";
+    const bIsArt = b.layout === "art_series";
+    if (aIsArt && !bIsArt) return 1;
+    if (!aIsArt && bIsArt) return -1;
+    return 0;
+  });
+
+  return results;
+}
+
+/**
  * Given a CardInfo, find the best matching card data from Scryfall.
  * Returns a single Scryfall card object or null.
  */
@@ -175,6 +255,7 @@ export async function getCardDataForCardInfo(
   fallbackToEnglish = true
 ): Promise<ScryfallCard | null> {
   const { name, set, number } = cardInfo || {};
+  if (!name) return null;
 
   const executeStrategy = (queryTemplate: (lang: string) => string) => {
     return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
@@ -197,8 +278,9 @@ export async function getCardDataForCardInfo(
   }
 
   // Strategy 3: Name-only exact match
+  // We use unique:art to get different art options, and order:released to prefer newer cards
   const cards = await executeStrategy((lang) =>
-    `!"${name}" include:extras unique:prints lang:${lang}`
+    `!"${name}" include:extras unique:art order:released lang:${lang}`
   );
   return cards[0] || null;
 }

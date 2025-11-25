@@ -2,8 +2,8 @@ import { vi, describe, beforeEach, it, expect, type Mock } from 'vitest';
 import request from "supertest";
 import express, { type Express, json } from "express";
 import { streamRouter } from "./streamRouter";
-import { getImagesForCardInfo } from "../utils/getCardImagesPaged";
-import type { CardInfo } from "../../../shared/types";
+import { getCardsWithImagesForCardInfo } from "../utils/getCardImagesPaged";
+import type { CardInfo, ScryfallCard } from "../../../shared/types";
 
 vi.mock("../utils/getCardImagesPaged");
 
@@ -11,14 +11,27 @@ describe("Stream Router", () => {
     let app: Express;
 
     beforeEach(() => {
-        (getImagesForCardInfo as Mock).mockClear();
+        (getCardsWithImagesForCardInfo as Mock).mockClear();
         app = express();
         app.use(json());
         app.use("/stream", streamRouter);
     });
 
     it("should stream card data correctly on happy path", async () => {
-        (getImagesForCardInfo as Mock).mockResolvedValue(["some_url"]);
+        const mockCard: ScryfallCard = {
+            name: "Sol Ring",
+            imageUrls: ["some_url"],
+            colors: [],
+            cmc: 1,
+            type_line: "Artifact",
+            rarity: "uncommon"
+        };
+        // The function returns ScryfallCard[] (local interface in getCardImagesPaged, but compatible)
+        // We need to match the structure expected by streamRouter
+        (getCardsWithImagesForCardInfo as Mock).mockResolvedValue([{
+            ...mockCard,
+            image_uris: { png: "some_url" }
+        }]);
 
         const cardQueries: CardInfo[] = [{ name: "Sol Ring" }];
 
@@ -47,7 +60,7 @@ describe("Stream Router", () => {
 
     it("should handle card-error events gracefully", async () => {
         const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
-        (getImagesForCardInfo as Mock).mockRejectedValue(new Error("Scryfall error"));
+        (getCardsWithImagesForCardInfo as Mock).mockRejectedValue(new Error("Scryfall error"));
 
         const cardQueries: CardInfo[] = [{ name: "Unknown Card" }];
 
@@ -89,7 +102,17 @@ describe("Stream Router", () => {
     });
 
     it("should correctly stream cards with multiple faces", async () => {
-        (getImagesForCardInfo as Mock).mockResolvedValue(["valki_url", "tibalt_url"]);
+        (getCardsWithImagesForCardInfo as Mock).mockResolvedValue([{
+            name: "Valki, God of Lies // Tibalt, Cosmic Impostor",
+            card_faces: [
+                { image_uris: { png: "valki_url" } },
+                { image_uris: { png: "tibalt_url" } }
+            ],
+            colors: ["B", "R"],
+            cmc: 7,
+            type_line: "Creature // Planeswalker",
+            rarity: "mythic"
+        }]);
 
         const cardQueries: CardInfo[] = [{ name: "Valki, God of Lies // Tibalt, Cosmic Impostor" }];
 
@@ -108,8 +131,15 @@ describe("Stream Router", () => {
 
     it("should handle a mix of found and not-found cards", async () => {
         const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
-        (getImagesForCardInfo as Mock)
-            .mockResolvedValueOnce(["sol_ring_url"])
+        (getCardsWithImagesForCardInfo as Mock)
+            .mockResolvedValueOnce([{
+                name: "Sol Ring",
+                image_uris: { png: "sol_ring_url" },
+                colors: [],
+                cmc: 1,
+                type_line: "Artifact",
+                rarity: "uncommon"
+            }])
             .mockRejectedValueOnce(new Error("Card not found"));
 
         const cardQueries: CardInfo[] = [{ name: "Sol Ring" }, { name: "Unknown" }];
@@ -175,7 +205,7 @@ describe("Stream Router", () => {
         consoleErrorSpy.mockRestore();
     });
     it("should handle empty image array as card not found", async () => {
-        (getImagesForCardInfo as Mock).mockResolvedValue([]);
+        (getCardsWithImagesForCardInfo as Mock).mockResolvedValue([]);
         const cardQueries: CardInfo[] = [{ name: "Empty Card" }];
 
         const res = await request(app)

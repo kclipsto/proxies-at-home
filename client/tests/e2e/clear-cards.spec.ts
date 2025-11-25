@@ -43,10 +43,11 @@ test.describe('Clear Cards', () => {
         // Ensure no cards initially
         await expect(page.getByTitle('Drag')).toHaveCount(0);
 
-        // Click Clear Cards
-        await page.getByRole('button', { name: 'Clear Cards' }).click();
+        // Verify "Clear Cards" button is disabled
+        const clearButton = page.getByRole('button', { name: 'Clear Cards' });
+        await expect(clearButton).toBeDisabled();
 
-        // Modal should NOT appear
+        // Modal should NOT appear (redundant but safe)
         await expect(page.locator('text=Confirm Clear Cards')).not.toBeVisible();
     });
 });

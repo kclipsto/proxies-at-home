@@ -19,7 +19,7 @@ type NumberInputProps = Omit<TextInputProps, "ref"> & {
 };
 
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
-    ({ min, max, step = 1, className, ...props }, ref) => {
+    ({ min, max, step = 1, className, onChange, ...props }, ref) => {
         const innerRef = useRef<HTMLInputElement>(null);
         useImperativeHandle(ref, () => innerRef.current!);
 
@@ -35,7 +35,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
                 innerRef.current.dispatchEvent(nativeChange);
 
                 // Explicitly call the React onChange prop if it exists
-                if (props.onChange) {
+                if (onChange) {
                     const syntheticEvent = {
                         target: innerRef.current,
                         currentTarget: innerRef.current,
@@ -53,10 +53,10 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
                         type: 'change',
                     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-                    props.onChange(syntheticEvent);
+                    onChange(syntheticEvent);
                 }
             }
-        }, [props.onChange]);
+        }, [onChange]);
 
         const updateValue = useCallback(
             (delta: number) => {

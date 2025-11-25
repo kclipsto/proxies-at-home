@@ -219,6 +219,7 @@ describe("getCardImagesPaged", () => {
       const cardInfo = { name: "Sol Ring" };
       const data = await getCardDataForCardInfo(cardInfo);
       expect(data).toBeNull();
+      console.log("Warn calls:", JSON.stringify(consoleWarnSpy.mock.calls));
       expect(consoleWarnSpy).toHaveBeenCalled();
     }, 10000);
   });
@@ -248,6 +249,7 @@ describe("getCardImagesPaged", () => {
       await getCardDataForCardInfo(cardInfo);
 
       const expectedUrlPart = "set%3Acmr%20name%3A%22Sol%20Ring%22";
+      console.log("Calls:", JSON.stringify(mockedAxios.get.mock.calls));
       expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining(expectedUrlPart));
     });
 
@@ -282,7 +284,7 @@ describe("getCardImagesPaged", () => {
     it("getImagesForCardInfo should return empty array if strategy 2 returns empty", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([]));
       const cardInfo = { name: "Card", set: "SET" };
-      const result = await getImagesForCardInfo(cardInfo);
+      const result = await getImagesForCardInfo(cardInfo, "prints");
       expect(result).toEqual([]);
     });
   });

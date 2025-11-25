@@ -23,6 +23,7 @@ import { deleteCard, duplicateCard } from "../helpers/dbUtils";
 import { getBleedInPixels } from "../helpers/ImageHelper";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useArtworkModalStore, useSettingsStore } from "../store";
+import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 import { ArtworkModal } from "./ArtworkModal";
 import { ZoomControls } from "./ZoomControls";
 
@@ -54,8 +55,15 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
 
   const sensors = useSensors(useSensor(PointerSensor));
 
-  const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []);
+  const { cards, filteredAndSortedCards } = useFilteredAndSortedCards();
   const images = useLiveQuery(() => db.images.toArray(), []);
+
+  const sortBy = useSettingsStore((state) => state.sortBy);
+  const filterManaCost = useSettingsStore((state) => state.filterManaCost);
+  const filterColors = useSettingsStore((state) => state.filterColors);
+
+  const dndDisabled =
+    sortBy !== "manual" || filterManaCost.length > 0 || filterColors.length > 0;
 
   const urlCacheRef = useRef<Map<string, { blob: Blob; url: string }>>(new Map());
 
@@ -343,7 +351,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter} onDragEnd={async ({ active, over }) => {
-              if (!cards || !over || active.id === over.id) return;
+              if (dndDisabled || !cards || !over || active.id === over.id) return;
 
               const oldIndex = cards.findIndex((c) => c.uuid === active.id);
               const newIndex = cards.findIndex((c) => c.uuid === over.id);
@@ -365,9 +373,6 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
               }
 
               if (newOrder === prevCard?.order || newOrder === nextCard?.order) {
-                console.warn(
-                  "Floating point precision limit reached. Triggering order re-balance."
-                );
                 await rebalanceOrders();
                 return;
               }
@@ -376,10 +381,10 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
             }}
           >
             <SortableContext
-              items={cards.map((card) => card.uuid)}
+              items={filteredAndSortedCards.map((card) => card.uuid)}
               strategy={rectSortingStrategy}
             >
-              {chunkCards(cards, pageCapacity).map((page, pageIndex) => (
+              {chunkCards(filteredAndSortedCards, pageCapacity).map((page, pageIndex) => (
                 <div
                   key={pageIndex}
                   className="proxy-page bg-white dark:bg-gray-700"
@@ -472,6 +477,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
                               totalCardHeight={totalCardHeight}
                               guideOffset={guideOffset}
                               setContextMenu={setContextMenu}
+                              disabled={dndDisabled}
                             />
                           </CardCellLazy>
                         );

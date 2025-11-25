@@ -2,10 +2,11 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import React, { useRef, useState } from "react";
 import { db } from "../db";
 import fullLogo from "@/assets/fullLogo.png";
-import logo from "../../public/logo.png";
+import logo from "@/assets/logo.png";
 import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
 import {
   cardKey,
+  extractCardInfo,
   parseDeckToInfos,
 } from "@/helpers/CardInfoHelper";
 import {
@@ -47,7 +48,10 @@ type Props = {
 
 export function UploadSection(props: Props) {
   const [deckText, setDeckText] = useState("");
+  // Controller for fetches
   const fetchController = useRef<AbortController | null>(null);
+  // Controller for background enrichment tasks
+  const enrichmentController = useRef<AbortController | null>(null);
 
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const setLoadingMessage = useLoadingStore((state) => state.setLoadingMessage);
@@ -83,6 +87,7 @@ export function UploadSection(props: Props) {
 
     if (cardsToAdd.length > 0) {
       await addCards(cardsToAdd);
+      enrichCardsMetadata(cardsToAdd);
     }
   }
 
@@ -134,11 +139,10 @@ export function UploadSection(props: Props) {
 
       for (const it of items) {
         const qty = it.qty || 1;
-        const name =
-          it.name ||
-          (it.filename
-            ? inferCardNameFromFilename(it.filename)
-            : "Custom Art");
+        // Clean the name and extract set/number if present
+        const rawName = it.name || (it.filename ? inferCardNameFromFilename(it.filename) : "Custom Art");
+        const info = extractCardInfo(rawName);
+        const name = info.name;
 
         const mpcUrl = getMpcImageUrl(it.frontId);
         const imageUrls = mpcUrl ? [mpcUrl] : [];
@@ -149,6 +153,8 @@ export function UploadSection(props: Props) {
         for (let i = 0; i < qty; i++) {
           cardsToAdd.push({
             name,
+            set: info.set,
+            number: info.number,
             imageId: imageId,
             isUserUpload: true,
             hasBakedBleed: true,
@@ -158,9 +164,110 @@ export function UploadSection(props: Props) {
 
       if (cardsToAdd.length > 0) {
         await addCards(cardsToAdd);
+        useSettingsStore.getState().setSortBy("manual");
+        // Enrich metadata in background
+        enrichCardsMetadata(cardsToAdd);
       }
     } finally {
       if (e.target) e.target.value = "";
+    }
+  };
+
+  const enrichCardsMetadata = async (cards: Partial<CardOption>[]) => {
+    // Abort any previous enrichment task to avoid queue congestion
+    if (enrichmentController.current) {
+      enrichmentController.current.abort();
+    }
+    enrichmentController.current = new AbortController();
+    const signal = enrichmentController.current.signal;
+
+    const uniqueNames = new Set<string>();
+    cards.forEach((c) => {
+      if (c.name && c.name !== "Custom Art") {
+        // Clean the name using extractCardInfo to handle [Set] {Number} and other tags
+        const info = extractCardInfo(c.name);
+        uniqueNames.add(info.name);
+      }
+    });
+
+    if (uniqueNames.size === 0) return;
+
+    const cardInfos: CardInfo[] = Array.from(uniqueNames).map((name) => ({
+      name,
+      quantity: 1,
+    }));
+
+    // We don't want to block the UI, so we don't await this fully or set global loading state
+    // But we might want to show a small indicator or just let it happen.
+    // For now, let's just run it.
+
+    try {
+      await fetchEventSource(`${API_BASE}/api/stream/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardQueries: cardInfos,
+          language: globalLanguage,
+        }),
+        signal,
+        onmessage: async (ev) => {
+          if (ev.event === "card-found") {
+            const card = JSON.parse(ev.data) as ScryfallCard;
+            if (!card?.name) return;
+
+            // Find all cards in DB with this name and update them
+            // We need to be careful not to overwrite existing data if it's already there?
+            // But here we are enriching, so we assume it's missing.
+
+            // We can use a bulk update or iterate.
+            // Since we don't have IDs of the cards we just added easily available (unless we query them back),
+            // we can query by name.
+
+            // Use a transaction to update all matching cards efficiently
+            await db.transaction('rw', db.cards, async () => {
+              const cardsToUpdate = await db.cards
+                .where("name")
+                .equalsIgnoreCase(card.name)
+                .toArray();
+
+              const updates: CardOption[] = [];
+              for (const c of cardsToUpdate) {
+                // Only update if missing metadata
+                if (!c.colors || !c.cmc || !c.type_line || !c.rarity || !c.mana_cost) {
+                  updates.push({
+                    ...c,
+                    colors: card.colors,
+                    cmc: card.cmc,
+                    type_line: card.type_line,
+                    rarity: card.rarity,
+                    mana_cost: card.mana_cost,
+                  });
+                }
+              }
+
+              if (updates.length > 0) {
+                await db.cards.bulkPut(updates);
+              }
+            });
+          }
+        },
+        onerror: (err) => {
+          // Ignore abort errors
+          if (err instanceof Error && err.name === 'AbortError') {
+            throw err;
+          }
+          throw err; // Stop retrying
+        }
+      });
+    } catch (e) {
+      // Ignore abort errors
+      if (e instanceof Error && e.name === 'AbortError') {
+        return;
+      }
+    } finally {
+      if (enrichmentController.current?.signal === signal) {
+        enrichmentController.current = null;
+      }
     }
   };
 
@@ -203,6 +310,8 @@ export function UploadSection(props: Props) {
           if (ev.event === "progress") {
             const progress = JSON.parse(ev.data);
             setLoadingMessage(`(${progress.processed} / ${progress.total})`);
+          } else if (ev.event === "card-error") {
+            // no-op
           } else if (ev.event === "card-found") {
             const card = JSON.parse(ev.data) as ScryfallCard;
             if (!card?.name) return;
@@ -234,12 +343,18 @@ export function UploadSection(props: Props) {
                   lang: card?.lang,
                   isUserUpload: false,
                   imageId: imageId,
+                  colors: card?.colors,
+                  cmc: card?.cmc,
+                  type_line: card?.type_line,
+                  rarity: card?.rarity,
+                  mana_cost: card?.mana_cost,
                 });
               }
             }
 
             if (cardsToAdd.length > 0) {
               await addCards(cardsToAdd);
+              useSettingsStore.getState().setSortBy("manual");
             }
 
             setDeckText("");
@@ -253,7 +368,6 @@ export function UploadSection(props: Props) {
           // The library handles retries, this is for fatal errors
           setLoadingTask(null);
           if (err.name !== "AbortError") {
-            console.error("[FetchCards] Streaming Error:", err);
             alert("An error occurred while fetching cards. Please try again.");
           }
           fetchController.current = null;
@@ -264,12 +378,10 @@ export function UploadSection(props: Props) {
       if (err instanceof Error) {
         if (err.name !== "AbortError") {
           setLoadingTask(null);
-          console.error("[FetchCards] Error:", err);
           alert(err.message || "Something went wrong while fetching cards.");
         }
       } else {
         setLoadingTask(null);
-        console.error("[FetchCards] Unknown Error:", err);
         alert("An unknown error occurred while fetching cards.");
       }
     }
@@ -294,6 +406,16 @@ export function UploadSection(props: Props) {
   const confirmClear = async () => {
     setLoadingTask("Clearing Images");
 
+    // Abort any running fetches
+    if (fetchController.current) {
+      fetchController.current.abort();
+      fetchController.current = null;
+    }
+    if (enrichmentController.current) {
+      enrichmentController.current.abort();
+      enrichmentController.current = null;
+    }
+
     try {
       await clearAllCardsAndImages();
       // The server cache clear is now handled by the clearAllCardsAndImages action if needed
@@ -310,7 +432,6 @@ export function UploadSection(props: Props) {
         );
       }
     } catch (err: unknown) {
-      console.error("[Clear] Error:", err);
       if (err instanceof Error) {
         alert(err.message || "Failed to clear images.");
       } else {

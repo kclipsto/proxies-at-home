@@ -36,10 +36,7 @@ export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250, 
         const jitter = Math.random() * baseDelay;
         const totalDelay = exponentialDelay + jitter;
 
-        // Only log in non-worker context or if console is available
-        if (typeof console !== 'undefined') {
-            console.log(`Fetch failed for ${url}. Retrying in ${Math.round(totalDelay)}ms... (Attempt ${i + 1}/${retries})`);
-        }
+
 
         await new Promise(res => setTimeout(res, totalDelay));
     }

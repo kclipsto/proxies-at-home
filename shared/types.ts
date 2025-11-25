@@ -9,6 +9,11 @@ export interface CardOption {
   set?: string | undefined;
   number?: string | undefined;
   lang?: string | undefined;
+  colors?: string[];
+  mana_cost?: string;
+  cmc?: number;
+  type_line?: string;
+  rarity?: string;
 }
 
 export interface ScryfallCard {
@@ -17,6 +22,11 @@ export interface ScryfallCard {
   set?: string | undefined;
   number?: string | undefined;
   lang?: string | undefined;
+  colors?: string[];
+  mana_cost?: string;
+  cmc?: number;
+  type_line?: string;
+  rarity?: string;
 }
 
 export type CardInfo = {
