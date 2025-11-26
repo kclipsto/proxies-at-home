@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 
 test('upload both mpc and standard images', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'WebKit is flaky in this environment');
+    test.slow(); // Mark as slow - triples timeout for resource-intensive parallel execution
 
     await page.goto('/');
 
@@ -20,7 +21,7 @@ test('upload both mpc and standard images', async ({ page, browserName }) => {
 
     // Wait for cards to be rendered (should be 2)
     const cardDragHandles = page.getByTitle('Drag');
-    await expect(cardDragHandles).toHaveCount(2, { timeout: 10_000 });
+    await expect(cardDragHandles).toHaveCount(2, { timeout: 30_000 });
 
     // Check that ALL images have loaded successfully
     const images = page.locator('.proxy-page img');

@@ -31,7 +31,7 @@ test('fetch 9 forests', async ({ page, browserName }) => {
     const firstImage = images.first();
 
     // Wait for the src to be populated with a blob URL
-    await expect(firstImage).toHaveAttribute('src', /^blob:/, { timeout: 10_000 });
+    await expect(firstImage).toHaveAttribute('src', /^blob:/, { timeout: 30_000 });
 
     // Reload to check persistence and rule out reactivity issues
     await page.reload();

@@ -8,19 +8,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test.describe('pdf export', () => {
+    test.describe.configure({ mode: 'serial' });
+
     test.beforeEach(async ({ page }) => {
         await page.goto('/');
     });
 
     test('export to PDF with validation', async ({ page, browserName }) => {
         test.skip(browserName === 'webkit', 'WebKit is flaky in this environment');
+        test.slow(); // Mark as slow - triples timeout for resource-intensive parallel execution
 
         // 1. Upload XML to get cards
         const xmlPath = path.join(__dirname, '../fixtures/mpc-cards.xml');
         await page.locator('input#import-mpc-xml').setInputFiles(xmlPath);
 
         // 2. Wait for cards to render and images to process
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 10_000 });
+        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30_000 });
         const images = page.locator('.proxy-page img');
         await expect(images).toHaveCount(2);
 

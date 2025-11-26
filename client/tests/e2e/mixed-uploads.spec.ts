@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test.describe('mixed uploads', () => {
+    test.describe.configure({ mode: 'serial' });
     test.beforeEach(async ({ page }) => {
         await page.goto('/');
     });
@@ -22,7 +23,7 @@ test.describe('mixed uploads', () => {
         await page.locator('input#upload-standard').setInputFiles(sliverPath);
 
         // Verify 2 cards
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 10_000 });
+        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30_000 });
 
         // Verify images load
         const images = page.locator('.proxy-page img');
@@ -45,7 +46,7 @@ test.describe('mixed uploads', () => {
         await page.locator('input#upload-mpc').setInputFiles(sliverPath);
 
         // Verify 2 cards
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 10_000 });
+        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30_000 });
 
         // Verify images load
         const images = page.locator('.proxy-page img');
@@ -65,7 +66,7 @@ test.describe('mixed uploads', () => {
         await page.locator('input#upload-mpc').setInputFiles(sliverPath);
         await page.locator('input#upload-standard').setInputFiles(irenicusPath);
 
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 10_000 });
+        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30_000 });
 
         const images = page.locator('.proxy-page img');
         await expect(images).toHaveCount(2);

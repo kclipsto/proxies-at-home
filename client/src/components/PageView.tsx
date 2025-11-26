@@ -26,6 +26,7 @@ import { useArtworkModalStore, useSettingsStore } from "../store";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 import { ArtworkModal } from "./ArtworkModal";
 import { ZoomControls } from "./ZoomControls";
+import { useShallow } from "zustand/react/shallow";
 
 const unit = "mm";
 const baseCardWidthMm = 63;
@@ -37,19 +38,44 @@ type PageViewProps = {
 };
 
 export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
-  const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
-  const pageWidth = useSettingsStore((state) => state.pageWidth);
-  const pageHeight = useSettingsStore((state) => state.pageHeight);
-  const columns = useSettingsStore((state) => state.columns);
-  const rows = useSettingsStore((state) => state.rows);
-  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
-  const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
-  const effectiveBleedWidth = bleedEdge ? bleedEdgeWidth : 0;
+  // Consolidate settings subscriptions with useShallow to prevent unnecessary re-renders
+  const {
+    pageSizeUnit,
+    pageWidth,
+    pageHeight,
+    columns,
+    rows,
+    bleedEdge,
+    bleedEdgeWidth,
+    zoom,
+    setZoom,
+    settingsPanelWidth,
+    isSettingsPanelCollapsed,
+    darkenNearBlack,
+    sortBy,
+    filterManaCost,
+    filterColors,
+  } = useSettingsStore(
+    useShallow((state) => ({
+      pageSizeUnit: state.pageSizeUnit,
+      pageWidth: state.pageWidth,
+      pageHeight: state.pageHeight,
+      columns: state.columns,
+      rows: state.rows,
+      bleedEdge: state.bleedEdge,
+      bleedEdgeWidth: state.bleedEdgeWidth,
+      zoom: state.zoom,
+      setZoom: state.setZoom,
+      settingsPanelWidth: state.settingsPanelWidth,
+      isSettingsPanelCollapsed: state.isSettingsPanelCollapsed,
+      darkenNearBlack: state.darkenNearBlack,
+      sortBy: state.sortBy,
+      filterManaCost: state.filterManaCost,
+      filterColors: state.filterColors,
+    }))
+  );
 
-  const zoom = useSettingsStore((state) => state.zoom);
-  const setZoom = useSettingsStore((state) => state.setZoom);
-  const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
-  const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
+  const effectiveBleedWidth = bleedEdge ? bleedEdgeWidth : 0;
 
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -57,10 +83,6 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
 
   const { cards, filteredAndSortedCards } = useFilteredAndSortedCards();
   const images = useLiveQuery(() => db.images.toArray(), []);
-
-  const sortBy = useSettingsStore((state) => state.sortBy);
-  const filterManaCost = useSettingsStore((state) => state.filterManaCost);
-  const filterColors = useSettingsStore((state) => state.filterColors);
 
   const dndDisabled =
     sortBy !== "manual" || filterManaCost.length > 0 || filterColors.length > 0;
@@ -77,12 +99,15 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     const usedIds = new Set<string>();
 
     images.forEach((img) => {
-      if (img.displayBlob && img.displayBlob.size > 0) {
+      // Select appropriate blob based on darkenNearBlack setting
+      const selectedBlob = darkenNearBlack ? img.displayBlobDarkened : img.displayBlob;
+
+      if (selectedBlob && selectedBlob.size > 0) {
         usedIds.add(img.id);
 
         // Check if we already have a URL for this exact blob
         const cached = currentCache.get(img.id);
-        if (cached && cached.blob === img.displayBlob) {
+        if (cached && cached.blob === selectedBlob) {
           urls[img.id] = cached.url;
         } else {
           // Queue old URL for revocation
@@ -90,9 +115,9 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
             revocationQueueRef.current.push(cached.url);
           }
           // Create new URL
-          const newUrl = URL.createObjectURL(img.displayBlob);
+          const newUrl = URL.createObjectURL(selectedBlob);
           urls[img.id] = newUrl;
-          currentCache.set(img.id, { blob: img.displayBlob, url: newUrl });
+          currentCache.set(img.id, { blob: selectedBlob, url: newUrl });
         }
       }
     });
@@ -106,7 +131,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
     }
 
     return urls;
-  }, [images]);
+  }, [images, darkenNearBlack]);
 
   // Process revocation queue after render
   useEffect(() => {

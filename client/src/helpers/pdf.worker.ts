@@ -136,19 +136,25 @@ async function buildCardWithBleed(
     ctx.drawImage(baseImg, bleedPx - offX, bleedPx - offY, drawW, drawH);
     baseImg.close();
 
-    if (bleedPx > 0) {
+    if (bleedPx > 0 || darkenNearBlack) {
         const imageData = ctx.getImageData(0, 0, finalW, finalH);
-        applyJFA(imageData);
-        ctx.putImageData(imageData, 0, 0);
-    }
 
-    if (darkenNearBlack) {
-        const blackThreshold = 30;
-        blackenAllNearBlackPixels(ctx, finalW, finalH, blackThreshold);
+        if (bleedPx > 0) {
+            applyJFA(imageData);
+        }
+
+        if (darkenNearBlack) {
+            const blackThreshold = 30;
+            blackenAllNearBlackPixels(imageData, blackThreshold);
+        }
+
+        ctx.putImageData(imageData, 0, 0);
     }
 
     return canvas;
 }
+
+const canvasCache = new Map<string, OffscreenCanvas>();
 
 self.onmessage = async (event: MessageEvent) => {
     try {
@@ -202,40 +208,54 @@ self.onmessage = async (event: MessageEvent) => {
             let finalCardCanvas: OffscreenCanvas | ImageBitmap;
             const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
 
+            // Select appropriate blob based on darkenNearBlack setting
+            const selectedExportBlob = darkenNearBlack ? imageInfo?.exportBlobDarkened : imageInfo?.exportBlob;
+
             const isCacheValid =
-                imageInfo?.exportBlob &&
+                selectedExportBlob &&
                 imageInfo?.exportDpi === DPI &&
                 imageInfo?.exportBleedWidth === bleedEdgeWidthMm;
 
             if (isCacheValid) {
-                finalCardCanvas = await createImageBitmap(imageInfo.exportBlob!);
+                finalCardCanvas = await createImageBitmap(selectedExportBlob!);
             } else {
-                let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
-
-                if (!src) {
-                    const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
-                    const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
-                    const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
-                    const cardCtx = placeholderCanvas.getContext('2d')!;
-                    cardCtx.fillStyle = 'white';
-                    cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
-                    cardCtx.strokeStyle = 'red';
-                    cardCtx.lineWidth = 5;
-                    cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
-                    cardCtx.fillStyle = 'red';
-                    cardCtx.font = '30px sans-serif';
-                    cardCtx.textAlign = 'center';
-                    cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
-                    finalCardCanvas = placeholderCanvas;
+                // Check in-memory cache for processed canvas
+                const cacheKey = card.imageId;
+                if (cacheKey && canvasCache.has(cacheKey)) {
+                    finalCardCanvas = canvasCache.get(cacheKey)!;
                 } else {
-                    if (!card.isUserUpload) {
-                        src = getLocalBleedImageUrl(src, API_BASE);
+                    let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
+
+                    if (!src) {
+                        const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
+                        const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
+                        const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
+                        const cardCtx = placeholderCanvas.getContext('2d')!;
+                        cardCtx.fillStyle = 'white';
+                        cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
+                        cardCtx.strokeStyle = 'red';
+                        cardCtx.lineWidth = 5;
+                        cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
+                        cardCtx.fillStyle = 'red';
+                        cardCtx.font = '30px sans-serif';
+                        cardCtx.textAlign = 'center';
+                        cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
+                        finalCardCanvas = placeholderCanvas;
+                    } else {
+                        if (!card.isUserUpload) {
+                            src = getLocalBleedImageUrl(src, API_BASE);
+                        }
+                        finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, {
+                            isUserUpload: !!card.isUserUpload,
+                            hasBakedBleed: !!card.hasBakedBleed,
+                        }, darkenNearBlack);
+                        if (src.startsWith("blob:")) URL.revokeObjectURL(src);
                     }
-                    finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, {
-                        isUserUpload: !!card.isUserUpload,
-                        hasBakedBleed: !!card.hasBakedBleed,
-                    }, darkenNearBlack);
-                    if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+
+                    // Cache the result if we have an ID
+                    if (cacheKey && finalCardCanvas instanceof OffscreenCanvas) {
+                        canvasCache.set(cacheKey, finalCardCanvas);
+                    }
                 }
             }
 

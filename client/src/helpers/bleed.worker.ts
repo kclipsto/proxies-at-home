@@ -38,7 +38,7 @@ async function addBleedEdge(
   const displayWidth = (highResCanvas.width / exportDpi) * displayDpi;
   const displayHeight = (highResCanvas.height / exportDpi) * displayDpi;
   const lowResCanvas = new OffscreenCanvas(displayWidth, displayHeight);
-  const lowResCtx = lowResCanvas.getContext("2d", { willReadFrequently: true })!;
+  const lowResCtx = lowResCanvas.getContext("2d")!;
   lowResCtx.imageSmoothingQuality = "high";
   lowResCtx.drawImage(highResCanvas, 0, 0, displayWidth, displayHeight);
   const displayBlob = await lowResCanvas.convertToBlob({ type: "image/png" });
@@ -96,7 +96,9 @@ async function generateBleedCanvas(
 
     if (opts?.darkenNearBlack) {
       const blackThreshold = 30;
-      blackenAllNearBlackPixels(ctx2d, targetCardWidth, targetCardHeight, blackThreshold);
+      const imageData = ctx2d.getImageData(0, 0, targetCardWidth, targetCardHeight);
+      blackenAllNearBlackPixels(imageData, blackThreshold);
+      ctx2d.putImageData(imageData, 0, 0);
     }
     return temp;
   }
@@ -135,14 +137,14 @@ async function generateBleedCanvas(
   // Apply JFA to fill transparent areas (bleed)
   applyJFA(imageData);
 
-  // Put processed data back
-  ctx.putImageData(imageData, 0, 0);
-
   // Apply darkenNearBlack AFTER JFA to clean up any artifacts
   if (opts?.darkenNearBlack) {
     const blackThreshold = 30;
-    blackenAllNearBlackPixels(ctx, finalWidth, finalHeight, blackThreshold);
+    blackenAllNearBlackPixels(imageData, blackThreshold);
   }
+
+  // Put processed data back
+  ctx.putImageData(imageData, 0, 0);
 
   return canvas;
 }

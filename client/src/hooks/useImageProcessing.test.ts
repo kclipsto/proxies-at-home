@@ -41,6 +41,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -60,6 +61,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -80,6 +82,8 @@ describe("useImageProcessing", () => {
       exportBlob: new Blob(['processed_export']),
       exportDpi: 600,
       exportBleedWidth: 1,
+      displayBlobDarkened: new Blob(['processed_darkened']),
+      exportBlobDarkened: new Blob(['processed_export_darkened']),
     });
 
 
@@ -88,6 +92,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -108,6 +113,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -138,6 +144,8 @@ describe("useImageProcessing", () => {
       exportBlob: new Blob(['processed_export']),
       exportDpi: 600,
       exportBleedWidth: 1,
+      displayBlobDarkened: new Blob(['processed_darkened']),
+      exportBlobDarkened: new Blob(['processed_export_darkened']),
     });
 
     const { result } = renderHook(() =>
@@ -145,6 +153,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -168,6 +177,11 @@ describe("useImageProcessing", () => {
       displayBlob: new Blob(['processed']),
       displayDpi: 300,
       displayBleedWidth: 1,
+      exportBlob: new Blob(['processed_export']),
+      exportDpi: 600,
+      exportBleedWidth: 1,
+      displayBlobDarkened: new Blob(['processed_darkened']),
+      exportBlobDarkened: new Blob(['processed_export_darkened']),
     });
 
     const { result } = renderHook(() =>
@@ -175,6 +189,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -183,7 +198,10 @@ describe("useImageProcessing", () => {
     });
 
     expect(global.URL.createObjectURL).toHaveBeenCalledWith(blob);
-    expect(mockProcess).toHaveBeenCalledWith(expect.objectContaining({ url: "blob:test" }));
+    expect(mockProcess).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "blob:test" }),
+      expect.any(Number)
+    );
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith("blob:test");
   });
 
@@ -196,6 +214,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 
@@ -217,6 +236,7 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
+        darkenNearBlack: false,
       })
     );
 

@@ -259,11 +259,11 @@ describe('imageProcessing', () => {
             // Pixel 1: Not near black (50, 50, 50)
             const imgData = ctx.createImageData(2, 1);
             imgData.data.set([5, 5, 5, 255, 50, 50, 50, 255]);
-            ctx.putImageData(imgData, 0, 0);
+            // No need to putImageData first since we work on imgData directly
 
-            blackenAllNearBlackPixels(ctx, 2, 1, 30);
+            blackenAllNearBlackPixels(imgData, 30);
 
-            const data = ctx.getImageData(0, 0, 2, 1).data;
+            const data = imgData.data;
             // Pixel 0 should be 0,0,0,255
             expect(data[0]).toBe(0); // Blackened
             expect(data[4]).toBe(50); // Unchanged
@@ -283,11 +283,10 @@ describe('imageProcessing', () => {
                 imgData.data[i + 2] = 5;
                 imgData.data[i + 3] = 255;
             }
-            ctx.putImageData(imgData, 0, 0);
 
-            blackenAllNearBlackPixels(ctx, 100, 100, 30);
+            blackenAllNearBlackPixels(imgData, 30);
 
-            const data = ctx.getImageData(0, 0, 100, 100).data;
+            const data = imgData.data;
 
             // Pixel at (0,0) is in border -> should be blackened
             expect(data[0]).toBe(0);

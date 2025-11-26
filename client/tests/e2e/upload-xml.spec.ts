@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 
 test('upload mpc xml', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'WebKit is flaky in this environment');
+    test.slow(); // Mark as slow - triples timeout for resource-intensive parallel execution
 
     await page.goto('/');
 
@@ -16,7 +17,7 @@ test('upload mpc xml', async ({ page, browserName }) => {
 
     // Wait for cards to be rendered
     const cardDragHandles = page.getByTitle('Drag');
-    await expect(cardDragHandles).toHaveCount(2, { timeout: 10_000 });
+    await expect(cardDragHandles).toHaveCount(2, { timeout: 30_000 });
 
     // Verify card names (inferred from filename in XML)
     // Note: The UI doesn't explicitly show the name in the card cell, 

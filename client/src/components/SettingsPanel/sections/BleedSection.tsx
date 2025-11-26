@@ -28,10 +28,10 @@ export function BleedSection({ reprocessSelectedImages, cancelProcessing }: Prop
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const debouncedReprocess = useCallback(
-        (newBleedWidth: number, darkenNearBlack: boolean) => {
+        (newBleedWidth: number) => {
             if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
             debounceTimeoutRef.current = setTimeout(() => {
-                reprocessSelectedImages(cardsRef.current, newBleedWidth, darkenNearBlack);
+                reprocessSelectedImages(cardsRef.current, newBleedWidth);
             }, 500);
         },
         [reprocessSelectedImages]
@@ -47,7 +47,7 @@ export function BleedSection({ reprocessSelectedImages, cancelProcessing }: Prop
         bleedEdgeWidth,
         (value) => {
             setBleedEdgeWidth(value);
-            debouncedReprocess(value, darkenNearBlack);
+            debouncedReprocess(value);
         },
         { min: 0, max: 2 }
     );
@@ -89,8 +89,7 @@ export function BleedSection({ reprocessSelectedImages, cancelProcessing }: Prop
                         }
                         reprocessSelectedImages(
                             cards,
-                            e.target.checked ? bleedEdgeWidth : 0,
-                            darkenNearBlack
+                            e.target.checked ? bleedEdgeWidth : 0
                         );
                     }}
                 />
@@ -102,7 +101,6 @@ export function BleedSection({ reprocessSelectedImages, cancelProcessing }: Prop
                     checked={darkenNearBlack}
                     onChange={(e) => {
                         setDarkenNearBlack(e.target.checked);
-                        reprocessSelectedImages(cards, bleedEdge ? bleedEdgeWidth : 0, e.target.checked);
                     }}
                 />
                 <Label htmlFor="darken-near-black">Darken Near-Black Pixels</Label>

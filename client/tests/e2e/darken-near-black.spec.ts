@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test.describe('Darken Near Black Feature', () => {
-    test('should persist setting and trigger reprocessing', async ({ page, browserName }) => {
+    test('should persist setting and instantly switch between cached versions', async ({ page, browserName }) => {
         test.skip(browserName === 'webkit', 'WebKit is too slow/flaky for this test in this environment');
         await page.goto('/');
 
@@ -39,18 +39,9 @@ test.describe('Darken Near Black Feature', () => {
         // Verify checkbox state
         await expect(checkbox).not.toBeChecked();
 
-        // 3. Verify image reprocessing (src should change)
-        // Wait for processing spinner to appear and then disappear
-        const spinner = page.locator('.animate-spin');
-        try {
-            await expect(spinner).toBeVisible({ timeout: 2000 });
-        } catch {
-            console.log("Spinner didn't appear or was too fast");
-        }
-        await expect(spinner).not.toBeVisible({ timeout: 10000 });
-
-        // We wait for the src attribute to be different from the initial one
-        await expect(cardImage).not.toHaveAttribute('src', initialSrc as string, { timeout: 10000 });
+        // 3. Verify instant blob URL switch (dual-caching - no reprocessing)
+        // With dual-caching, both versions exist, so src changes instantly
+        await expect(cardImage).not.toHaveAttribute('src', initialSrc as string, { timeout: 2000 });
 
         const newSrc = await cardImage.getAttribute('src');
         expect(newSrc).toBeTruthy();
@@ -65,12 +56,12 @@ test.describe('Darken Near Black Feature', () => {
         // Wait for card to appear again
         await expect(cardImage).toBeVisible();
 
-        // 5. Toggle on and verify change again
+        // Toggle on and verify instant change (no reprocessing needed with dual-caching)
         await checkbox.check({ force: true });
         await expect(checkbox).toBeChecked();
 
-        // Image should change again
-        await expect(cardImage).not.toHaveAttribute('src', newSrc as string, { timeout: 10000 });
+        // Image src should change instantly (different blob URL, no processing)
+        await expect(cardImage).not.toHaveAttribute('src', newSrc as string, { timeout: 2000 });
     });
 });
 

@@ -91,29 +91,23 @@ export async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number, 
 }
 
 export function blackenAllNearBlackPixels(
-    ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-    width: number,
-    height: number,
+    imgData: ImageData,
     threshold: number
 ) {
+    const data = imgData.data;
+    const len = data.length;
 
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
+    for (let i = 0; i < len; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
 
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-
-            const i = (y * width + x) * 4;
-            const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
-
-            if (r < threshold && g < threshold && b < threshold) {
-                data[i] = 0;
-                data[i + 1] = 0;
-                data[i + 2] = 0;
-            }
+        if (r < threshold && g < threshold && b < threshold) {
+            data[i] = 0;
+            data[i + 1] = 0;
+            data[i + 2] = 0;
         }
     }
-    ctx.putImageData(imageData, 0, 0);
 }
 
 export function getPatchNearCorner(

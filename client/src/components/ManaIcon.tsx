@@ -1,4 +1,4 @@
-
+import { memo } from "react";
 
 type ManaSymbol = "W" | "U" | "B" | "R" | "G" | "C" | "M";
 
@@ -78,7 +78,7 @@ const MANA_PATHS: Record<
     },
 };
 
-export function ManaIcon({ symbol, className, size = 24 }: Props) {
+export const ManaIcon = memo(function ManaIcon({ symbol, className, size = 24 }: Props) {
     const data = MANA_PATHS[symbol];
 
     if (!data) return null;
@@ -108,4 +108,4 @@ export function ManaIcon({ symbol, className, size = 24 }: Props) {
             ))}
         </svg>
     );
-}
+});

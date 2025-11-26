@@ -1,4 +1,4 @@
-import React from "react";
+import { memo } from "react";
 import { useSettingsStore } from "../store";
 
 type Props = {
@@ -10,14 +10,14 @@ type Props = {
   cardCount: number;
 };
 
-const EdgeCutLines = ({
+const EdgeCutLines = memo(function EdgeCutLines({
   totalCardWidthMm,
   totalCardHeightMm,
   baseCardWidthMm,
   baseCardHeightMm,
   bleedEdgeWidthMm,
   cardCount,
-}: Props) => {
+}: Props) {
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
   const pageWidth = useSettingsStore((state) => state.pageWidth);
@@ -190,6 +190,6 @@ const EdgeCutLines = ({
   });
 
   return <>{els}</>;
-};
+});
 
 export default EdgeCutLines;

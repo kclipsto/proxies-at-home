@@ -1,4 +1,6 @@
-import { Suspense, lazy, useEffect, useMemo, useCallback } from "react";
+import { Suspense, lazy, useEffect, useMemo, useCallback, useRef } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import type { CardOption } from "../../../shared/types";
 
 import { ResizeHandle } from "../components/ResizeHandle";
 import { PageSettingsControls } from "../components/PageSettingsControls";
@@ -6,7 +8,7 @@ import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useSettingsStore } from "../store";
 import { db } from "../db";
-import { ImageProcessor } from "../helpers/imageProcessor";
+import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 
 const PageView = lazy(() =>
@@ -26,7 +28,6 @@ function PageViewLoader() {
 export default function ProxyBuilderPage() {
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
-  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
   const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
   const setSettingsPanelWidth = useSettingsStore((state) => state.setSettingsPanelWidth);
   const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
@@ -99,7 +100,6 @@ export default function ProxyBuilderPage() {
       unit: "mm",
       bleedEdgeWidth: bleedEdge ? bleedEdgeWidth : 0,
       imageProcessor,
-      darkenNearBlack,
     });
 
   // On startup, rebalance card orders to prevent floating point issues.
@@ -110,28 +110,76 @@ export default function ProxyBuilderPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // On startup, find all unprocessed images and kick off processing for them
+  // Get current DPI for comparison in processUnprocessed
+  const dpi = useSettingsStore((state) => state.dpi);
+
+  // Eagerly process images when cards are added or loaded
+  const allCards = useLiveQuery<CardOption[]>(() => db.cards.toArray(), []);
+
   useEffect(() => {
-    const processAllUnprocessed = async () => {
-      const allCards = await db.cards.toArray();
+    if (!allCards) return;
+
+    const processUnprocessed = async () => {
       const allImages = await db.images.toArray();
       const imagesById = new Map(allImages.map((img) => [img.id, img]));
 
       const unprocessedCards = allCards.filter((card) => {
         if (!card.imageId) return false;
         const img = imagesById.get(card.imageId);
-        return !img?.displayBlob;
+
+        // Check if BOTH display blobs exist AND settings match
+        // This prevents re-processing on page load when images are fully cached
+        // Note: We check export settings, not display (display is always 300 DPI)
+        return !(
+          img?.displayBlob &&
+          img?.displayBlobDarkened &&
+          img.exportDpi === dpi &&
+          img.exportBleedWidth === (bleedEdge ? bleedEdgeWidth : 0)
+        );
       });
 
       for (const card of unprocessedCards) {
-        void ensureProcessed(card);
+        void ensureProcessed(card, Priority.LOW);
       }
     };
 
-    // Delay ever so slightly to allow the main UI to render first
-    const timer = setTimeout(() => processAllUnprocessed(), 100);
+    // Debounce slightly to avoid thrashing on bulk adds
+    const timer = setTimeout(() => processUnprocessed(), 200);
     return () => clearTimeout(timer);
-  }, [ensureProcessed]);
+  }, [allCards, ensureProcessed, dpi, bleedEdge, bleedEdgeWidth]);
+
+  // Trigger reprocessing when DPI or bleed settings actually change
+  const prevDpi = useRef(dpi);
+  const prevBleedEdge = useRef(bleedEdge);
+  const prevBleedEdgeWidth = useRef(bleedEdgeWidth);
+
+  useEffect(() => {
+    const dpiChanged = prevDpi.current !== dpi;
+    const bleedEdgeChanged = prevBleedEdge.current !== bleedEdge;
+    const bleedWidthChanged = prevBleedEdgeWidth.current !== bleedEdgeWidth;
+
+    // Update refs for next comparison
+    prevDpi.current = dpi;
+    prevBleedEdge.current = bleedEdge;
+    prevBleedEdgeWidth.current = bleedEdgeWidth;
+
+    // Only reprocess if settings actually changed
+    if (!dpiChanged && !bleedEdgeChanged && !bleedWidthChanged) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      cancelProcessing();
+      const allCards = await db.cards.toArray();
+      // Only reprocess cards that have an image
+      const cardsWithImages = allCards.filter(c => c.imageId);
+      if (cardsWithImages.length > 0) {
+        void reprocessSelectedImages(cardsWithImages, bleedEdge ? bleedEdgeWidth : 0);
+      }
+    }, 500); // Debounce by 500ms
+
+    return () => clearTimeout(timer);
+  }, [dpi, bleedEdge, bleedEdgeWidth, reprocessSelectedImages, cancelProcessing]);
 
   return (
     <div className="flex flex-row h-screen justify-between overflow-hidden">

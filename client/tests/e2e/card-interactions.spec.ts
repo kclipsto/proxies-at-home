@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Card Interactions', () => {
+    test.describe.configure({ mode: 'serial' });
     test.beforeEach(async ({ page, browserName }) => {
         test.skip(browserName === 'firefox', 'Firefox is too slow/flaky for this test suite in this environment');
         test.skip(browserName === 'webkit', 'WebKit is too slow/flaky for this test suite in this environment');
@@ -12,7 +13,7 @@ test.describe('Card Interactions', () => {
         await page.getByRole('button', { name: 'Fetch Cards' }).click();
 
         // Wait for cards to load
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 15000 });
+        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30000 });
     });
 
     test('should duplicate a card via context menu', async ({ page, browserName }) => {

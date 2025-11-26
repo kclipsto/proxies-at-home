@@ -6,7 +6,8 @@ export interface Image {
   id: string; // hash for custom, URL for scryfall
   refCount: number;
   originalBlob?: Blob;
-  
+
+  // Normal (non-darkened) versions
   displayBlob?: Blob;
   displayDpi?: number;
   displayBleedWidth?: number;
@@ -14,6 +15,10 @@ export interface Image {
   exportBlob?: Blob;
   exportDpi?: number;
   exportBleedWidth?: number;
+
+  // Darkened versions for instant toggle
+  displayBlobDarkened?: Blob;
+  exportBlobDarkened?: Blob;
 
   sourceUrl?: string;
   imageUrls?: string[];
@@ -47,8 +52,14 @@ export class ProxxiedDexie extends Dexie {
   constructor() {
     super('ProxxiedDB');
     this.version(1).stores({
-      cards: '&uuid, imageId, order, name', // uuid is unique primary key, name, set, number are indexed
-      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth', // uuid is unique primary key
+      cards: '&uuid, imageId, order, name',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      settings: '&id',
+    });
+    // Version 2: Add darkened blob fields (no schema change needed, just new optional fields)
+    this.version(2).stores({
+      cards: '&uuid, imageId, order, name',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
       settings: '&id',
     });
   }
