@@ -7,7 +7,7 @@ import { PageSettingsControls } from "../components/PageSettingsControls";
 import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useSettingsStore } from "../store";
-import { db } from "../db";
+import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 
@@ -24,6 +24,13 @@ function PageViewLoader() {
     </div>
   );
 }
+
+
+
+
+// Stable empty arrays to prevent useEffect dependency changes
+const EMPTY_CARDS: CardOption[] = [];
+const EMPTY_IMAGES: Image[] = [];
 
 export default function ProxyBuilderPage() {
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
@@ -95,12 +102,7 @@ export default function ProxyBuilderPage() {
     document.addEventListener("mouseup", handleMouseUp);
   }, [uploadPanelWidth, setUploadPanelWidth, isUploadPanelCollapsed, toggleUploadPanel]);
 
-  const { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
-    useImageProcessing({
-      unit: "mm",
-      bleedEdgeWidth: bleedEdge ? bleedEdgeWidth : 0,
-      imageProcessor,
-    });
+
 
   // On startup, rebalance card orders to prevent floating point issues.
   useEffect(() => {
@@ -113,8 +115,23 @@ export default function ProxyBuilderPage() {
   // Get current DPI for comparison in processUnprocessed
   const dpi = useSettingsStore((state) => state.dpi);
 
-  // Eagerly process images when cards are added or loaded
-  const allCards = useLiveQuery<CardOption[]>(() => db.cards.toArray(), []);
+  // PERFORMANCE: Centralized database queries (single source of truth)
+  // This replaces multiple redundant useLiveQuery calls across child components
+  const allCardsQuery = useLiveQuery<CardOption[]>(() => db.cards.orderBy("order").toArray(), []);
+  const allImagesQuery = useLiveQuery(() => db.images.toArray(), []);
+
+  const allCards = allCardsQuery ?? EMPTY_CARDS;
+  const allImages = allImagesQuery ?? EMPTY_IMAGES;
+
+  // Derived values (no additional DB queries needed)
+  const cardCount = allCards.length;
+
+  const { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
+    useImageProcessing({
+      unit: "mm",
+      bleedEdgeWidth: bleedEdge ? bleedEdgeWidth : 0,
+      imageProcessor,
+    });
 
   useEffect(() => {
     if (!allCards) return;
@@ -123,7 +140,7 @@ export default function ProxyBuilderPage() {
       const allImages = await db.images.toArray();
       const imagesById = new Map(allImages.map((img) => [img.id, img]));
 
-      const unprocessedCards = allCards.filter((card) => {
+      const unprocessedCards = allCards.filter((card: CardOption) => {
         if (!card.imageId) return false;
         const img = imagesById.get(card.imageId);
 
@@ -190,7 +207,11 @@ export default function ProxyBuilderPage() {
           minWidth: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
         }}
       >
-        <UploadSection isCollapsed={isUploadPanelCollapsed} />
+        <UploadSection
+          isCollapsed={isUploadPanelCollapsed}
+          onToggle={toggleUploadPanel}
+          cardCount={cardCount}
+        />
       </div>
       <ResizeHandle
         isCollapsed={isUploadPanelCollapsed}
@@ -205,7 +226,12 @@ export default function ProxyBuilderPage() {
       />
 
       <Suspense fallback={<PageViewLoader />}>
-        <PageView loadingMap={loadingMap} ensureProcessed={ensureProcessed} />
+        <PageView
+          loadingMap={loadingMap}
+          ensureProcessed={ensureProcessed}
+          images={allImages}
+          cards={allCards}
+        />
       </Suspense>
       <ResizeHandle
         isCollapsed={isSettingsPanelCollapsed}
@@ -228,6 +254,7 @@ export default function ProxyBuilderPage() {
         <PageSettingsControls
           reprocessSelectedImages={reprocessSelectedImages}
           cancelProcessing={cancelProcessing}
+          cards={allCards}
         />
       </div>
     </div >

@@ -7,11 +7,17 @@ import { db } from "../../db";
 
 import { useFilteredAndSortedCards } from "@/hooks/useFilteredAndSortedCards";
 
-export function ExportActions() {
+import type { CardOption } from "../../../../shared/types";
+
+type Props = {
+  cards: CardOption[]; // Passed from parent to avoid redundant DB query
+};
+
+export function ExportActions({ cards }: Props) {
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const setProgress = useLoadingStore((state) => state.setProgress);
 
-  const { filteredAndSortedCards: cards } = useFilteredAndSortedCards();
+  const { filteredAndSortedCards } = useFilteredAndSortedCards(cards);
 
   const pageOrientation = useSettingsStore((state) => state.pageOrientation);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
@@ -33,18 +39,18 @@ export function ExportActions() {
   const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
   const handleCopyDecklist = async () => {
-    const text = buildDecklist(cards, { style: "withSetNum", sort: "alpha" });
+    const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: "alpha" });
     await navigator.clipboard.writeText(text);
   };
 
   const handleDownloadDecklist = () => {
-    const text = buildDecklist(cards, { style: "withSetNum", sort: "alpha" });
+    const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: "alpha" });
     const date = new Date().toISOString().slice(0, 10);
     downloadDecklist(`decklist_${date}.txt`, text);
   };
 
   const handleExport = async () => {
-    if (!cards.length) return;
+    if (!filteredAndSortedCards.length) return;
 
     const { exportProxyPagesToPdf } = await import(
       "@/helpers/ExportProxyPageToPdf"
@@ -78,7 +84,7 @@ export function ExportActions() {
 
     try {
       await exportProxyPagesToPdf({
-        cards,
+        cards: filteredAndSortedCards,
         imagesById,
         bleedEdge,
         bleedEdgeWidthMm: bleedEdgeWidth,
@@ -127,26 +133,26 @@ export function ExportActions() {
 
   return (
     <div className="flex flex-col gap-2">
-      <Button color="green" onClick={handleExport} disabled={!cards.length}>
+      <Button color="green" onClick={handleExport} disabled={!filteredAndSortedCards.length}>
         Export to PDF
       </Button>
 
       <Button
         color="indigo"
         onClick={handleExportZip}
-        disabled={!cards.length}
+        disabled={!filteredAndSortedCards.length}
       >
         Export Card Images (.zip)
       </Button>
 
-      <Button color="cyan" onClick={handleCopyDecklist} disabled={!cards.length}>
+      <Button color="cyan" onClick={handleCopyDecklist} disabled={!filteredAndSortedCards.length}>
         Copy Decklist
       </Button>
 
       <Button
         color="blue"
         onClick={handleDownloadDecklist}
-        disabled={!cards.length}
+        disabled={!filteredAndSortedCards.length}
       >
         Download Decklist (.txt)
       </Button>

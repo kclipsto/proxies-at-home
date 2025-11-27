@@ -33,16 +33,20 @@ import {
 } from "lucide-react";
 import { Tooltip } from "flowbite-react";
 
+import type { CardOption } from "../../../shared/types";
+
 type PageSettingsControlsProps = {
   reprocessSelectedImages: ReturnType<
     typeof useImageProcessing
   >["reprocessSelectedImages"];
   cancelProcessing: ReturnType<typeof useImageProcessing>["cancelProcessing"];
+  cards: CardOption[]; // Passed from parent to avoid redundant DB query
 };
 
 export function PageSettingsControls({
   reprocessSelectedImages,
   cancelProcessing,
+  cards,
 }: PageSettingsControlsProps) {
   const settingsPanelState = useSettingsStore((state) => state.settingsPanelState);
   const setPanelOrder = useSettingsStore((state) => state.setPanelOrder);
@@ -114,6 +118,7 @@ export function PageSettingsControls({
             <BleedSection
               reprocessSelectedImages={reprocessSelectedImages}
               cancelProcessing={cancelProcessing}
+              cards={cards}
             />
           </SettingsPanel>
         );
@@ -166,7 +171,7 @@ export function PageSettingsControls({
             onToggle={onToggle}
             icon={Settings}
           >
-            <ApplicationSection />
+            <ApplicationSection cards={cards} />
           </SettingsPanel>
         );
       default:

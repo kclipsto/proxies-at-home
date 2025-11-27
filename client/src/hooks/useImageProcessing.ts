@@ -1,3 +1,4 @@
+
 import { API_BASE } from "@/constants";
 import { db } from "../db"; // Import the Dexie database instance
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
@@ -39,6 +40,7 @@ export function useImageProcessing({
 
     // CRITICAL: Check if processing is actually needed BEFORE checking inFlight
     // This prevents spawning workers on page refresh when images are already cached
+
     const existingImage = await db.images.get(imageId);
 
     const hasBlobs = existingImage?.displayBlob && existingImage?.displayBlobDarkened;
@@ -55,13 +57,13 @@ export function useImageProcessing({
 
     const p = (async () => {
       // Double-check after acquiring slot (settings might have changed)
-      const existingImage = await db.images.get(imageId);
+      const currentImage = await db.images.get(imageId);
 
       if (
-        existingImage?.displayBlob &&
-        existingImage?.displayBlobDarkened &&
-        existingImage.exportDpi === dpi &&
-        existingImage.exportBleedWidth === bleedEdgeWidth
+        currentImage?.displayBlob &&
+        currentImage?.displayBlobDarkened &&
+        currentImage.exportDpi === dpi &&
+        currentImage.exportBleedWidth === bleedEdgeWidth
       ) {
         return;
       }

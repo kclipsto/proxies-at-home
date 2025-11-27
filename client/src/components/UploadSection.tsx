@@ -16,7 +16,6 @@ import {
   tryParseMpcSchemaXml,
 } from "@/helpers/Mpc";
 import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
-import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
 import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
@@ -44,6 +43,7 @@ async function readText(file: File): Promise<string> {
 type Props = {
   isCollapsed?: boolean;
   onToggle?: () => void;
+  cardCount: number; // Passed from parent to avoid redundant DB query
 };
 
 export function UploadSection(props: Props) {
@@ -61,7 +61,7 @@ export function UploadSection(props: Props) {
     (s) => s.setGlobalLanguage ?? (() => { })
   );
 
-  const cardCount = useLiveQuery(() => db.cards.count(), []) ?? 0;
+  const { cardCount } = props;
 
 
   async function addUploadedFiles(

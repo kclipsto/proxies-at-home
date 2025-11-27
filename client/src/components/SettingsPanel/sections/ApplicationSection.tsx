@@ -4,7 +4,13 @@ import { ExportActions } from "../../LayoutSettings/ExportActions";
 import { useState } from "react";
 import { db } from "@/db";
 
-export function ApplicationSection() {
+import type { CardOption } from "../../../../../shared/types";
+
+type Props = {
+    cards: CardOption[]; // Passed from parent to avoid redundant DB query
+};
+
+export function ApplicationSection({ cards }: Props) {
     const resetSettings = useSettingsStore((state) => state.resetSettings);
 
     const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
@@ -41,7 +47,7 @@ export function ApplicationSection() {
 
     return (
         <div className="space-y-4">
-            <ExportActions />
+            <ExportActions cards={cards} />
 
             <div className="w-full flex justify-center">
                 <span

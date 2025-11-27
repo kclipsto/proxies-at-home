@@ -2,11 +2,9 @@ import {
     IN,
     MM_TO_PX,
     toProxied,
-    loadImage,
-    trimExistingBleedIfAny,
-    blackenAllNearBlackPixels,
+    trimBleedFromBitmap,
 } from "./imageProcessing";
-import { applyJFA } from "./jfa";
+import { generateBleedCanvasWebGL } from "./webglImageProcessing";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
@@ -100,59 +98,7 @@ function drawCornerGuides(ctx: OffscreenCanvasRenderingContext2D, x: number, y: 
 }
 
 
-async function buildCardWithBleed(
-    src: string,
-    bleedPx: number,
-    contentWidthPx: number,
-    contentHeightPx: number,
-    opts: { isUserUpload: boolean; hasBakedBleed?: boolean },
-    darkenNearBlack?: boolean
-): Promise<OffscreenCanvas> {
-    const finalW = contentWidthPx + bleedPx * 2;
-    const finalH = contentHeightPx + bleedPx * 2;
 
-    const baseImg = opts.isUserUpload && opts.hasBakedBleed ?
-        await trimExistingBleedIfAny(src) :
-        await loadImage(src);
-
-    const aspect = baseImg.width / baseImg.height;
-    const targetAspect = contentWidthPx / contentHeightPx;
-    let drawW = contentWidthPx, drawH = contentHeightPx, offX = 0, offY = 0;
-    if (aspect > targetAspect) {
-        drawW = Math.round(baseImg.width * (contentHeightPx / baseImg.height));
-        offX = Math.round((drawW - contentWidthPx) / 2);
-    } else {
-        drawH = Math.round(baseImg.height * (contentWidthPx / baseImg.width));
-        offY = Math.round((drawH - contentHeightPx) / 2);
-    }
-
-    // Create a canvas for the content + bleed area
-    const canvas = new OffscreenCanvas(finalW, finalH);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-
-    // Draw the image centered in the content area (offset by bleedPx)
-    // We draw it at (bleedPx - offX, bleedPx - offY) with size (drawW, drawH)
-    // This places the "content" part of the image in the "content" part of the canvas
-    ctx.drawImage(baseImg, bleedPx - offX, bleedPx - offY, drawW, drawH);
-    baseImg.close();
-
-    if (bleedPx > 0 || darkenNearBlack) {
-        const imageData = ctx.getImageData(0, 0, finalW, finalH);
-
-        if (bleedPx > 0) {
-            applyJFA(imageData);
-        }
-
-        if (darkenNearBlack) {
-            const blackThreshold = 30;
-            blackenAllNearBlackPixels(imageData, blackThreshold);
-        }
-
-        ctx.putImageData(imageData, 0, 0);
-    }
-
-    return canvas;
-}
 
 const canvasCache = new Map<string, OffscreenCanvas>();
 
@@ -225,36 +171,68 @@ self.onmessage = async (event: MessageEvent) => {
                     finalCardCanvas = canvasCache.get(cacheKey)!;
                 } else {
                     let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
+                    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
 
-                    if (!src) {
-                        const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
-                        const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
-                        const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
-                        const cardCtx = placeholderCanvas.getContext('2d')!;
-                        cardCtx.fillStyle = 'white';
-                        cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
-                        cardCtx.strokeStyle = 'red';
-                        cardCtx.lineWidth = 5;
-                        cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
-                        cardCtx.fillStyle = 'red';
-                        cardCtx.font = '30px sans-serif';
-                        cardCtx.textAlign = 'center';
-                        cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
-                        finalCardCanvas = placeholderCanvas;
-                    } else {
-                        if (!card.isUserUpload) {
-                            src = getLocalBleedImageUrl(src, API_BASE);
-                        }
-                        finalCardCanvas = await buildCardWithBleed(src, bleedPx, contentWidthInPx, contentHeightInPx, {
-                            isUserUpload: !!card.isUserUpload,
-                            hasBakedBleed: !!card.hasBakedBleed,
-                        }, darkenNearBlack);
-                        if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+                    if (src?.startsWith("blob:")) {
+                        // Safety net: auto-revoke after 5 minutes if something goes wrong
+                        cleanupTimeout = setTimeout(() => {
+                            console.warn("Auto-revoking blob URL (safety net):", src);
+                            URL.revokeObjectURL(src!);
+                        }, 5 * 60 * 1000);
                     }
 
-                    // Cache the result if we have an ID
-                    if (cacheKey && finalCardCanvas instanceof OffscreenCanvas) {
-                        canvasCache.set(cacheKey, finalCardCanvas);
+                    try {
+                        if (!src) {
+                            const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
+                            const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
+                            const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
+                            const cardCtx = placeholderCanvas.getContext('2d')!;
+                            cardCtx.fillStyle = 'white';
+                            cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
+                            cardCtx.strokeStyle = 'red';
+                            cardCtx.lineWidth = 5;
+                            cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
+                            cardCtx.fillStyle = 'red';
+                            cardCtx.font = '30px sans-serif';
+                            cardCtx.textAlign = 'center';
+                            cardCtx.fillText('Image not found', cardWidthWithBleed / 2, cardHeightWithBleed / 2);
+                            finalCardCanvas = placeholderCanvas;
+                        } else {
+                            // Fetch image
+                            if (!card.isUserUpload) {
+                                src = getLocalBleedImageUrl(src, API_BASE);
+                            }
+
+                            const response = await fetch(src);
+                            const blob = await response.blob();
+                            let img = await createImageBitmap(blob);
+
+                            // Trim bleed if needed
+                            if (card.isUserUpload && card.hasBakedBleed) {
+                                const trimmed = await trimBleedFromBitmap(img);
+                                if (trimmed !== img) {
+                                    img.close();
+                                    img = trimmed;
+                                }
+                            }
+
+                            // Generate bleed using WebGL
+                            finalCardCanvas = await generateBleedCanvasWebGL(img, bleedEdgeWidthMm, {
+                                unit: 'mm',
+                                dpi: DPI,
+                                darkenNearBlack,
+                            });
+
+                            img.close();
+                        }
+
+                        // Cache the result if we have an ID
+                        if (cacheKey && finalCardCanvas instanceof OffscreenCanvas) {
+                            canvasCache.set(cacheKey, finalCardCanvas);
+                        }
+                    } finally {
+                        if (cleanupTimeout) clearTimeout(cleanupTimeout);
+                        if (src?.startsWith("blob:")) URL.revokeObjectURL(src);
                     }
                 }
             }

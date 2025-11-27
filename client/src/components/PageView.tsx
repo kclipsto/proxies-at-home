@@ -10,7 +10,6 @@ import {
   rectSortingStrategy,
   SortableContext,
 } from "@dnd-kit/sortable";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Button, Label } from "flowbite-react";
 import { Copy, Trash, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -18,11 +17,13 @@ import fullLogo from "../assets/fullLogo.png";
 import CardCellLazy from "../components/CardCellLazy";
 import EdgeCutLines from "../components/FullPageGuides";
 import SortableCard from "../components/SortableCard";
-import { db } from "../db"; // Import the Dexie database instance
-import { deleteCard, duplicateCard } from "../helpers/dbUtils";
+import { db, type Image } from "../db"; // Import the Dexie database instance
+import type { CardOption } from "../../../shared/types";
 import { getBleedInPixels } from "../helpers/ImageHelper";
-import { useImageProcessing } from "../hooks/useImageProcessing";
-import { useArtworkModalStore, useSettingsStore } from "../store";
+import { deleteCard, duplicateCard } from "@/helpers/dbUtils";
+import type { useImageProcessing } from "../hooks/useImageProcessing";
+import { useArtworkModalStore } from "../store";
+import { useSettingsStore } from "../store/settings";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 import { ArtworkModal } from "./ArtworkModal";
 import { ZoomControls } from "./ZoomControls";
@@ -35,10 +36,12 @@ const baseCardHeightMm = 88;
 type PageViewProps = {
   loadingMap: ReturnType<typeof useImageProcessing>["loadingMap"];
   ensureProcessed: ReturnType<typeof useImageProcessing>["ensureProcessed"];
+  images: Image[]; // Passed from parent to avoid redundant DB query
+  cards: CardOption[]; // Passed from parent to avoid redundant DB query
 };
 
-export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
-  // Consolidate settings subscriptions with useShallow to prevent unnecessary re-renders
+export function PageView({ loadingMap, ensureProcessed, images, cards }: PageViewProps) {
+  // Consolidate settings subscriptions with use Shallow to prevent unnecessary re-renders
   const {
     pageSizeUnit,
     pageWidth,
@@ -81,8 +84,7 @@ export function PageView({ loadingMap, ensureProcessed }: PageViewProps) {
 
   const sensors = useSensors(useSensor(PointerSensor));
 
-  const { cards, filteredAndSortedCards } = useFilteredAndSortedCards();
-  const images = useLiveQuery(() => db.images.toArray(), []);
+  const { filteredAndSortedCards } = useFilteredAndSortedCards(cards);
 
   const dndDisabled =
     sortBy !== "manual" || filterManaCost.length > 0 || filterColors.length > 0;

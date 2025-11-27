@@ -291,10 +291,14 @@ export async function exportProxyPagesToPdf({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blob = new Blob([mergedPdfFile as any], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
+  link.href = url;
   link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+
+  // Clean up the blob URL after a short delay to allow the download to start
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

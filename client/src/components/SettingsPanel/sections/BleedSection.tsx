@@ -3,17 +3,17 @@ import { Checkbox, Label } from "flowbite-react";
 import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/db";
 import { useEffect, useRef, useCallback } from "react";
+
+import type { CardOption } from "../../../../../shared/types";
 
 type Props = {
     reprocessSelectedImages: ReturnType<typeof useImageProcessing>["reprocessSelectedImages"];
     cancelProcessing: ReturnType<typeof useImageProcessing>["cancelProcessing"];
+    cards: CardOption[]; // Passed from parent to avoid redundant DB query
 };
 
-export function BleedSection({ reprocessSelectedImages, cancelProcessing }: Props) {
-    const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []) || [];
+export function BleedSection({ reprocessSelectedImages, cancelProcessing, cards }: Props) {
 
     const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
     const bleedEdge = useSettingsStore((state) => state.bleedEdge);

@@ -1,6 +1,4 @@
-import { useLiveQuery } from "dexie-react-hooks";
 import { useMemo } from "react";
-import { db } from "../db";
 import { useSettingsStore } from "../store/settings";
 import type { CardOption } from "../../../shared/types";
 
@@ -56,9 +54,7 @@ const getRarityValue = (c: CardOption) => {
     return 0;
 };
 
-export function useFilteredAndSortedCards() {
-    const cards = useLiveQuery(() => db.cards.orderBy("order").toArray(), []);
-
+export function useFilteredAndSortedCards(cards: CardOption[] = []) {
     const sortBy = useSettingsStore((state) => state.sortBy);
     const sortOrder = useSettingsStore((state) => state.sortOrder);
     const filterManaCost = useSettingsStore((state) => state.filterManaCost);
@@ -67,7 +63,6 @@ export function useFilteredAndSortedCards() {
 
     // Step 1: Filter cards (separate memo for better granularity)
     const filteredCards = useMemo(() => {
-        if (!cards) return [];
 
         let result = cards;
 
