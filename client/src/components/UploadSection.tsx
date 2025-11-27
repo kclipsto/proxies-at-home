@@ -15,22 +15,28 @@ import {
   parseMpcText,
   tryParseMpcSchemaXml,
 } from "@/helpers/Mpc";
-import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
+import { useCardsStore } from "@/store";
+import { useLoadingStore } from "@/store/loading";
+import { useSettingsStore } from "@/store/settings";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
 import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
 import {
   Button,
+  FileInput,
   HelperText,
   HR,
+  Label,
   List,
   ListItem,
   Select,
   Textarea,
   Tooltip,
 } from "flowbite-react";
-import { ExternalLink, HelpCircle } from "lucide-react";
+import { AlertCircle, ExternalLink, FileUp, HelpCircle, Trash2, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import type { CardInfo } from "../../../shared/types";
+import { useImageProcessing } from "../hooks/useImageProcessing";
 
 async function readText(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -628,8 +634,8 @@ export function UploadSection(props: Props) {
         <HR className="my-0 dark:bg-gray-500" />
       </div>
 
-      {showClearConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center">
+      {showClearConfirmModal && createPortal(
+        <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
             <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
               Confirm Clear Cards
@@ -654,7 +660,8 @@ export function UploadSection(props: Props) {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

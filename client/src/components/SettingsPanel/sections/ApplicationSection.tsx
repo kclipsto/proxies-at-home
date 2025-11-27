@@ -2,6 +2,7 @@ import { useSettingsStore } from "@/store/settings";
 import { Button } from "flowbite-react";
 import { ExportActions } from "../../LayoutSettings/ExportActions";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { db } from "@/db";
 
 import type { CardOption } from "../../../../../shared/types";
@@ -67,8 +68,8 @@ export function ApplicationSection({ cards }: Props) {
                 </span>
             </div>
 
-            {showResetConfirmModal && (
-                <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center">
+            {showResetConfirmModal && createPortal(
+                <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
                         <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
                             Confirm Reset App Data
@@ -93,7 +94,8 @@ export function ApplicationSection({ cards }: Props) {
                             </Button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
