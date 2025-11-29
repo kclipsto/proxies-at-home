@@ -1,6 +1,7 @@
 import { useSettingsStore } from "@/store/settings";
 import { Button, Label } from "flowbite-react";
 import { ZoomIn, ZoomOut } from "lucide-react";
+import { useRef } from "react";
 
 type ZoomControlsProps = {
     compact?: boolean;
@@ -9,6 +10,8 @@ type ZoomControlsProps = {
 export function ZoomControls({ compact = false }: ZoomControlsProps) {
     const zoom = useSettingsStore((state) => state.zoom);
     const setZoom = useSettingsStore((state) => state.setZoom);
+    const lastTapRef = useRef(0);
+    const isDoubleTapRef = useRef(false);
 
     if (compact) {
         return (
@@ -40,21 +43,21 @@ export function ZoomControls({ compact = false }: ZoomControlsProps) {
         <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 justify-between w-full">
                 <Button
-                    size="xs"
+                    size="sm"
                     className="w-full"
                     color="blue"
                     onClick={() => setZoom(Math.max(0.1, zoom - 0.1))}
                 >
-                    <ZoomOut className="size-4" />
+                    <ZoomOut className="size-6" />
                 </Button>
-                <Label className="w-full text-center">{zoom.toFixed(1)}x</Label>
+                <Label className="w-full text-center text-lg">{zoom.toFixed(1)}x</Label>
                 <Button
-                    size="xs"
+                    size="sm"
                     className="w-full"
                     color="blue"
                     onClick={() => setZoom(zoom + 0.1)}
                 >
-                    <ZoomIn className="size-4" />
+                    <ZoomIn className="size-6" />
                 </Button>
             </div>
             <div className="relative w-full h-6 flex items-center">
@@ -71,7 +74,29 @@ export function ZoomControls({ compact = false }: ZoomControlsProps) {
                         return 50 + ((zoom - 1.0) / 4.0) * 50;
                     })()}
                     onDoubleClick={() => setZoom(1.0)}
+                    onTouchStart={() => {
+                        const now = Date.now();
+                        const lastTap = lastTapRef.current;
+
+                        if (now - lastTap < 300) {
+                            // Double tap detected
+                            isDoubleTapRef.current = true;
+                            setZoom(1.0);
+                            lastTapRef.current = 0; // Reset
+
+                            // Reset flag after a short delay to ensure we block the immediate onChange
+                            setTimeout(() => {
+                                isDoubleTapRef.current = false;
+                            }, 200);
+                        } else {
+                            lastTapRef.current = now;
+                        }
+                    }}
                     onChange={(e) => {
+                        if (isDoubleTapRef.current) {
+                            isDoubleTapRef.current = false;
+                            return;
+                        }
                         const val = parseInt(e.target.value, 10);
 
                         // Helper to convert slider value to zoom
@@ -104,7 +129,7 @@ export function ZoomControls({ compact = false }: ZoomControlsProps) {
 
                         setZoom(newZoom);
                     }}
-                    className="zoom-slider w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 accent-blue-600 relative z-10"
+                    className="zoom-slider w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 accent-blue-600 relative z-10 touch-none"
                 />
             </div>
         </div>

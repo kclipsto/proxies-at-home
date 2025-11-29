@@ -79,21 +79,29 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
             [min, max, step, triggerChange]
         );
 
+        const isSpinning = useRef(false);
+        const ignoreMouseRef = useRef(false);
+
         const startSpin = useCallback(
             (delta: number) => {
+                if (isSpinning.current) return;
+                isSpinning.current = true;
                 updateValue(delta);
                 timeoutRef.current = setTimeout(() => {
                     intervalRef.current = setInterval(() => {
                         updateValue(delta);
-                    }, 50);
-                }, 500);
+                    }, 100);
+                }, 800);
             },
             [updateValue]
         );
 
         const stopSpin = useCallback(() => {
+            isSpinning.current = false;
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
             if (intervalRef.current) clearInterval(intervalRef.current);
+            timeoutRef.current = null;
+            intervalRef.current = null;
         }, []);
 
         useEffect(() => {
@@ -109,34 +117,65 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
                     min={min}
                     max={max}
                     step={step}
+                    onChange={onChange}
                     className="[&_input]:pr-8 [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
                 />
-                <div className="absolute right-1 top-1 bottom-1 w-6 flex flex-col opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="absolute right-1 top-1 bottom-1 w-8 flex flex-col opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200">
                     <button
                         type="button"
                         tabIndex={-1}
-                        className="flex-1 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 active:translate-y-px text-gray-500 dark:text-gray-400 rounded-t-md flex items-center justify-center focus:outline-none transition-all"
+                        className="flex-1 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 active:translate-y-px text-gray-500 dark:text-gray-400 rounded-t-md flex items-center justify-center focus:outline-none transition-all touch-none"
                         onMouseDown={(e) => {
+                            if (ignoreMouseRef.current) return;
                             e.preventDefault(); // Prevent focus loss
+                            e.stopPropagation();
                             startSpin(step);
                         }}
                         onMouseUp={stopSpin}
                         onMouseLeave={stopSpin}
+                        onTouchStart={(e) => {
+                            ignoreMouseRef.current = true;
+                            e.preventDefault(); // Prevent scrolling/focus loss
+                            e.stopPropagation();
+                            startSpin(step);
+                        }}
+                        onTouchEnd={() => {
+                            stopSpin();
+                            // Reset ignore mouse after a delay to cover the ghost click
+                            setTimeout(() => {
+                                ignoreMouseRef.current = false;
+                            }, 500);
+                        }}
                     >
-                        <ChevronUp className="w-3 h-3" />
+                        <ChevronUp className="w-4 h-4" />
                     </button>
                     <button
                         type="button"
                         tabIndex={-1}
-                        className="flex-1 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 active:translate-y-px text-gray-500 dark:text-gray-400 rounded-b-md flex items-center justify-center focus:outline-none transition-all"
+                        className="flex-1 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 active:translate-y-px text-gray-500 dark:text-gray-400 rounded-b-md flex items-center justify-center focus:outline-none transition-all touch-none"
                         onMouseDown={(e) => {
+                            if (ignoreMouseRef.current) return;
                             e.preventDefault(); // Prevent focus loss
+                            e.stopPropagation();
                             startSpin(-step);
                         }}
                         onMouseUp={stopSpin}
                         onMouseLeave={stopSpin}
+                        onTouchStart={(e) => {
+                            ignoreMouseRef.current = true;
+                            e.preventDefault(); // Prevent scrolling/focus loss
+                            e.stopPropagation();
+                            startSpin(-step);
+                        }}
+                        onTouchEnd={() => {
+                            stopSpin();
+                            // Reset ignore mouse after a delay to cover the ghost click
+                            setTimeout(() => {
+                                ignoreMouseRef.current = false;
+                            }, 500);
+                        }}
                     >
-                        <ChevronDown className="w-3 h-3" />
+                        <ChevronDown className="w-4 h-4" />
                     </button>
                 </div>
             </div>

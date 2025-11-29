@@ -25,7 +25,7 @@ test.describe('pdf export', () => {
         // 2. Wait for cards to render and images to process
         await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30_000 });
         const images = page.locator('.proxy-page img');
-        await expect(images).toHaveCount(2);
+        await expect(images).toHaveCount(2, { timeout: 30_000 });
 
         // Ensure images are fully loaded/processed before export
         for (let i = 0; i < 2; i++) {

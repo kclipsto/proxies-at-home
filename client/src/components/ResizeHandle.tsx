@@ -41,12 +41,12 @@ export function ResizeHandle({
 
             {/* Pill Button */}
             <button
-                onMouseDown={(e) => e.stopPropagation()} // Prevent drag start when clicking button
+                // Allow drag start when clicking button (removed stopPropagation)
                 onClick={(e) => {
                     e.stopPropagation();
                     onToggle();
                 }}
-                className={`absolute left-1/2 -translate-x-1/2 p-0.5 h-50 w-5 rounded-full shadow-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 opacity-0 group-hover:opacity-100 flex items-center justify-center ${rotationClass}`}
+                className={`absolute left-1/2 -translate-x-1/2 p-0.5 h-50 w-5 rounded-full shadow-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer ${rotationClass}`}
             >
                 <ChevronRight className="size-3" />
             </button>

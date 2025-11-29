@@ -2,7 +2,6 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import React, { useRef, useState } from "react";
 import { db } from "../db";
 import fullLogo from "@/assets/fullLogo.png";
-import logo from "@/assets/logo.png";
 import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
 import {
   cardKey,
@@ -23,20 +22,15 @@ import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
 import {
   Button,
-  FileInput,
-  HelperText,
   HR,
-  Label,
-  List,
-  ListItem,
   Select,
   Textarea,
-  Tooltip,
 } from "flowbite-react";
-import { AlertCircle, ExternalLink, FileUp, HelpCircle, Trash2, X } from "lucide-react";
+import { ExternalLink, HelpCircle, Download, MousePointerClick, Move, Copy, Upload } from "lucide-react";
 import { createPortal } from "react-dom";
+import { AutoTooltip } from "./AutoTooltip";
+import { PullToRefresh } from "./PullToRefresh";
 import type { CardInfo } from "../../../shared/types";
-import { useImageProcessing } from "../hooks/useImageProcessing";
 
 async function readText(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -48,11 +42,12 @@ async function readText(file: File): Promise<string> {
 
 type Props = {
   isCollapsed?: boolean;
-  onToggle?: () => void;
   cardCount: number; // Passed from parent to avoid redundant DB query
+  mobile?: boolean;
+  onUploadComplete?: () => void;
 };
 
-export function UploadSection(props: Props) {
+export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete }: Props) {
   const [deckText, setDeckText] = useState("");
   // Controller for fetches
   const fetchController = useRef<AbortController | null>(null);
@@ -67,7 +62,6 @@ export function UploadSection(props: Props) {
     (s) => s.setGlobalLanguage ?? (() => { })
   );
 
-  const { cardCount } = props;
 
 
   async function addUploadedFiles(
@@ -106,6 +100,7 @@ export function UploadSection(props: Props) {
       const files = e.target.files;
       if (files && files.length) {
         await addUploadedFiles(files, { hasBakedBleed: true });
+        onUploadComplete?.();
       }
     } finally {
       if (e.target) e.target.value = "";
@@ -122,6 +117,7 @@ export function UploadSection(props: Props) {
       const files = e.target.files;
       if (files && files.length) {
         await addUploadedFiles(files, { hasBakedBleed: false });
+        onUploadComplete?.();
       }
     } finally {
       if (e.target) e.target.value = "";
@@ -172,7 +168,9 @@ export function UploadSection(props: Props) {
         await addCards(cardsToAdd);
         useSettingsStore.getState().setSortBy("manual");
         // Enrich metadata in background
+        // Enrich metadata in background
         enrichCardsMetadata(cardsToAdd);
+        onUploadComplete?.();
       }
     } finally {
       if (e.target) e.target.value = "";
@@ -364,6 +362,7 @@ export function UploadSection(props: Props) {
             }
 
             setDeckText("");
+            onUploadComplete?.();
           }
         },
         onclose: () => {
@@ -449,220 +448,267 @@ export function UploadSection(props: Props) {
     }
   };
 
-  const { isCollapsed } = props;
   const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
 
   if (isCollapsed) {
     return (
       <div
-        className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 border-r border-gray-200 dark:border-gray-600"
+        className={`h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 border-r border-gray-200 dark:border-gray-600 ${mobile ? "mobile-scrollbar-hide" : "overflow-y-auto"} select-none`}
         onDoubleClick={() => toggleUploadPanel()}
       >
-        <Tooltip content="Proxxied" placement="right">
+        <AutoTooltip content="Proxxied" placement="right" mobile={mobile}>
           <button
             onClick={() => {
               toggleUploadPanel();
             }}
             className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
-            <img src={logo} alt="Proxxied" className="size-8" />
+            <img src="/logo.svg" className="w-8 h-8" alt="Proxxied Logo" />
           </button>
-        </Tooltip>
+        </AutoTooltip>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full dark:bg-gray-700 bg-gray-100 flex flex-col border-r border-gray-200 dark:border-gray-600">
-      <div>
-        <img src={fullLogo} alt="Proxxied Logo" className="w-full" />
-      </div>
-
-      <div className="flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4 pt-4">
-        <div className="flex flex-col gap-4">
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">
-              Upload MPC Images (
-              <a
-                href="https://mpcfill.com"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                MPC Autofill
-                <ExternalLink className="inline-block size-4 ml-1" />
-              </a>
-              )
-            </h6>
-
-            <label
-              htmlFor="upload-mpc"
-              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-            >
-              Choose Files
-            </label>
-            <input
-              id="upload-mpc"
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUploadMpcFill}
-              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-              className="hidden"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">
-              Import MPC Text (XML)
-            </h6>
-
-            <label
-              htmlFor="import-mpc-xml"
-              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-            >
-              Choose File
-            </label>
-            <input
-              id="import-mpc-xml"
-              type="file"
-              accept=".xml,.txt,.csv,.log,text/xml,text/plain"
-              onChange={handleImportMpcXml}
-              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-              className="hidden"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">Upload Other Images</h6>
-            <label
-              htmlFor="upload-standard"
-              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-            >
-              Choose Files
-            </label>
-            <input
-              id="upload-standard"
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUploadStandard}
-              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-              className="hidden"
-            />
-            <HelperText>
-              You can upload images from mtgcardsmith, custom designs, etc.
-            </HelperText>
-          </div>
+    <div className={`w-full h-full dark:bg-gray-700 bg-gray-100 flex flex-col border-r border-gray-200 dark:border-gray-600`}>
+      {!mobile && (
+        <div>
+          <img src={fullLogo} alt="Proxxied Logo" className="w-full" />
         </div>
-
-        <HR className="my-0 dark:bg-gray-500" />
-
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">
-              Add Cards (
-              <a
-                href="https://scryfall.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                Scryfall
-                <ExternalLink className="inline-block size-4 ml-1" />
-              </a>
-              )
-            </h6>
-
-            <Textarea
-              className="h-64 resize-none"
-              placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
-              value={deckText}
-              onChange={(e) => setDeckText(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Button color="blue" onClick={handleSubmit}>
-              Fetch Cards
-            </Button>
-            <Button
-              color="red"
-              onClick={handleClear}
-              disabled={cardCount === 0}
-            >
-              Clear Cards
-            </Button>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <h6 className="font-medium dark:text-white">Language</h6>
-              <Tooltip content="Used for Scryfall lookups">
-                <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-              </Tooltip>
-            </div>
-
-            <Select
-              className="w-full rounded-md bg-gray-300 dark:bg-gray-600 my-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-              value={globalLanguage}
-              onChange={(e) => setGlobalLanguage(e.target.value)}
-            >
-              {LANGUAGE_OPTIONS.map((o) => (
-                <option key={o.code} value={o.code}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div>
-            <h6 className="font-medium dark:text-white">Tips:</h6>
-
-            <List className="text-sm dark:text-white/60">
-              <ListItem>To change a card art - click it</ListItem>
-              <ListItem>
-                To move a card - drag from the box at the top right
-              </ListItem>
-              <ListItem>
-                To duplicate or delete a card - right click it
-              </ListItem>
-            </List>
-          </div>
-        </div>
-
-        <HR className="my-0 dark:bg-gray-500" />
-      </div>
-
-      {showClearConfirmModal && createPortal(
-        <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
-            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-              Confirm Clear Cards
-            </div>
-            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-              Are you sure you want to clear all cards? This action cannot be
-              undone.
-            </div>
-            <div className="flex justify-center gap-4">
-              <Button
-                color="failure"
-                className="bg-red-600 hover:bg-red-700 text-white"
-                onClick={confirmClear}
-              >
-                Yes, I'm sure
-              </Button>
-              <Button
-                color="gray"
-                onClick={() => setShowClearConfirmModal(false)}
-              >
-                No, cancel
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
       )}
-    </div>
+
+
+
+      <PullToRefresh className={`flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4 pt-4 ${mobile ? "[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" : ""}`}>
+        {mobile && (
+          <div className={`flex justify-center mb-2 ${mobile ? 'landscape:hidden' : ''}`}>
+            <img src={fullLogo} alt="Proxxied Logo" className="w-[80%] landscape:w-auto landscape:h-12" />
+          </div>
+        )}
+        <div className={`flex flex-col ${mobile ? 'landscape:grid landscape:grid-cols-2 landscape:gap-6 landscape:h-full landscape:grid-rows-[1fr_auto]' : ''} gap-4`}>
+          <div className={`flex flex-col gap-4 ${mobile ? 'landscape:gap-2 landscape:h-full landscape:justify-between' : ''}`}>
+            <div className={`flex flex-col gap-4 ${mobile ? 'landscape:gap-2' : ''}`}>
+              {/* Logo for Landscape */}
+              <div className={`hidden ${mobile ? 'landscape:flex' : ''} justify-center mb-2`}>
+                <img src={fullLogo} alt="Proxxied Logo" className={`w-[80%] ${mobile ? 'landscape:w-[50%]' : ''} h-auto`} />
+              </div>
+
+              <div className={`space-y-1 ${mobile ? '' : ''}`}>
+                <h6 className="font-medium dark:text-white sr-only">Upload MPC Images</h6>
+
+                <label
+                  htmlFor="upload-mpc"
+                  className={`inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 ${mobile ? 'px-4 py-4 landscape:py-3' : 'px-4 py-3'} text-base font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 active:translate-y-[2px]`}
+                >
+                  Upload MPC Images
+                </label>
+                <input
+                  id="upload-mpc"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadMpcFill}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+                  className="hidden"
+                />
+              </div>
+
+              <div className={`space-y-1 ${mobile ? '' : ''}`}>
+                <label
+                  htmlFor="import-mpc-xml"
+                  className={`inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 ${mobile ? 'px-4 py-4 landscape:py-3' : 'px-4 py-3'} text-base font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 active:translate-y-[2px]`}
+                >
+                  Import MPC Text (XML)
+                </label>
+                <input
+                  id="import-mpc-xml"
+                  type="file"
+                  accept=".xml,.txt,.csv,.log,text/xml,text/plain"
+                  onChange={handleImportMpcXml}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+                  className="hidden"
+                />
+              </div>
+
+              <div className={`space-y-1 ${mobile ? '' : ''}`}>
+                <label
+                  htmlFor="upload-standard"
+                  className={`inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 ${mobile ? 'px-4 py-4 landscape:py-3' : 'px-4 py-3'} text-base font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 active:translate-y-[2px]`}
+                >
+                  Upload Other Images
+                </label>
+                <input
+                  id="upload-standard"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadStandard}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+                  className="hidden"
+                />
+              </div>
+            </div>
+
+            {/* Language Selector - Moved here for Landscape */}
+            <div className={`space-y-1 hidden ${mobile ? 'landscape:block' : ''}`}>
+              <div className="flex items-center justify-between">
+                <h6 className="font-medium dark:text-white">Language</h6>
+                <AutoTooltip content="Used for Scryfall lookups" mobile={mobile}>
+                  <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
+                </AutoTooltip>
+              </div>
+
+              <Select
+                className="w-full rounded-md bg-gray-300 dark:bg-gray-600 mt-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
+                value={globalLanguage}
+                onChange={(e) => setGlobalLanguage(e.target.value)}
+              >
+                {LANGUAGE_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          <HR className={`my-0 dark:bg-gray-500 ${mobile ? 'landscape:hidden' : ''}`} />
+
+          <div className={`space-y-4 ${mobile ? 'landscape:flex landscape:flex-col landscape:h-full landscape:space-y-0 landscape:gap-4' : ''}`}>
+            <div className={`space-y-1 ${mobile ? 'landscape:flex-1 landscape:flex landscape:flex-col' : ''}`}>
+              <h6 className="font-medium dark:text-white">
+                Add Cards (
+                <a
+                  href="https://scryfall.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-blue-600 dark:hover:text-blue-400"
+                >
+                  Scryfall
+                  <ExternalLink className="inline-block size-4 ml-1" />
+                </a>
+                )
+              </h6>
+
+              <Textarea
+                className={`h-64 ${mobile ? 'landscape:flex-1 landscape:[&::-webkit-scrollbar]:hidden landscape:[-ms-overflow-style:none] landscape:[scrollbar-width:none]' : ''} resize-none text-base p-3`}
+                placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
+                value={deckText}
+                onChange={(e) => setDeckText(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <Button color="blue" size="lg" onClick={handleSubmit}>
+                Fetch Cards
+              </Button>
+              <Button
+                color="red"
+                size="lg"
+                onClick={handleClear}
+                disabled={cardCount === 0}
+              >
+                Clear Cards
+              </Button>
+            </div>
+
+            {/* Language Selector - Hidden in Landscape (moved to left col), Visible in Portrait */}
+            <div className={`space-y-1 ${mobile ? 'landscape:hidden' : ''}`}>
+              <div className="flex items-center justify-between">
+                <h6 className="font-medium dark:text-white">Language</h6>
+                <AutoTooltip content="Used for Scryfall lookups" mobile={mobile}>
+                  <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
+                </AutoTooltip>
+              </div>
+
+              <Select
+                className="w-full rounded-md bg-gray-300 dark:bg-gray-600 my-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
+                value={globalLanguage}
+                onChange={(e) => setGlobalLanguage(e.target.value)}
+              >
+                {LANGUAGE_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {/* Tips - Full width at bottom */}
+          <div className={`${mobile ? 'landscape:col-span-2' : ''} pb-4`}>
+            <h6 className="font-medium dark:text-white mb-2">Tips:</h6>
+
+            <div className={`text-sm dark:text-white/60 flex flex-col gap-2 ${mobile ? 'landscape:grid landscape:grid-cols-2' : ''}`}>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Download className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span>
+                  Download images from{" "}
+                  <a
+                    href="https://mpcfill.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:text-blue-600 dark:hover:text-blue-400"
+                  >
+                    MPC Autofill
+                    <ExternalLink className="inline-block size-3 ml-1" />
+                  </a>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <MousePointerClick className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
+                <span>To change a card art - {mobile ? "tap" : "click"} it</span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Move className="w-4 h-4 shrink-0 text-green-600 dark:text-green-400" />
+                <span>To move a card - {mobile ? "long press and drag" : "drag from the box at the top right"}</span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Copy className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+                <span>To duplicate or delete a card - {mobile ? "double tap" : "right click"} it</span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Upload className="w-4 h-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
+                <span>You can upload images from mtgcardsmith, custom designs, etc.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <HR className="my-0 dark:bg-gray-500" />
+      </PullToRefresh>
+
+      {
+        showClearConfirmModal && createPortal(
+          <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+              <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                Confirm Clear Cards
+              </div>
+              <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                Are you sure you want to clear all cards? This action cannot be
+                undone.
+              </div>
+              <div className="flex justify-center gap-4">
+                <Button
+                  color="failure"
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={confirmClear}
+                >
+                  Yes, I'm sure
+                </Button>
+                <Button
+                  color="gray"
+                  onClick={() => setShowClearConfirmModal(false)}
+                >
+                  No, cancel
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      }
+    </div >
   );
 }

@@ -4,8 +4,22 @@
 
 @source '../.flowbite-react/class-list.json';
 
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 button {
   cursor: pointer;
+}
+
+button:active {
+  transform: translateY(2px);
 }
 
 /* Custom Scrollbar Styles */
@@ -63,6 +77,48 @@ button {
 /* scrollbar-color: #4a5568 #2d3748; */
 /* thumb color track color */
 
+/* Settings Panel Scrollbar Gutter */
+.settings-panel-scroll {
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 768px) {
+
+  /* Increase scrollbar size for better touch targets on mobile */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  .mobile-scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Tooltip Visibility Fixes */
+/* Use drop-shadow to simulate a border around the tooltip AND its arrow */
+[role="tooltip"] {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.2)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.dark [role="tooltip"] {
+  /* Darker background (gray-900) for contrast against gray-700 header */
+  background-color: #111827 !important;
+  /* Light border-like shadow for visibility in dark mode */
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.3)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+}
+
+.dark [role="tooltip"]>[data-testid="flowbite-tooltip-arrow"] {
+  /* Ensure arrow matches the new background color */
+  background-color: #111827 !important;
+}
+
+
 @keyframes sheen-flow {
   100% {
     background-position: 100% 0;
@@ -101,6 +157,18 @@ button {
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   border: none;
+}
+
+@media (max-width: 768px) {
+  .zoom-slider::-webkit-slider-thumb {
+    width: 48px;
+    height: 24px;
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 48px;
+    height: 24px;
+  }
 }
 
 /* Color Input Styling */

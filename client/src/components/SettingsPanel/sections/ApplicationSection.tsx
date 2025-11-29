@@ -23,6 +23,14 @@ export function ApplicationSection({ cards }: Props) {
     const confirmReset = async () => {
         setShowResetConfirmModal(false);
         try {
+            // Unregister service workers first
+            if ("serviceWorker" in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
+            }
+
             // Delete the entire database to ensure a full reset
             await db.delete();
 
@@ -33,16 +41,13 @@ export function ApplicationSection({ cards }: Props) {
 
             if ("caches" in window) {
                 const names = await caches.keys();
-                await Promise.all(
-                    names
-                        .filter((n) => n.startsWith("proxxied-"))
-                        .map((n) => caches.delete(n))
-                );
+                await Promise.all(names.map((n) => caches.delete(n)));
             }
         } catch (e) {
             console.error("Error clearing app data:", e);
         } finally {
-            window.location.reload();
+            // Force a hard reload from the server
+            window.location.href = window.location.origin;
         }
     };
 
@@ -51,21 +56,26 @@ export function ApplicationSection({ cards }: Props) {
             <ExportActions cards={cards} />
 
             <div className="w-full flex justify-center">
-                <span
-                    className="text-gray-400 hover:underline cursor-pointer text-sm font-medium"
-                    onClick={resetSettings}
-                >
+                <Button color="gray" fullSized onClick={resetSettings}>
                     Reset Settings
-                </span>
+                </Button>
             </div>
 
             <div className="w-full flex justify-center">
-                <span
-                    className="text-red-600 hover:underline cursor-pointer text-sm font-medium"
-                    onClick={handleReset}
-                >
+                <Button color="red" fullSized onClick={handleReset}>
                     Reset App Data
-                </span>
+                </Button>
+            </div>
+
+            <div className="mt-auto space-y-3 pt-4">
+                <a
+                    href="https://github.com/kclipsto/proxies-at-home"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-md underline text-center text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
+                >
+                    Code by Kaiser Clipston (Github)
+                </a>
             </div>
 
             {showResetConfirmModal && createPortal(

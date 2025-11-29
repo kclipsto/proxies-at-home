@@ -25,6 +25,8 @@ const EdgeCutLines = memo(function EdgeCutLines({
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
+  const cardPositionX = useSettingsStore((state) => state.cardPositionX);
+  const cardPositionY = useSettingsStore((state) => state.cardPositionY);
   const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
 
   if (cutLineStyle === "none") return null;
@@ -37,8 +39,8 @@ const EdgeCutLines = memo(function EdgeCutLines({
   const gridHeightMm =
     rows * totalCardHeightMm + Math.max(0, rows - 1) * cardSpacingMm;
 
-  const startXmm = (pageWidthMm - gridWidthMm) / 2;
-  const startYmm = (pageHeightMm - gridHeightMm) / 2;
+  const startXmm = (pageWidthMm - gridWidthMm) / 2 + cardPositionX;
+  const startYmm = (pageHeightMm - gridHeightMm) / 2 + cardPositionY;
 
   const cutInX = bleedEdgeWidthMm;
   const cutOutX = bleedEdgeWidthMm + baseCardWidthMm;

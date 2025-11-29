@@ -25,7 +25,7 @@ const CardCellLazy = memo(function CardCellLazy({
   }, [visible, card, ensureProcessed]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative w-full h-full ${!hasImage ? "bg-black" : ""}`}>
       {!hasImage && state !== "error" && (
         <div className="absolute inset-0 grid place-items-center z-10">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-transparent" />

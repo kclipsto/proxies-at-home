@@ -147,10 +147,12 @@ export async function addCards(
 export async function deleteCard(uuid: string): Promise<void> {
   await db.transaction("rw", db.cards, db.images, async () => {
     const card = await db.cards.get(uuid);
-    if (card?.imageId) {
+    if (card) {
       await db.cards.delete(uuid);
-      // Safely call the non-transactional helper from within the transaction.
-      await _removeImageRef_transactional(card.imageId);
+      if (card.imageId) {
+        // Safely call the non-transactional helper from within the transaction.
+        await _removeImageRef_transactional(card.imageId);
+      }
     }
   });
 }
@@ -298,12 +300,15 @@ export async function changeCardArtwork(
  * preventing floating point precision issues. This should be
  * called periodically or on application startup.
  */
-export async function rebalanceCardOrders(): Promise<void> {
+export async function rebalanceCardOrders(cards?: CardOption[]): Promise<void> {
   await db.transaction("rw", db.cards, async () => {
-    const sortedCards = await db.cards.orderBy("order").toArray();
+    let sortedCards = cards;
+    if (!sortedCards) {
+      sortedCards = await db.cards.orderBy("order").toArray();
+    }
 
-    // A re-balance is needed if any card has a non-integer order value.
-    const needsRebalance = sortedCards.some(
+    // A re-balance is needed if any card has a non-integer order value OR if we were passed a specific list (forcing rebalance)
+    const needsRebalance = cards || sortedCards.some(
       (card) => !Number.isInteger(card.order)
     );
 

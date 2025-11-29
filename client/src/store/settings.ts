@@ -48,6 +48,8 @@ type Store = {
   };
   setPanelOrder: (order: string[]) => void;
   togglePanelCollapse: (id: string) => void;
+  expandAllPanels: () => void;
+  collapseAllPanels: () => void;
   settingsPanelWidth: number;
   setSettingsPanelWidth: (width: number) => void;
   isSettingsPanelCollapsed: boolean;
@@ -173,6 +175,26 @@ export const useSettingsStore = create<Store>()(
             },
           },
         })),
+      expandAllPanels: () =>
+        set((state) => ({
+          settingsPanelState: {
+            ...state.settingsPanelState,
+            collapsed: state.settingsPanelState.order.reduce(
+              (acc, key) => ({ ...acc, [key]: false }),
+              {}
+            ),
+          },
+        })),
+      collapseAllPanels: () =>
+        set((state) => ({
+          settingsPanelState: {
+            ...state.settingsPanelState,
+            collapsed: state.settingsPanelState.order.reduce(
+              (acc, key) => ({ ...acc, [key]: true }),
+              {}
+            ),
+          },
+        })),
       setSettingsPanelWidth: (width) => set({ settingsPanelWidth: width }),
       toggleSettingsPanel: () =>
         set((state) => ({
@@ -259,5 +281,4 @@ export const useSettingsStore = create<Store>()(
       },
     }
   )
-
 );

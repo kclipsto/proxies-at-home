@@ -18,12 +18,14 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@microsoft/fetch-event-source": "^2.0.1",
+    "@react-spring/web": "^10.0.3",
     "@tailwindcss/vite": "^4.1.12",
     "@tanstack/react-virtual": "^3.13.12",
     "@tensorflow/tfjs": "^4.11.0",
     "@tensorflow/tfjs-backend-webgl": "^4.22.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@types/testing-library__jest-dom": "^5.14.9",
+    "@use-gesture/react": "^10.3.1",
     "axios": "^1.11.0",
     "dexie": "^4.0.4",
     "dexie-react-hooks": "^1.1.7",
@@ -63,6 +65,7 @@
     "tailwindcss": "^4.1.12",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.35.1",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

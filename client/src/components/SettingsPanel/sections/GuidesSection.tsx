@@ -1,5 +1,6 @@
 import { useSettingsStore } from "@/store/settings";
 import { Label, Select, TextInput } from "flowbite-react";
+import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 
 export function GuidesSection() {
@@ -45,11 +46,11 @@ export function GuidesSection() {
                 <div className="mb-2 block">
                     <Label htmlFor="guideWidth">Guide Width (mm)</Label>
                 </div>
-                <TextInput
+                <NumberInput
+                    ref={guideWidthInput.inputRef}
                     id="guideWidth"
-                    type="number"
                     step={0.1}
-                    value={guideWidthInput.defaultValue}
+                    defaultValue={guideWidthInput.defaultValue}
                     onChange={guideWidthInput.handleChange}
                     onBlur={guideWidthInput.handleBlur}
                 />

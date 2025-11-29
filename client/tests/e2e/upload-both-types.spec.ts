@@ -25,8 +25,8 @@ test('upload both mpc and standard images', async ({ page, browserName }) => {
 
     // Check that ALL images have loaded successfully
     const images = page.locator('.proxy-page img');
+    await expect(images).toHaveCount(2, { timeout: 30_000 });
     const count = await images.count();
-    expect(count).toBe(2);
 
     for (let i = 0; i < count; i++) {
         const img = images.nth(i);

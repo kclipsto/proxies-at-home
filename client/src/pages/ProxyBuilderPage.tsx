@@ -1,4 +1,5 @@
-import { Suspense, lazy, useEffect, useMemo, useCallback, useRef } from "react";
+import { Suspense, lazy, useEffect, useMemo, useCallback, useRef, useState } from "react";
+import { FileUp, Eye, Settings } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption } from "../../../shared/types";
 
@@ -25,9 +26,6 @@ function PageViewLoader() {
   );
 }
 
-
-
-
 // Stable empty arrays to prevent useEffect dependency changes
 const EMPTY_CARDS: CardOption[] = [];
 const EMPTY_IMAGES: Image[] = [];
@@ -46,6 +44,59 @@ export default function ProxyBuilderPage() {
   const uploadPanelWidth = useSettingsStore((state) => state.uploadPanelWidth);
   const setUploadPanelWidth = useSettingsStore((state) => state.setUploadPanelWidth);
 
+  // Mobile detection and state
+  const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.matchMedia("(orientation: landscape)").matches;
+    }
+    return false;
+  });
+  const [activeMobileView, setActiveMobileView] = useState<"upload" | "preview" | "settings">(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem("activeMobileView");
+      if (saved === "upload" || saved === "preview" || saved === "settings") {
+        return saved;
+      }
+    }
+    return "preview";
+  });
+
+  // Track previous width to detect actual rotation vs keyboard opening
+  const lastWidth = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
+
+  useEffect(() => {
+    localStorage.setItem("activeMobileView", activeMobileView);
+  }, [activeMobileView]);
+
+  useEffect(() => {
+    const checkLayout = () => {
+      const width = window.innerWidth;
+
+      // Mobile detection
+      const isTouch = window.matchMedia("(pointer: coarse)").matches;
+      const hasHover = window.matchMedia("(hover: hover)").matches;
+
+      // Strict mobile check:
+      // We require !hasHover to prevent desktop users from triggering mobile view
+      // when zooming in (which reduces window.innerWidth) or resizing the window.
+      // DevTools mobile emulation correctly simulates !hasHover, so testing still works.
+      const isMobileDevice = !hasHover && (width < 768 || (isTouch && width < 1024));
+
+      setIsMobile(isMobileDevice);
+
+      // Orientation detection
+      const isLandscapeQuery = window.matchMedia("(orientation: landscape)").matches;
+      setIsLandscape(isLandscapeQuery);
+
+      lastWidth.current = width;
+    };
+
+    checkLayout();
+    window.addEventListener("resize", checkLayout);
+    return () => window.removeEventListener("resize", checkLayout);
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -62,7 +113,7 @@ export default function ProxyBuilderPage() {
       }
 
       const newWidth = startWidth + delta;
-      setSettingsPanelWidth(Math.max(250, Math.min(600, newWidth)));
+      setSettingsPanelWidth(Math.max(320, Math.min(600, newWidth)));
     };
 
     const handleMouseUp = () => {
@@ -90,7 +141,7 @@ export default function ProxyBuilderPage() {
       }
 
       const newWidth = startWidth + delta;
-      setUploadPanelWidth(Math.max(250, Math.min(600, newWidth)));
+      setUploadPanelWidth(Math.max(320, Math.min(600, newWidth)));
     };
 
     const handleMouseUp = () => {
@@ -198,18 +249,100 @@ export default function ProxyBuilderPage() {
     return () => clearTimeout(timer);
   }, [dpi, bleedEdge, bleedEdgeWidth, reprocessSelectedImages, cancelProcessing]);
 
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <div className={`flex ${isLandscape ? 'flex-row' : 'flex-col'} h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900`}>
+        {/* Navigation - Left for Landscape, Bottom for Portrait */}
+        <div className={`
+          ${isLandscape
+            ? 'w-20 h-full border-r flex-col pt-4 pb-4 justify-center gap-8'
+            : 'h-16 w-full border-t flex-row items-center justify-around px-4 order-last'
+          }
+          bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 flex shrink-0 z-50
+        `}>
+          <button
+            onClick={() => setActiveMobileView("upload")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${activeMobileView === "upload"
+              ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              }`}
+          >
+            <FileUp className="size-6" />
+            <span className="text-xs font-medium">Upload</span>
+          </button>
+
+          <button
+            onClick={() => setActiveMobileView("preview")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${activeMobileView === "preview"
+              ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              }`}
+          >
+            <Eye className="size-6" />
+            <span className="text-xs font-medium">Preview</span>
+          </button>
+
+          <button
+            onClick={() => setActiveMobileView("settings")}
+            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${activeMobileView === "settings"
+              ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              }`}
+          >
+            <Settings className="size-6" />
+            <span className="text-xs font-medium">Settings</span>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden relative">
+          <div className={activeMobileView === "upload" ? "block h-full" : "hidden"}>
+            <UploadSection
+              isCollapsed={false}
+              cardCount={cardCount}
+              mobile={true}
+              onUploadComplete={() => setActiveMobileView("preview")}
+            />
+          </div>
+
+          <div className={activeMobileView === "preview" ? "block h-full" : "hidden"}>
+            <Suspense fallback={<PageViewLoader />}>
+              <PageView
+                loadingMap={loadingMap}
+                ensureProcessed={ensureProcessed}
+                cards={allCards}
+                images={allImages}
+                mobile={true}
+                active={activeMobileView === "preview"}
+              />
+            </Suspense>
+          </div>
+
+          <div className={activeMobileView === "settings" ? "block h-full" : "hidden"}>
+            <PageSettingsControls
+              reprocessSelectedImages={reprocessSelectedImages}
+              cancelProcessing={cancelProcessing}
+              cards={allCards}
+              mobile={true}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop Layout
   return (
-    <div className="flex flex-row h-screen justify-between overflow-hidden">
+    <div className="flex flex-row h-[100dvh] justify-between overflow-hidden">
       <div
-        className="relative transition-all duration-200 ease-in-out z-30"
+        className="relative transition-all duration-200 ease-in-out z-30 h-full overflow-hidden"
         style={{
           width: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
-          minWidth: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
+          minWidth: isUploadPanelCollapsed ? 60 : 320,
         }}
       >
         <UploadSection
           isCollapsed={isUploadPanelCollapsed}
-          onToggle={toggleUploadPanel}
           cardCount={cardCount}
         />
       </div>
@@ -225,14 +358,17 @@ export default function ProxyBuilderPage() {
         side="left"
       />
 
-      <Suspense fallback={<PageViewLoader />}>
-        <PageView
-          loadingMap={loadingMap}
-          ensureProcessed={ensureProcessed}
-          images={allImages}
-          cards={allCards}
-        />
-      </Suspense>
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-hidden relative h-full">
+        <Suspense fallback={<PageViewLoader />}>
+          <PageView
+            loadingMap={loadingMap}
+            ensureProcessed={ensureProcessed}
+            cards={allCards}
+            images={allImages}
+          />
+        </Suspense>
+      </div>
       <ResizeHandle
         isCollapsed={isSettingsPanelCollapsed}
         onToggle={toggleSettingsPanel}
@@ -245,9 +381,10 @@ export default function ProxyBuilderPage() {
         side="right"
       />
       <div
+        className="h-full overflow-hidden"
         style={{
           width: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
-          minWidth: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
+          minWidth: isSettingsPanelCollapsed ? 60 : 320,
           transition: "width 0.2s ease-in-out",
         }}
       >
@@ -260,3 +397,4 @@ export default function ProxyBuilderPage() {
     </div >
   );
 }
+

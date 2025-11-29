@@ -120,6 +120,13 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
     const filteredAndSortedCards = useMemo(() => {
         if (filteredCards.length === 0) return filteredCards;
 
+
+
+        // If manual sort, just return filtered cards (preserves array order from drag)
+        // But respect the sortOrder (asc/desc)
+        if (sortBy === "manual") {
+            return sortOrder === "desc" ? [...filteredCards].reverse() : filteredCards;
+        }
         // Create a copy for sorting
         const result = [...filteredCards];
 
@@ -184,7 +191,6 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
                     comparison = rA - rB;
                     break;
                 }
-                case "manual":
                 default:
                     comparison = a.order - b.order;
                     break;

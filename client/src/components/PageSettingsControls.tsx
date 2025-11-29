@@ -14,6 +14,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
+  rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { SettingsPanel } from "./SettingsPanel/SettingsPanel";
 import { LayoutSection } from "./SettingsPanel/sections/LayoutSection";
@@ -30,8 +31,11 @@ import {
   LayoutTemplate,
   ScanLine,
   Settings,
+  ChevronsDown,
+  ChevronsUp,
 } from "lucide-react";
-import { Tooltip } from "flowbite-react";
+import { AutoTooltip } from "./AutoTooltip";
+import { PullToRefresh } from "./PullToRefresh";
 
 import type { CardOption } from "../../../shared/types";
 
@@ -41,20 +45,31 @@ type PageSettingsControlsProps = {
   >["reprocessSelectedImages"];
   cancelProcessing: ReturnType<typeof useImageProcessing>["cancelProcessing"];
   cards: CardOption[]; // Passed from parent to avoid redundant DB query
+  mobile?: boolean;
 };
+
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+
+// ...
 
 export function PageSettingsControls({
   reprocessSelectedImages,
   cancelProcessing,
   cards,
+  mobile,
 }: PageSettingsControlsProps) {
   const settingsPanelState = useSettingsStore((state) => state.settingsPanelState);
   const setPanelOrder = useSettingsStore((state) => state.setPanelOrder);
   const togglePanelCollapse = useSettingsStore(
     (state) => state.togglePanelCollapse
   );
+  const collapseAllPanels = useSettingsStore((state) => state.collapseAllPanels);
+  const expandAllPanels = useSettingsStore((state) => state.expandAllPanels);
   const isCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
   const toggleSettingsPanel = useSettingsStore((state) => state.toggleSettingsPanel);
+
+  const isLandscape = useMediaQuery("(orientation: landscape)");
+  const showMobileLandscapeLayout = mobile && isLandscape;
 
   const scrollPosRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -101,6 +116,7 @@ export function PageSettingsControls({
             isOpen={isOpen}
             onToggle={onToggle}
             icon={LayoutTemplate}
+            mobile={mobile}
           >
             <LayoutSection />
           </SettingsPanel>
@@ -114,6 +130,7 @@ export function PageSettingsControls({
             isOpen={isOpen}
             onToggle={onToggle}
             icon={Droplet}
+            mobile={mobile}
           >
             <BleedSection
               reprocessSelectedImages={reprocessSelectedImages}
@@ -131,6 +148,7 @@ export function PageSettingsControls({
             isOpen={isOpen}
             onToggle={onToggle}
             icon={ScanLine}
+            mobile={mobile}
           >
             <GuidesSection />
           </SettingsPanel>
@@ -144,6 +162,7 @@ export function PageSettingsControls({
             isOpen={isOpen}
             onToggle={onToggle}
             icon={Grid3X3}
+            mobile={mobile}
           >
             <CardSection />
           </SettingsPanel>
@@ -157,6 +176,7 @@ export function PageSettingsControls({
             isOpen={isOpen}
             onToggle={onToggle}
             icon={Filter}
+            mobile={mobile}
           >
             <FilterSortSection />
           </SettingsPanel>
@@ -170,6 +190,7 @@ export function PageSettingsControls({
             isOpen={isOpen}
             onToggle={onToggle}
             icon={Settings}
+            mobile={mobile}
           >
             <ApplicationSection cards={cards} />
           </SettingsPanel>
@@ -216,7 +237,7 @@ export function PageSettingsControls({
           }
 
           return (
-            <Tooltip key={id} content={label} placement="left">
+            <AutoTooltip key={id} content={label} placement="left" mobile={mobile}>
               <button
                 onClick={() => {
                   toggleSettingsPanel();
@@ -231,9 +252,9 @@ export function PageSettingsControls({
                 }}
                 className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition-colors"
               >
-                <Icon className="size-6" />
+                <Icon className="size-8" />
               </button>
-            </Tooltip>
+            </AutoTooltip>
           );
         })}
       </div>
@@ -241,30 +262,94 @@ export function PageSettingsControls({
   }
 
   return (
-    <div
+    <PullToRefresh
       ref={scrollContainerRef}
       onScroll={(e) => {
         scrollPosRef.current = e.currentTarget.scrollTop;
       }}
-      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 overflow-y-auto overflow-x-hidden border-l border-gray-200 dark:border-gray-600"
+      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600"
     >
-      <h2 className="text-2xl font-semibold dark:text-white p-4 pb-2">
-        Settings
-      </h2>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={settingsPanelState.order}
-          strategy={verticalListSortingStrategy}
+      <div className={`sticky top-0 z-20 bg-gray-100 dark:bg-gray-700 flex items-center justify-between p-4 shrink-0 border-b border-gray-300 dark:border-gray-600 ${mobile ? 'landscape:p-2 landscape:min-h-[50px]' : ''}`}>
+        <h2 className={`text-2xl font-semibold dark:text-white ${mobile ? 'landscape:text-lg landscape:hidden' : ''}`}>
+          Settings
+        </h2>
+        <div className="ml-auto">
+          <AutoTooltip mobile={mobile} content={
+            (() => {
+              const allPanels = settingsPanelState.order;
+              const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
+              const totalCount = allPanels.length;
+              const shouldExpand = collapsedCount >= totalCount / 2;
+              return shouldExpand ? "Expand All" : "Collapse All";
+            })()
+          } placement="bottom-end">
+            <button
+              onClick={() => {
+                const allPanels = settingsPanelState.order;
+                const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
+                const totalCount = allPanels.length;
+                const shouldExpand = collapsedCount >= totalCount / 2;
+
+                if (shouldExpand) {
+                  expandAllPanels();
+                } else {
+                  collapseAllPanels();
+                }
+              }}
+              className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition-colors"
+              aria-label={
+                (() => {
+                  const allPanels = settingsPanelState.order;
+                  const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
+                  const totalCount = allPanels.length;
+                  const shouldExpand = collapsedCount >= totalCount / 2;
+                  return shouldExpand ? "Expand all sections" : "Collapse all sections";
+                })()
+              }
+            >
+              {(() => {
+                const allPanels = settingsPanelState.order;
+                const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
+                const totalCount = allPanels.length;
+                const shouldExpand = collapsedCount >= totalCount / 2;
+                return shouldExpand ? (
+                  <ChevronsDown className="size-6" />
+                ) : (
+                  <ChevronsUp className="size-6" />
+                );
+              })()}
+            </button>
+          </AutoTooltip>
+        </div>
+      </div>
+
+      <div className={`flex-1 ${mobile ? "mobile-scrollbar-hide pb-20 landscape:pb-4" : ""}`}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          <div className="flex flex-col">
-            {settingsPanelState.order.map((id) => renderSection(id))}
-          </div>
-        </SortableContext>
-      </DndContext>
-    </div>
+          <SortableContext
+            items={settingsPanelState.order}
+            strategy={showMobileLandscapeLayout ? rectSortingStrategy : verticalListSortingStrategy}
+          >
+            {showMobileLandscapeLayout ? (
+              <div className="flex flex-row gap-4 items-start p-4">
+                <div className="flex flex-col flex-1 gap-4">
+                  {settingsPanelState.order.filter((_, i) => i % 2 === 0).map((id) => renderSection(id))}
+                </div>
+                <div className="flex flex-col flex-1 gap-4">
+                  {settingsPanelState.order.filter((_, i) => i % 2 !== 0).map((id) => renderSection(id))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {settingsPanelState.order.map((id) => renderSection(id))}
+              </div>
+            )}
+          </SortableContext>
+        </DndContext>
+      </div>
+    </PullToRefresh>
   );
 }
