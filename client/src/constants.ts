@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 const fromEnv = import.meta.env.VITE_API_BASE;
 
 export const API_BASE =

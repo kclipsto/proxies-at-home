@@ -14,8 +14,9 @@ import { useState, useEffect } from "react";
 import { API_BASE } from "../constants";
 import { db } from "../db";
 import { useArtworkModalStore } from "../store";
-import type { ScryfallCard } from "../types/Card";
+import type { ScryfallCard } from "../../../shared/types";
 import { ArrowLeft } from "lucide-react";
+import { useRef } from "react";
 
 export function ArtworkModal() {
   const [isGettingMore, setIsGettingMore] = useState(false);
@@ -102,82 +103,167 @@ export function ArtworkModal() {
     }
   }
 
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (isModalOpen && contentRef.current) {
+        if (!contentRef.current.contains(e.target as Node)) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeModal();
+        }
+      }
+    };
+
+    if (isModalOpen) {
+      window.addEventListener("click", handler, true);
+    }
+
+    return () => window.removeEventListener("click", handler, true);
+  }, [isModalOpen, closeModal]);
+
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // Handle Pinch-to-Zoom on Grid
+  const zoomRef = useRef(zoomLevel);
+  useEffect(() => {
+    zoomRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  useEffect(() => {
+    const container = gridRef.current;
+    if (!container) return;
+
+    let initialDistance = 0;
+    let initialZoom = 1;
+
+    const getDistance = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.stopPropagation();
+        initialDistance = getDistance(e.touches);
+        initialZoom = zoomRef.current;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault(); // Prevent default browser zoom
+        e.stopPropagation();
+        const currentDistance = getDistance(e.touches);
+        if (initialDistance > 0) {
+          const scale = currentDistance / initialDistance;
+          const newZoom = Math.min(Math.max(0.5, initialZoom * scale), 3);
+          setZoomLevel(newZoom);
+        }
+      }
+    };
+
+    container.addEventListener("touchstart", handleTouchStart, { passive: false, capture: true });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
+
+    return () => {
+      container.removeEventListener("touchstart", handleTouchStart, { capture: true });
+      container.removeEventListener("touchmove", handleTouchMove, { capture: true });
+    };
+  }, []);
+
   return (
-    <Modal show={isModalOpen} onClose={closeModal} size="4xl">
-      <ModalHeader>
-        {previewCardData && (
-          <Button
-            size="xs"
-            className="mr-2"
-            onClick={() => setPreviewCardData(null)}
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-        )}
-        Select Artwork for {displayData.name}
-      </ModalHeader>
-      <ModalBody>
-        <div className="sticky top-0 z-10 bg-white dark:bg-gray-700 py-4">
-          <div className="flex gap-2 mb-4">
-            <TextInput
-              className="flex-grow"
-              type="text"
-              placeholder="Replace with a different card..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleSearch();
-                }
-              }}
-            />
-            <Button onClick={handleSearch}>Search</Button>
-          </div>
-          {modalCard && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="apply-to-all"
-                checked={applyToAll}
-                onChange={(e) => setApplyToAll(e.target.checked)}
-              />
-              <Label htmlFor="apply-to-all">
-                Apply to all cards named "{modalCard?.name}"
-              </Label>
-            </div>
-          )}
-        </div>
-
-        {modalCard && (
-          <>
-            <div className="grid grid-cols-3 md:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pt-4">
-              {(displayData.imageUrls ?? []).map((pngUrl, i) => (
-                <img
-                  key={i}
-                  src={pngUrl}
-                  loading="lazy"
-                  className={`w-full cursor-pointer border-4 ${
-                    displayData.id === pngUrl
-                      ? "border-green-500"
-                      : "border-transparent"
-                  }`}
-                  onClick={() => handleSelectArtwork(pngUrl)}
-                />
-              ))}
-            </div>
-
+    <Modal show={isModalOpen} onClose={closeModal} size="4xl" dismissible>
+      <div ref={contentRef}>
+        <ModalHeader>
+          {previewCardData && (
             <Button
-              className="w-full mt-4"
-              color="blue"
-              onClick={getMorePrints}
-              disabled={isGettingMore}
+              size="sm"
+              className="mr-2"
+              onClick={() => setPreviewCardData(null)}
             >
-              {isGettingMore ? "Loading prints..." : "Get All Prints"}
+              <ArrowLeft className="size-5" />
             </Button>
-          </>
-        )}
-      </ModalBody>
+          )}
+          Select Artwork for {displayData.name}
+        </ModalHeader>
+        <ModalBody>
+          <div className="sticky top-0 z-10 bg-white dark:bg-gray-700 py-4">
+            <div className="flex gap-2 mb-4">
+              <TextInput
+                className="flex-grow"
+                sizing="lg"
+                type="text"
+                placeholder="Replace with a different card..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSearch();
+                  }
+                }}
+              />
+              <Button size="lg" onClick={handleSearch}>Search</Button>
+            </div>
+            {modalCard && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="apply-to-all"
+                  checked={applyToAll}
+                  onChange={(e) => setApplyToAll(e.target.checked)}
+                  className="size-5"
+                />
+                <Label htmlFor="apply-to-all" className="text-base">
+                  Apply to all cards named "{modalCard?.name}"
+                </Label>
+              </div>
+            )}
+          </div>
+
+          {modalCard && (
+            <>
+              <div
+                className="max-h-[60vh] overflow-y-auto pt-4"
+                style={{ touchAction: "pan-x pan-y" }}
+                ref={gridRef}
+              >
+                <div
+                  className="grid grid-cols-2 md:grid-cols-3 gap-4"
+                  style={{ zoom: zoomLevel }}
+                >
+                  {(displayData.imageUrls ?? []).map((pngUrl, i) => (
+                    <img
+                      key={i}
+                      src={pngUrl}
+                      loading="lazy"
+                      className={`w-full cursor-pointer border-4 ${displayData.id === pngUrl
+                        ? "border-green-500"
+                        : "border-transparent"
+                        }`}
+                      onClick={() => handleSelectArtwork(pngUrl)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                className="w-full mt-4"
+                color="blue"
+                size="xl"
+                onClick={getMorePrints}
+                disabled={isGettingMore}
+              >
+                {isGettingMore ? "Loading prints..." : "Get All Prints"}
+              </Button>
+            </>
+          )}
+        </ModalBody>
+      </div>
     </Modal>
   );
 }

@@ -1,16 +1,17 @@
-import React, { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { useOnScreen } from "../hooks/useOnScreen";
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
+import { Priority } from "../helpers/imageProcessor";
 
 type Props = {
   card: CardOption;
   state: "idle" | "loading" | "error" | undefined;
   hasImage: boolean;
-  ensureProcessed: (card: CardOption) => Promise<void>;
+  ensureProcessed: (card: CardOption, priority?: Priority) => Promise<void>;
   children: React.ReactNode;
 };
 
-export default function CardCellLazy({
+const CardCellLazy = memo(function CardCellLazy({
   card,
   state,
   hasImage,
@@ -20,11 +21,11 @@ export default function CardCellLazy({
   const { ref, visible } = useOnScreen<HTMLDivElement>("400px");
 
   useEffect(() => {
-    if (visible) void ensureProcessed(card);
-  }, [visible, card.uuid, card.imageId, ensureProcessed]);
+    if (visible) void ensureProcessed(card, Priority.HIGH);
+  }, [visible, card, ensureProcessed]);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative w-full h-full ${!hasImage ? "bg-black" : ""}`}>
       {!hasImage && state !== "error" && (
         <div className="absolute inset-0 grid place-items-center z-10">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-transparent" />
@@ -39,11 +40,13 @@ export default function CardCellLazy({
       )}
       <div
         onClick={() => {
-          if (state === "error") void ensureProcessed(card);
+          if (state === "error") void ensureProcessed(card, Priority.HIGH);
         }}
       >
         {children}
       </div>
     </div>
   );
-}
+});
+
+export default CardCellLazy;

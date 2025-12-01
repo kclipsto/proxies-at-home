@@ -21,6 +21,8 @@ type Store = {
   setBleedEdgeWidth: (value: number) => void;
   bleedEdge: boolean;
   setBleedEdge: (value: boolean) => void;
+  darkenNearBlack: boolean;
+  setDarkenNearBlack: (value: boolean) => void;
   guideColor: string;
   setGuideColor: (value: string) => void;
   guideWidth: number;
@@ -36,20 +38,50 @@ type Store = {
   setCardPositionY: (mm: number) => void;
   dpi: number;
   setDpi: (value: number) => void;
+  cutLineStyle: 'none' | 'edges' | 'full';
+  setCutLineStyle: (value: 'none' | 'edges' | 'full') => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
+  settingsPanelState: {
+    order: string[];
+    collapsed: Record<string, boolean>;
+  };
+  setPanelOrder: (order: string[]) => void;
+  togglePanelCollapse: (id: string) => void;
+  expandAllPanels: () => void;
+  collapseAllPanels: () => void;
+  settingsPanelWidth: number;
+  setSettingsPanelWidth: (width: number) => void;
+  isSettingsPanelCollapsed: boolean;
+  toggleSettingsPanel: () => void;
+  isUploadPanelCollapsed: boolean;
+  toggleUploadPanel: () => void;
+  uploadPanelWidth: number;
+  setUploadPanelWidth: (width: number) => void;
+  // Sort & Filter
+  sortBy: "name" | "type" | "cmc" | "color" | "manual" | "rarity";
+  setSortBy: (value: "manual" | "name" | "type" | "cmc" | "color" | "rarity") => void;
+  sortOrder: "asc" | "desc";
+  setSortOrder: (value: "asc" | "desc") => void;
+  filterManaCost: number[];
+  setFilterManaCost: (value: number[]) => void;
+  filterColors: string[];
+  setFilterColors: (value: string[]) => void;
+  filterMatchType: "partial" | "exact";
+  setFilterMatchType: (value: "partial" | "exact") => void;
 };
 
 const defaultPageSettings = {
-  pageSizeUnit: "in",
-  pageOrientation: "portrait",
-  pageSizePreset: "Letter",
+  pageSizeUnit: "in" as "in" | "mm",
+  pageOrientation: "portrait" as "portrait" | "landscape",
+  pageSizePreset: "Letter" as LayoutPreset,
   pageWidth: 8.5,
   pageHeight: 11,
   columns: 3,
   rows: 3,
   bleedEdgeWidth: 1,
   bleedEdge: true,
+  darkenNearBlack: true,
   guideColor: "#39FF14",
   guideWidth: 0.5,
   cardSpacingMm: 0,
@@ -57,8 +89,22 @@ const defaultPageSettings = {
   cardPositionY: 0,
   zoom: 1,
   dpi: 900,
+  cutLineStyle: "full" as "full" | "edges" | "none",
   globalLanguage: "en",
-} as Store;
+  settingsPanelState: {
+    order: ["layout", "bleed", "guides", "card", "filterSort", "application"],
+    collapsed: {},
+  },
+  settingsPanelWidth: 320,
+  isSettingsPanelCollapsed: false,
+  uploadPanelWidth: 320,
+  isUploadPanelCollapsed: false,
+  sortBy: "manual" as "name" | "type" | "cmc" | "color" | "manual" | "rarity",
+  sortOrder: "asc" as "asc" | "desc",
+  filterManaCost: [] as number[],
+  filterColors: [] as string[],
+  filterMatchType: "partial" as "partial" | "exact",
+};
 
 const layoutPresetsSizes: Record<
   LayoutPreset,
@@ -105,6 +151,7 @@ export const useSettingsStore = create<Store>()(
       setRows: (rows) => set({ rows }),
       setBleedEdgeWidth: (value) => set({ bleedEdgeWidth: value }),
       setBleedEdge: (value) => set({ bleedEdge: value }),
+      setDarkenNearBlack: (value) => set({ darkenNearBlack: value }),
       setGuideColor: (value) => set({ guideColor: value }),
       setGuideWidth: (value) => set({ guideWidth: value }),
       setZoom: (value) => set({ zoom: value }),
@@ -112,13 +159,72 @@ export const useSettingsStore = create<Store>()(
       setCardPositionX: (mm) => set({ cardPositionX: mm }),
       setCardPositionY: (mm) => set({ cardPositionY: mm }),
       setDpi: (dpi) => set({ dpi }),
+      setCutLineStyle: (value) => set({ cutLineStyle: value }),
       setGlobalLanguage: (lang) => set({ globalLanguage: lang }),
+      setPanelOrder: (order) =>
+        set((state) => ({
+          settingsPanelState: { ...state.settingsPanelState, order },
+        })),
+      togglePanelCollapse: (id) =>
+        set((state) => ({
+          settingsPanelState: {
+            ...state.settingsPanelState,
+            collapsed: {
+              ...state.settingsPanelState.collapsed,
+              [id]: !state.settingsPanelState.collapsed[id],
+            },
+          },
+        })),
+      expandAllPanels: () =>
+        set((state) => ({
+          settingsPanelState: {
+            ...state.settingsPanelState,
+            collapsed: state.settingsPanelState.order.reduce(
+              (acc, key) => ({ ...acc, [key]: false }),
+              {}
+            ),
+          },
+        })),
+      collapseAllPanels: () =>
+        set((state) => ({
+          settingsPanelState: {
+            ...state.settingsPanelState,
+            collapsed: state.settingsPanelState.order.reduce(
+              (acc, key) => ({ ...acc, [key]: true }),
+              {}
+            ),
+          },
+        })),
+      setSettingsPanelWidth: (width) => set({ settingsPanelWidth: width }),
+      toggleSettingsPanel: () =>
+        set((state) => ({
+          isSettingsPanelCollapsed: !state.isSettingsPanelCollapsed,
+        })),
+      toggleUploadPanel: () =>
+        set((state) => ({
+          isUploadPanelCollapsed: !state.isUploadPanelCollapsed,
+        })),
+      uploadPanelWidth: 320,
+      setUploadPanelWidth: (width) => set({ uploadPanelWidth: width }),
+
+      // Sort & Filter
+      sortBy: "manual",
+      setSortBy: (value) => set({ sortBy: value }),
+      sortOrder: "asc",
+      setSortOrder: (value) => set({ sortOrder: value }),
+      filterManaCost: [],
+      setFilterManaCost: (value) => set({ filterManaCost: value }),
+      filterColors: [],
+      setFilterColors: (value) => set({ filterColors: value }),
+      filterMatchType: "partial",
+      setFilterMatchType: (value) => set({ filterMatchType: value }),
+
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 2,
+      version: 4, // Increment version for new fields
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -135,7 +241,19 @@ export const useSettingsStore = create<Store>()(
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { pageWidth, pageHeight, pageSizeUnit, ...rest } =
             persistedState as Partial<Store>;
-          return rest;
+          return { ...defaultPageSettings, ...rest };
+        }
+
+        if (version < 3) {
+          return { ...defaultPageSettings, ...(persistedState as Partial<Store>) };
+        }
+
+        if (version < 4) {
+          return {
+            ...defaultPageSettings,
+            ...(persistedState as Partial<Store>),
+            sortBy: "manual",
+          };
         }
 
         return persistedState as Partial<Store>;
@@ -163,5 +281,4 @@ export const useSettingsStore = create<Store>()(
       },
     }
   )
-
 );

@@ -1,15 +1,6 @@
-export type CardInfo = {
-  name: string;
-  set?: string;
-  number?: string;
-};
+import type { CardInfo } from "../../../shared/types";
 
-export type CardInfoWithQuantity = {
-  info: CardInfo;
-  quantity: number;
-};
-
-export function extractCardInfo(input: string): CardInfo {
+export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
   let s = input.trim();
 
   s = s.replace(/^\s*\d+\s*x?\s+/i, "");
@@ -26,19 +17,40 @@ export function extractCardInfo(input: string): CardInfo {
 
   let setCode: string | undefined;
   let number: string | undefined;
-  const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
-  const m = s.match(setNumTail);
-  if (m) {
-    setCode = m[1]?.toLowerCase();
-    number = m[2] ?? undefined;
-    s = s.replace(setNumTail, "").trim();
+
+  // Check for [Set] {Number} format (e.g. [FIC] {7})
+  const setNumBrackets = /\s*\[([a-z0-9]+)\]\s*\{([a-z0-9]+)\}\s*$/i;
+  const mBrackets = s.match(setNumBrackets);
+  if (mBrackets) {
+    setCode = mBrackets[1]?.toLowerCase();
+    number = mBrackets[2];
+    s = s.replace(setNumBrackets, "").trim();
   }
 
-  return { name: s, set: setCode, number };
+  // Check for {Number} only format (e.g. Name {123}) - User requested to drop number
+  const numBracketsOnly = /\s*\{([a-z0-9]+)\}\s*$/i;
+  const mNumOnly = s.match(numBracketsOnly);
+  if (mNumOnly) {
+    // Just remove it
+    s = s.replace(numBracketsOnly, "").trim();
+  }
+
+  // Check for (Set) Number format (e.g. (ABC) 123)
+  if (!setCode && !number) {
+    const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
+    const m = s.match(setNumTail);
+    if (m) {
+      setCode = m[1]?.toLowerCase();
+      number = m[2] ?? undefined;
+      s = s.replace(setNumTail, "").trim();
+    }
+  }
+
+  return { name: s, quantity, set: setCode, number };
 }
 
-export function parseDeckToInfos(deckText: string): CardInfoWithQuantity[] {
-  const infos: CardInfoWithQuantity[] = [];
+export function parseDeckToInfos(deckText: string): CardInfo[] {
+  const infos: CardInfo[] = [];
   deckText.split(/\r?\n/).forEach((line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -47,15 +59,16 @@ export function parseDeckToInfos(deckText: string): CardInfoWithQuantity[] {
     if (qtyMatch) {
       const count = parseInt(qtyMatch[1], 10);
       const rest = qtyMatch[2];
-      const info = extractCardInfo(rest);
-      infos.push({ info, quantity: count });
+      const info = extractCardInfo(rest, count);
+      infos.push(info);
     } else {
-      infos.push({ info: extractCardInfo(trimmed), quantity: 1 });
+      const info = extractCardInfo(trimmed);
+      infos.push(info);
     }
   });
   return infos;
 }
 
 export function cardKey(ci: CardInfo): string {
-  return `${ci.name.toLowerCase()}|${ci.set ?? ""}|${ci.number ?? ""}`;
+  return `${ci.name.toLowerCase()}|${(ci.set ?? "").toLowerCase()}|${ci.number ?? ""}`;
 }

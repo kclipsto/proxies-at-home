@@ -1,0 +1,111 @@
+import { useSettingsStore } from "@/store/settings";
+import { Checkbox, Label } from "flowbite-react";
+import { NumberInput } from "../../NumberInput";
+import { useNormalizedInput } from "@/hooks/useInputHooks";
+import { useImageProcessing } from "@/hooks/useImageProcessing";
+import { useEffect, useRef, useCallback } from "react";
+
+import type { CardOption } from "../../../../../shared/types";
+
+type Props = {
+    reprocessSelectedImages: ReturnType<typeof useImageProcessing>["reprocessSelectedImages"];
+    cancelProcessing: ReturnType<typeof useImageProcessing>["cancelProcessing"];
+    cards: CardOption[]; // Passed from parent to avoid redundant DB query
+};
+
+export function BleedSection({ reprocessSelectedImages, cancelProcessing, cards }: Props) {
+
+    const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+    const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+    const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
+    const setBleedEdgeWidth = useSettingsStore((state) => state.setBleedEdgeWidth);
+    const setBleedEdge = useSettingsStore((state) => state.setBleedEdge);
+    const setDarkenNearBlack = useSettingsStore((state) => state.setDarkenNearBlack);
+
+    const cardsRef = useRef(cards);
+    cardsRef.current = cards;
+
+    const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const debouncedReprocess = useCallback(
+        (newBleedWidth: number) => {
+            if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+            debounceTimeoutRef.current = setTimeout(() => {
+                reprocessSelectedImages(cardsRef.current, newBleedWidth);
+            }, 500);
+        },
+        [reprocessSelectedImages]
+    );
+
+    useEffect(() => {
+        return () => {
+            if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+        };
+    }, []);
+
+    const bleedEdgeInput = useNormalizedInput(
+        bleedEdgeWidth,
+        (value) => {
+            setBleedEdgeWidth(value);
+            debouncedReprocess(value);
+        },
+        { min: 0, max: 2 }
+    );
+
+
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <div className="flex justify-between items-center mb-2">
+                    <Label>Bleed Edge (mm)</Label>
+                    {bleedEdgeInput.warning && (
+                        <span className="text-xs text-red-500 animate-pulse">
+                            {bleedEdgeInput.warning}
+                        </span>
+                    )}
+                </div>
+                <NumberInput
+                    ref={bleedEdgeInput.inputRef}
+                    className="w-full"
+                    step={0.1}
+                    defaultValue={bleedEdgeInput.defaultValue}
+                    onChange={bleedEdgeInput.handleChange}
+                    onBlur={bleedEdgeInput.handleBlur}
+                    placeholder={bleedEdgeWidth.toString()}
+                    disabled={!bleedEdge}
+                />
+            </div>
+
+            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 -ml-2">
+                <Checkbox
+                    id="bleed-edge"
+                    checked={bleedEdge}
+                    onChange={(e) => {
+                        setBleedEdge(e.target.checked);
+                        if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+                        if (!e.target.checked) {
+                            cancelProcessing();
+                        }
+                        reprocessSelectedImages(
+                            cards,
+                            e.target.checked ? bleedEdgeWidth : 0
+                        );
+                    }}
+                />
+                <Label htmlFor="bleed-edge" className="flex-1 cursor-pointer">Enable Bleed Edge</Label>
+            </div>
+            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 -ml-2">
+                <Checkbox
+                    id="darken-near-black"
+                    checked={darkenNearBlack}
+                    onChange={(e) => {
+                        setDarkenNearBlack(e.target.checked);
+                    }}
+                />
+                <Label htmlFor="darken-near-black" className="flex-1 cursor-pointer">Darken Near-Black Pixels</Label>
+            </div>
+
+        </div>
+    );
+}

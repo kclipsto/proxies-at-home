@@ -1,18 +1,18 @@
 import { API_BASE } from "../constants";
+import {
+  toProxied as toProxiedBase,
+  fetchWithRetry as fetchWithRetryBase,
+  getBleedInPixels as getBleedInPixelsBase,
+} from "./imageProcessing";
 
 const DPI = 300;
-const IN = (inches: number) => Math.round(inches * DPI);
 
 export function toProxied(url: string) {
-  if (!url) return url;
-  if (url.startsWith("data:")) return url;
-  const prefix = `${API_BASE}/api/cards/images/proxy?url=`;
-  if (url.startsWith(prefix)) return url;
-  return `${prefix}${encodeURIComponent(url)}`;
+  return toProxiedBase(url, API_BASE);
 }
 
 export function getBleedInPixels(bleedEdgeWidth: number, unit: string): number {
-  return unit === "mm" ? IN(bleedEdgeWidth / 25.4) : IN(bleedEdgeWidth);
+  return getBleedInPixelsBase(bleedEdgeWidth, unit, DPI);
 }
 
 export function getLocalBleedImageUrl(originalUrl: string): string {
@@ -29,7 +29,9 @@ export async function urlToDataUrl(url: string): Promise<string> {
 export function pngToNormal(pngUrl: string) {
   try {
     const u = new URL(pngUrl);
-    u.pathname = u.pathname.replace("/png/", "/normal/").replace(/\.png$/i, ".jpg");
+    if (u.hostname.endsWith("scryfall.io")) {
+      u.pathname = u.pathname.replace("/png/", "/normal/").replace(/\.png$/i, ".jpg");
+    }
     return u.toString();
   } catch {
     return pngUrl;
@@ -37,26 +39,5 @@ export function pngToNormal(pngUrl: string) {
 }
 
 export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250): Promise<Response> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        return response;
-      }
-      if (response.status >= 400 && response.status < 500) {
-        throw new Error(`Client error: ${response.status} ${response.statusText}`);
-      }
-    } catch (error) {
-      if (i === retries - 1) throw error;
-    }
-    
-    const exponentialDelay = baseDelay * (2 ** i);
-    const jitter = Math.random() * baseDelay;
-    const totalDelay = exponentialDelay + jitter;
-    
-    console.log(`Fetch failed for ${url}. Retrying in ${Math.round(totalDelay)}ms... (Attempt ${i + 1}/${retries})`);
-    
-    await new Promise(res => setTimeout(res, totalDelay));
-  }
-  throw new Error(`Fetch failed for ${url} after ${retries} attempts.`);
+  return fetchWithRetryBase(url, retries, baseDelay);
 }

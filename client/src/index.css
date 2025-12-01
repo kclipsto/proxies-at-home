@@ -4,30 +4,120 @@
 
 @source '../.flowbite-react/class-list.json';
 
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 button {
   cursor: pointer;
 }
 
+button:active {
+  transform: translateY(2px);
+}
+
 /* Custom Scrollbar Styles */
-/* For Webkit browsers (Chrome, Safari) */
+/* Light Mode (Default) */
 ::-webkit-scrollbar {
-  width: 8px; /* width of the scrollbar */
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #2d3748; /* color of the track (dark gray) */
+  background: #f1f5f9;
+  /* slate-100 */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4a5568; /* color of the scroll thumb (lighter dark gray) */
+  background: #cbd5e1;
+  /* slate-300 */
   border-radius: 10px;
+}
+
+::-webkit-scrollbar-corner {
+  background: #f1f5f9;
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-track {
+    background: #2d3748;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: #2d3748;
+  }
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #2d3748;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4a5568;
+}
+
+.dark ::-webkit-scrollbar-corner {
+  background: #2d3748;
 }
 
 /* For Firefox */
 /* Note: Firefox scrollbar styling is more limited */
 /* You can target the scrollbar-color property */
-/* scrollbar-color: #4a5568 #2d3748; */ /* thumb color track color */
+/* scrollbar-color: #4a5568 #2d3748; */
+/* thumb color track color */
+
+/* Settings Panel Scrollbar Gutter */
+.settings-panel-scroll {
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 768px) {
+
+  /* Increase scrollbar size for better touch targets on mobile */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  .mobile-scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Tooltip Visibility Fixes */
+/* Use drop-shadow to simulate a border around the tooltip AND its arrow */
+[role="tooltip"] {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.2)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.dark [role="tooltip"] {
+  /* Darker background (gray-900) for contrast against gray-700 header */
+  background-color: #111827 !important;
+  /* Light border-like shadow for visibility in dark mode */
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.3)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+}
+
+.dark [role="tooltip"]>[data-testid="flowbite-tooltip-arrow"] {
+  /* Ensure arrow matches the new background color */
+  background-color: #111827 !important;
+}
+
 
 @keyframes sheen-flow {
   100% {
@@ -36,14 +126,64 @@ button {
 }
 
 .animate-sheen {
-  background-color: rgb(14, 159, 110); /* bg-green-500 */
-  background-image: linear-gradient(
-    to right,
-    transparent 10%,
-    rgba(255, 255, 255, 0.4) 50%,
-    transparent 90%
-  );
-  /* background-repeat: no-repeat; */
+  background-color: rgb(14, 159, 110);
+  /* bg-green-500 */
+  background-image: linear-gradient(to right,
+      transparent 10%,
+      rgba(255, 255, 255, 0.4) 50%,
+      transparent 90%);
   background-size: 50% 100%;
   animation: sheen-flow 1.5s linear infinite;
+}
+
+/* Zoom Slider Thumb Styling */
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 32px;
+  height: 16px;
+  background: #2563eb;
+  /* blue-600 */
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.zoom-slider::-moz-range-thumb {
+  width: 32px;
+  height: 16px;
+  background: #2563eb;
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: none;
+}
+
+@media (max-width: 768px) {
+  .zoom-slider::-webkit-slider-thumb {
+    width: 48px;
+    height: 24px;
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 48px;
+    height: 24px;
+  }
+}
+
+/* Color Input Styling */
+.color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 0.5rem;
+  /* rounded-lg */
+}
+
+.color-input::-moz-color-swatch {
+  border: none;
+  border-radius: 0.5rem;
+  /* rounded-lg */
 }

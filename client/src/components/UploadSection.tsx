@@ -5,8 +5,8 @@ import fullLogo from "@/assets/fullLogo.png";
 import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
 import {
   cardKey,
+  extractCardInfo,
   parseDeckToInfos,
-  type CardInfo,
 } from "@/helpers/CardInfoHelper";
 import {
   getMpcImageUrl,
@@ -14,21 +14,23 @@ import {
   parseMpcText,
   tryParseMpcSchemaXml,
 } from "@/helpers/Mpc";
-import { useCardsStore, useLoadingStore, useSettingsStore } from "@/store";
-import type { CardOption, ScryfallCard } from "@/types/Card";
+import { useCardsStore } from "@/store";
+import { useLoadingStore } from "@/store/loading";
+import { useSettingsStore } from "@/store/settings";
+import type { CardOption, ScryfallCard } from "../../../shared/types";
 import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
 import {
   Button,
-  HelperText,
   HR,
-  List,
-  ListItem,
   Select,
   Textarea,
-  Tooltip,
 } from "flowbite-react";
-import { ExternalLink, HelpCircle } from "lucide-react";
+import { ExternalLink, HelpCircle, Download, MousePointerClick, Move, Copy, Upload } from "lucide-react";
+import { createPortal } from "react-dom";
+import { AutoTooltip } from "./AutoTooltip";
+import { PullToRefresh } from "./PullToRefresh";
+import type { CardInfo } from "../../../shared/types";
 
 async function readText(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -38,17 +40,29 @@ async function readText(file: File): Promise<string> {
   });
 }
 
-export function UploadSection() {
+type Props = {
+  isCollapsed?: boolean;
+  cardCount: number; // Passed from parent to avoid redundant DB query
+  mobile?: boolean;
+  onUploadComplete?: () => void;
+};
+
+export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete }: Props) {
   const [deckText, setDeckText] = useState("");
+  // Controller for fetches
   const fetchController = useRef<AbortController | null>(null);
+  // Controller for background enrichment tasks
+  const enrichmentController = useRef<AbortController | null>(null);
 
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const setLoadingMessage = useLoadingStore((state) => state.setLoadingMessage);
 
   const globalLanguage = useSettingsStore((s) => s.globalLanguage ?? "en");
   const setGlobalLanguage = useSettingsStore(
-    (s) => s.setGlobalLanguage ?? (() => {})
+    (s) => s.setGlobalLanguage ?? (() => { })
   );
+
+
 
   async function addUploadedFiles(
     files: FileList,
@@ -61,7 +75,8 @@ export function UploadSection() {
     > = [];
 
     for (const file of fileArray) {
-      const imageId = await addCustomImage(file);
+      const suffix = opts.hasBakedBleed ? "-mpc" : "-std";
+      const imageId = await addCustomImage(file, suffix);
       cardsToAdd.push({
         name: inferCardNameFromFilename(file.name) || `Custom Art`,
         imageId: imageId,
@@ -72,6 +87,7 @@ export function UploadSection() {
 
     if (cardsToAdd.length > 0) {
       await addCards(cardsToAdd);
+      enrichCardsMetadata(cardsToAdd);
     }
   }
 
@@ -84,6 +100,7 @@ export function UploadSection() {
       const files = e.target.files;
       if (files && files.length) {
         await addUploadedFiles(files, { hasBakedBleed: true });
+        onUploadComplete?.();
       }
     } finally {
       if (e.target) e.target.value = "";
@@ -100,6 +117,7 @@ export function UploadSection() {
       const files = e.target.files;
       if (files && files.length) {
         await addUploadedFiles(files, { hasBakedBleed: false });
+        onUploadComplete?.();
       }
     } finally {
       if (e.target) e.target.value = "";
@@ -122,18 +140,23 @@ export function UploadSection() {
       > = [];
 
       for (const it of items) {
-        for (let i = 0; i < (it.qty || 1); i++) {
-          const name =
-            it.name ||
-            (it.filename
-              ? inferCardNameFromFilename(it.filename)
-              : "Custom Art");
+        const qty = it.qty || 1;
+        // Clean the name and extract set/number if present
+        const rawName = it.name || (it.filename ? inferCardNameFromFilename(it.filename) : "Custom Art");
+        const info = extractCardInfo(rawName);
+        const name = info.name;
 
-          const mpcUrl = getMpcImageUrl(it.frontId);
-          const imageUrls = mpcUrl ? [mpcUrl] : [];
-          const imageId = await addRemoteImage(imageUrls);
+        const mpcUrl = getMpcImageUrl(it.frontId);
+        const imageUrls = mpcUrl ? [mpcUrl] : [];
+
+        // Add image once with the full quantity count
+        const imageId = await addRemoteImage(imageUrls, qty);
+
+        for (let i = 0; i < qty; i++) {
           cardsToAdd.push({
             name,
+            set: info.set,
+            number: info.number,
             imageId: imageId,
             isUserUpload: true,
             hasBakedBleed: true,
@@ -143,9 +166,112 @@ export function UploadSection() {
 
       if (cardsToAdd.length > 0) {
         await addCards(cardsToAdd);
+        useSettingsStore.getState().setSortBy("manual");
+        // Enrich metadata in background
+        // Enrich metadata in background
+        enrichCardsMetadata(cardsToAdd);
+        onUploadComplete?.();
       }
     } finally {
       if (e.target) e.target.value = "";
+    }
+  };
+
+  const enrichCardsMetadata = async (cards: Partial<CardOption>[]) => {
+    // Abort any previous enrichment task to avoid queue congestion
+    if (enrichmentController.current) {
+      enrichmentController.current.abort();
+    }
+    enrichmentController.current = new AbortController();
+    const signal = enrichmentController.current.signal;
+
+    const uniqueNames = new Set<string>();
+    cards.forEach((c) => {
+      if (c.name && c.name !== "Custom Art") {
+        // Clean the name using extractCardInfo to handle [Set] {Number} and other tags
+        const info = extractCardInfo(c.name);
+        uniqueNames.add(info.name);
+      }
+    });
+
+    if (uniqueNames.size === 0) return;
+
+    const cardInfos: CardInfo[] = Array.from(uniqueNames).map((name) => ({
+      name,
+      quantity: 1,
+    }));
+
+    // We don't want to block the UI, so we don't await this fully or set global loading state
+    // But we might want to show a small indicator or just let it happen.
+    // For now, let's just run it.
+
+    try {
+      await fetchEventSource(`${API_BASE}/api/stream/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardQueries: cardInfos,
+          language: globalLanguage,
+        }),
+        signal,
+        onmessage: async (ev) => {
+          if (ev.event === "card-found") {
+            const card = JSON.parse(ev.data) as ScryfallCard;
+            if (!card?.name) return;
+
+            // Find all cards in DB with this name and update them
+            // We need to be careful not to overwrite existing data if it's already there?
+            // But here we are enriching, so we assume it's missing.
+
+            // We can use a bulk update or iterate.
+            // Since we don't have IDs of the cards we just added easily available (unless we query them back),
+            // we can query by name.
+
+            // Use a transaction to update all matching cards efficiently
+            await db.transaction('rw', db.cards, async () => {
+              const cardsToUpdate = await db.cards
+                .where("name")
+                .equalsIgnoreCase(card.name)
+                .toArray();
+
+              const updates: CardOption[] = [];
+              for (const c of cardsToUpdate) {
+                // Only update if missing metadata
+                if (!c.colors || !c.cmc || !c.type_line || !c.rarity || !c.mana_cost) {
+                  updates.push({
+                    ...c,
+                    colors: card.colors,
+                    cmc: card.cmc,
+                    type_line: card.type_line,
+                    rarity: card.rarity,
+                    mana_cost: card.mana_cost,
+                  });
+                }
+              }
+
+              if (updates.length > 0) {
+                await db.cards.bulkPut(updates);
+              }
+            });
+          }
+        },
+        onerror: (err) => {
+          // Ignore abort errors
+          if (err instanceof Error && err.name === 'AbortError') {
+            throw err;
+          }
+          throw err; // Stop retrying
+        }
+      });
+    } catch (e) {
+      // Ignore abort errors
+      if (e instanceof Error && e.name === 'AbortError') {
+        return;
+      }
+    } finally {
+      if (enrichmentController.current?.signal === signal) {
+        enrichmentController.current = null;
+      }
     }
   };
 
@@ -163,7 +289,7 @@ export function UploadSection() {
       setLoadingTask("Fetching cards");
 
       const uniqueMap = new Map<string, CardInfo>();
-      for (const { info } of infos) uniqueMap.set(cardKey(info), info);
+      for (const info of infos) uniqueMap.set(cardKey(info), info);
       const uniqueInfos = Array.from(uniqueMap.values());
 
       const optionByKey: Record<string, ScryfallCard> = {};
@@ -188,6 +314,8 @@ export function UploadSection() {
           if (ev.event === "progress") {
             const progress = JSON.parse(ev.data);
             setLoadingMessage(`(${progress.processed} / ${progress.total})`);
+          } else if (ev.event === "card-error") {
+            // no-op
           } else if (ev.event === "card-found") {
             const card = JSON.parse(ev.data) as ScryfallCard;
             if (!card?.name) return;
@@ -205,12 +333,12 @@ export function UploadSection() {
               imageId?: string;
             })[] = [];
 
-            for (const { info, quantity } of infos) {
+            for (const info of infos) {
               const k = cardKey(info);
               const fallbackK = cardKey({ name: info.name });
               const card = optionByKey[k] ?? optionByKey[fallbackK];
-              const imageId = await addRemoteImage(card?.imageUrls ?? []);
-
+              const quantity = info.quantity ?? 1;
+              const imageId = await addRemoteImage(card?.imageUrls ?? [], quantity);
               for (let i = 0; i < quantity; i++) {
                 cardsToAdd.push({
                   name: card?.name || info.name,
@@ -219,15 +347,22 @@ export function UploadSection() {
                   lang: card?.lang,
                   isUserUpload: false,
                   imageId: imageId,
+                  colors: card?.colors,
+                  cmc: card?.cmc,
+                  type_line: card?.type_line,
+                  rarity: card?.rarity,
+                  mana_cost: card?.mana_cost,
                 });
               }
             }
 
             if (cardsToAdd.length > 0) {
               await addCards(cardsToAdd);
+              useSettingsStore.getState().setSortBy("manual");
             }
 
             setDeckText("");
+            onUploadComplete?.();
           }
         },
         onclose: () => {
@@ -238,7 +373,6 @@ export function UploadSection() {
           // The library handles retries, this is for fatal errors
           setLoadingTask(null);
           if (err.name !== "AbortError") {
-            console.error("[FetchCards] Streaming Error:", err);
             alert("An error occurred while fetching cards. Please try again.");
           }
           fetchController.current = null;
@@ -249,12 +383,10 @@ export function UploadSection() {
       if (err instanceof Error) {
         if (err.name !== "AbortError") {
           setLoadingTask(null);
-          console.error("[FetchCards] Error:", err);
           alert(err.message || "Something went wrong while fetching cards.");
         }
       } else {
         setLoadingTask(null);
-        console.error("[FetchCards] Unknown Error:", err);
         alert("An unknown error occurred while fetching cards.");
       }
     }
@@ -279,6 +411,16 @@ export function UploadSection() {
   const confirmClear = async () => {
     setLoadingTask("Clearing Images");
 
+    // Abort any running fetches
+    if (fetchController.current) {
+      fetchController.current.abort();
+      fetchController.current = null;
+    }
+    if (enrichmentController.current) {
+      enrichmentController.current.abort();
+      enrichmentController.current = null;
+    }
+
     try {
       await clearAllCardsAndImages();
       // The server cache clear is now handled by the clearAllCardsAndImages action if needed
@@ -295,7 +437,6 @@ export function UploadSection() {
         );
       }
     } catch (err: unknown) {
-      console.error("[Clear] Error:", err);
       if (err instanceof Error) {
         alert(err.message || "Failed to clear images.");
       } else {
@@ -307,190 +448,267 @@ export function UploadSection() {
     }
   };
 
-  return (
-    <div className="w-1/5 dark:bg-gray-700 bg-gray-100 flex flex-col">
-      <img src={fullLogo} alt="Proxxied Logo" />
+  const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
 
-      <div className="flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4">
-        <div className="flex flex-col gap-4">
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">
-              Upload MPC Images (
-              <a
-                href="https://mpcfill.com"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                MPC Autofill
-                <ExternalLink className="inline-block size-4 ml-1" />
-              </a>
-              )
-            </h6>
-
-            <label
-              htmlFor="upload-mpc"
-              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-            >
-              Choose Files
-            </label>
-            <input
-              id="upload-mpc"
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUploadMpcFill}
-              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-              className="hidden"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">
-              Import MPC Text (XML)
-            </h6>
-
-            <label
-              htmlFor="import-mpc-xml"
-              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-            >
-              Choose File
-            </label>
-            <input
-              id="import-mpc-xml"
-              type="file"
-              accept=".xml,.txt,.csv,.log,text/xml,text/plain"
-              onChange={handleImportMpcXml}
-              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-              className="hidden"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">Upload Other Images</h6>
-            <label
-              htmlFor="upload-standard"
-              className="inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-            >
-              Choose Files
-            </label>
-            <input
-              id="upload-standard"
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUploadStandard}
-              onClick={(e) => ((e.target as HTMLInputElement).value = "")}
-              className="hidden"
-            />
-            <HelperText>
-              You can upload images from mtgcardsmith, custom designs, etc.
-            </HelperText>
-          </div>
-        </div>
-
-        <HR className="my-0 dark:bg-gray-500" />
-
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h6 className="font-medium dark:text-white">
-              Add Cards (
-              <a
-                href="https://scryfall.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                Scryfall
-                <ExternalLink className="inline-block size-4 ml-1" />
-              </a>
-              )
-            </h6>
-
-            <Textarea
-              className="h-64"
-              placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
-              value={deckText}
-              onChange={(e) => setDeckText(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Button color="blue" onClick={handleSubmit}>
-              Fetch Cards
-            </Button>
-            <Button color="red" onClick={handleClear}>
-              Clear Cards
-            </Button>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <h6 className="font-medium dark:text-white">Language</h6>
-              <Tooltip content="Used for Scryfall lookups">
-                <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-              </Tooltip>
-            </div>
-
-            <Select
-              className="w-full rounded-md bg-gray-300 dark:bg-gray-600 my-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
-              value={globalLanguage}
-              onChange={(e) => setGlobalLanguage(e.target.value)}
-            >
-              {LANGUAGE_OPTIONS.map((o) => (
-                <option key={o.code} value={o.code}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div>
-            <h6 className="font-medium dark:text-white">Tips:</h6>
-
-            <List className="text-sm dark:text-white/60">
-              <ListItem>To change a card art - click it</ListItem>
-              <ListItem>
-                To move a card - drag from the box at the top right
-              </ListItem>
-              <ListItem>
-                To duplicate or delete a card - right click it
-              </ListItem>
-            </List>
-          </div>
-        </div>
-
-        <HR className="my-0 dark:bg-gray-500" />
+  if (isCollapsed) {
+    return (
+      <div
+        className={`h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 border-r border-gray-200 dark:border-gray-600 ${mobile ? "mobile-scrollbar-hide" : "overflow-y-auto"} select-none`}
+        onDoubleClick={() => toggleUploadPanel()}
+      >
+        <AutoTooltip content="Proxxied" placement="right" mobile={mobile}>
+          <button
+            onClick={() => {
+              toggleUploadPanel();
+            }}
+            className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          >
+            <img src="/logo.svg" className="w-8 h-8" alt="Proxxied Logo" />
+          </button>
+        </AutoTooltip>
       </div>
+    );
+  }
 
-      {showClearConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
-            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-              Confirm Clear Cards
-            </div>
-            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-              Are you sure you want to clear all cards? This action cannot be
-              undone.
-            </div>
-            <div className="flex justify-center gap-4">
-              <Button
-                color="failure"
-                className="bg-red-600 hover:bg-red-700 text-white"
-                onClick={confirmClear}
-              >
-                Yes, I'm sure
-              </Button>
-              <Button
-                color="gray"
-                onClick={() => setShowClearConfirmModal(false)}
-              >
-                No, cancel
-              </Button>
-            </div>
-          </div>
+  return (
+    <div className={`w-full h-full dark:bg-gray-700 bg-gray-100 flex flex-col border-r border-gray-200 dark:border-gray-600`}>
+      {!mobile && (
+        <div>
+          <img src={fullLogo} alt="Proxxied Logo" className="w-full" />
         </div>
       )}
-    </div>
+
+
+
+      <PullToRefresh className={`flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4 pt-4 ${mobile ? "[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" : ""}`}>
+        {mobile && (
+          <div className={`flex justify-center mb-2 ${mobile ? 'landscape:hidden' : ''}`}>
+            <img src={fullLogo} alt="Proxxied Logo" className="w-[80%] landscape:w-auto landscape:h-12" />
+          </div>
+        )}
+        <div className={`flex flex-col ${mobile ? 'landscape:grid landscape:grid-cols-2 landscape:gap-6 landscape:h-full landscape:grid-rows-[1fr_auto]' : ''} gap-4`}>
+          <div className={`flex flex-col gap-4 ${mobile ? 'landscape:gap-2 landscape:h-full landscape:justify-between' : ''}`}>
+            <div className={`flex flex-col gap-4 ${mobile ? 'landscape:gap-2' : ''}`}>
+              {/* Logo for Landscape */}
+              <div className={`hidden ${mobile ? 'landscape:flex' : ''} justify-center mb-2`}>
+                <img src={fullLogo} alt="Proxxied Logo" className={`w-[80%] ${mobile ? 'landscape:w-[50%]' : ''} h-auto`} />
+              </div>
+
+              <div className={`space-y-1 ${mobile ? '' : ''}`}>
+                <h6 className="font-medium dark:text-white sr-only">Upload MPC Images</h6>
+
+                <label
+                  htmlFor="upload-mpc"
+                  className={`inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 ${mobile ? 'px-4 py-4 landscape:py-3' : 'px-4 py-3'} text-base font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 active:translate-y-[2px]`}
+                >
+                  Upload MPC Images
+                </label>
+                <input
+                  id="upload-mpc"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadMpcFill}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+                  className="hidden"
+                />
+              </div>
+
+              <div className={`space-y-1 ${mobile ? '' : ''}`}>
+                <label
+                  htmlFor="import-mpc-xml"
+                  className={`inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 ${mobile ? 'px-4 py-4 landscape:py-3' : 'px-4 py-3'} text-base font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 active:translate-y-[2px]`}
+                >
+                  Import MPC Text (XML)
+                </label>
+                <input
+                  id="import-mpc-xml"
+                  type="file"
+                  accept=".xml,.txt,.csv,.log,text/xml,text/plain"
+                  onChange={handleImportMpcXml}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+                  className="hidden"
+                />
+              </div>
+
+              <div className={`space-y-1 ${mobile ? '' : ''}`}>
+                <label
+                  htmlFor="upload-standard"
+                  className={`inline-block w-full text-center cursor-pointer rounded-md bg-gray-300 dark:bg-gray-600 ${mobile ? 'px-4 py-4 landscape:py-3' : 'px-4 py-3'} text-base font-medium text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 active:translate-y-[2px]`}
+                >
+                  Upload Other Images
+                </label>
+                <input
+                  id="upload-standard"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadStandard}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = "")}
+                  className="hidden"
+                />
+              </div>
+            </div>
+
+            {/* Language Selector - Moved here for Landscape */}
+            <div className={`space-y-1 hidden ${mobile ? 'landscape:block' : ''}`}>
+              <div className="flex items-center justify-between">
+                <h6 className="font-medium dark:text-white">Language</h6>
+                <AutoTooltip content="Used for Scryfall lookups" mobile={mobile}>
+                  <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
+                </AutoTooltip>
+              </div>
+
+              <Select
+                className="w-full rounded-md bg-gray-300 dark:bg-gray-600 mt-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
+                value={globalLanguage}
+                onChange={(e) => setGlobalLanguage(e.target.value)}
+              >
+                {LANGUAGE_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          <HR className={`my-0 dark:bg-gray-500 ${mobile ? 'landscape:hidden' : ''}`} />
+
+          <div className={`space-y-4 ${mobile ? 'landscape:flex landscape:flex-col landscape:h-full landscape:space-y-0 landscape:gap-4' : ''}`}>
+            <div className={`space-y-1 ${mobile ? 'landscape:flex-1 landscape:flex landscape:flex-col' : ''}`}>
+              <h6 className="font-medium dark:text-white">
+                Add Cards (
+                <a
+                  href="https://scryfall.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-blue-600 dark:hover:text-blue-400"
+                >
+                  Scryfall
+                  <ExternalLink className="inline-block size-4 ml-1" />
+                </a>
+                )
+              </h6>
+
+              <Textarea
+                className={`h-64 ${mobile ? 'landscape:flex-1 landscape:[&::-webkit-scrollbar]:hidden landscape:[-ms-overflow-style:none] landscape:[scrollbar-width:none]' : ''} resize-none text-base p-3`}
+                placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
+                value={deckText}
+                onChange={(e) => setDeckText(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <Button color="blue" size="lg" onClick={handleSubmit}>
+                Fetch Cards
+              </Button>
+              <Button
+                color="red"
+                size="lg"
+                onClick={handleClear}
+                disabled={cardCount === 0}
+              >
+                Clear Cards
+              </Button>
+            </div>
+
+            {/* Language Selector - Hidden in Landscape (moved to left col), Visible in Portrait */}
+            <div className={`space-y-1 ${mobile ? 'landscape:hidden' : ''}`}>
+              <div className="flex items-center justify-between">
+                <h6 className="font-medium dark:text-white">Language</h6>
+                <AutoTooltip content="Used for Scryfall lookups" mobile={mobile}>
+                  <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
+                </AutoTooltip>
+              </div>
+
+              <Select
+                className="w-full rounded-md bg-gray-300 dark:bg-gray-600 my-2 text-sm text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500"
+                value={globalLanguage}
+                onChange={(e) => setGlobalLanguage(e.target.value)}
+              >
+                {LANGUAGE_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {/* Tips - Full width at bottom */}
+          <div className={`${mobile ? 'landscape:col-span-2' : ''} pb-4`}>
+            <h6 className="font-medium dark:text-white mb-2">Tips:</h6>
+
+            <div className={`text-sm dark:text-white/60 flex flex-col gap-2 ${mobile ? 'landscape:grid landscape:grid-cols-2' : ''}`}>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Download className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span>
+                  Download images from{" "}
+                  <a
+                    href="https://mpcfill.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:text-blue-600 dark:hover:text-blue-400"
+                  >
+                    MPC Autofill
+                    <ExternalLink className="inline-block size-3 ml-1" />
+                  </a>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <MousePointerClick className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
+                <span>To change a card art - {mobile ? "tap" : "click"} it</span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Move className="w-4 h-4 shrink-0 text-green-600 dark:text-green-400" />
+                <span>To move a card - {mobile ? "long press and drag" : "drag from the box at the top right"}</span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Copy className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+                <span>To duplicate or delete a card - {mobile ? "double tap" : "right click"} it</span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
+                <Upload className="w-4 h-4 shrink-0 text-cyan-600 dark:text-cyan-400" />
+                <span>You can upload images from mtgcardsmith, custom designs, etc.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <HR className="my-0 dark:bg-gray-500" />
+      </PullToRefresh>
+
+      {
+        showClearConfirmModal && createPortal(
+          <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+              <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                Confirm Clear Cards
+              </div>
+              <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                Are you sure you want to clear all cards? This action cannot be
+                undone.
+              </div>
+              <div className="flex justify-center gap-4">
+                <Button
+                  color="failure"
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={confirmClear}
+                >
+                  Yes, I'm sure
+                </Button>
+                <Button
+                  color="gray"
+                  onClick={() => setShowClearConfirmModal(false)}
+                >
+                  No, cancel
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      }
+    </div >
   );
 }

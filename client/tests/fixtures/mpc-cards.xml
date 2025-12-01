@@ -1,0 +1,23 @@
+<order>
+    <details>
+        <quantity>10</quantity>
+        <bracket>18</bracket>
+        <stock>(S30) Standard Smooth</stock>
+        <foil>false</foil>
+    </details>
+    <fronts>
+        <card>
+            <id>1L56-vQ08leCTGu7orNMlWYKiXqWAnTiO</id>
+            <slots>0</slots>
+            <name>Abrupt Decay (Borderless Svetlin Velinov).jpg</name>
+            <query>abrupt decay</query>
+        </card>
+        <card>
+            <id>1CFKGITXtJgJt47dEKTfJLrvAq6Ghi3JK</id>
+            <slots>1</slots>
+            <name>Ashnod's Altar (Borderless Anson Maddocks).jpg</name>
+            <query>ashnods altar</query>
+        </card>
+    </fronts>
+    <cardback>1LrVX0pUcye9n_0RtaDNVl2xPrQgn7CYf</cardback>
+</order>

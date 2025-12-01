@@ -1,4 +1,4 @@
-import type { CardOption } from "../types/Card";
+import type { CardOption } from "../../../shared/types";
 
 export function groupCardsForDecklist(cards: CardOption[]) {
   type Key = string;

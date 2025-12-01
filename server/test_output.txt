@@ -1,0 +1,303 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.10 [39m[90m/home/nathan/code/proxies-at-home/server[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fetch image by exact print first
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fetch image by exact print first
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query if set+number fails
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query if set+number fails
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query if set+number fails
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query if set+number fails
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query if set+number fails
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query if set+number fails
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query when set is not provided
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query when set is not provided
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to name-only query when set is not provided
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould respect language preference
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould respect language preference
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould respect language preference
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to english if language not found
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to english if language not found
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to english if language not found
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to english if language not found
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to english if language not found
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould fall back to english if language not found
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle double-faced cards
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle double-faced cards
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle double-faced cards
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle pagination
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle pagination
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle pagination
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle pagination
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle pagination
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould handle pagination
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould not fall back to English if fallbackToEnglish is false
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould not fall back to English if fallbackToEnglish is false
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetImagesForCardInfo[2m > [22m[2mshould not fall back to English if fallbackToEnglish is false
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetCardDataForCardInfo[2m > [22m[2mshould return a single card object
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetCardDataForCardInfo[2m > [22m[2mshould return a single card object
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetCardDataForCardInfo[2m > [22m[2mshould return a single card object
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetCardDataForCardInfo[2m > [22m[2mshould return null if no card is found
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetCardDataForCardInfo[2m > [22m[2mshould return null if no card is found
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetCardDataForCardInfo[2m > [22m[2mshould return null if no card is found
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCard[2m > [22m[2mshould call with unique=art by default
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCard[2m > [22m[2mshould call with unique=art by default
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCard[2m > [22m[2mshould call with unique=art by default
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCard[2m > [22m[2mshould respect the unique parameter
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCard[2m > [22m[2mshould respect the unique parameter
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCard[2m > [22m[2mshould respect the unique parameter
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCardPrints[2m > [22m[2mshould call with unique=prints
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCardPrints[2m > [22m[2mshould call with unique=prints
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mgetScryfallPngImagesForCardPrints[2m > [22m[2mshould call with unique=prints
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetImagesForCardInfo should return an empty array on API error
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetImagesForCardInfo should return an empty array on API error
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetImagesForCardInfo should return an empty array on API error
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetCardDataForCardInfo should return null on API error
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetCardDataForCardInfo should return null on API error
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetCardDataForCardInfo should return null on API error
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mError Handling[2m > [22m[2mgetCardDataForCardInfo should return null on API error
+[22m[39mWarn calls: [["[Scryfall] Query failed:","!\"Sol Ring\" include:extras unique:art order:released lang:en","Scryfall API is down"]]
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should use Set + Name strategy when number is missing
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should use Set + Name strategy when number is missing
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should use Set + Name strategy when number is missing
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Number strategy
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Number strategy
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Number strategy
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Name strategy
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Name strategy
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Name strategy
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should use Set + Name strategy
+[22m[39mCalls: [["https://api.scryfall.com/cards/search?q=set%3Acmr%20name%3A%22Sol%20Ring%22%20include%3Aextras%20unique%3Aprints%20lang%3Aen"]]
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 1 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 2 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 2 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 2 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 2 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 2 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetCardDataForCardInfo should return null if strategy 2 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 1 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 1 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 1 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 2 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 2 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m99[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 2 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 2 returns empty
+[22m[39m[DEBUG] Requesting lock
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 2 returns empty
+[22m[39m[DEBUG] Lock acquired
+[DEBUG] Waiting [33m100[39m
+
+[90mstdout[2m | src/utils/getCardImagesPaged.test.ts[2m > [22m[2mgetCardImagesPaged[2m > [22m[2mAdditional Strategies[2m > [22m[2mgetImagesForCardInfo should return empty array if strategy 2 returns empty
+[22m[39m[DEBUG] Releasing lock
+
+ [32m✓[39m src/utils/getCardImagesPaged.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 2808[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+[2m   Start at [22m 03:20:35
+[2m   Duration [22m 2.91s[2m (transform 39ms, setup 0ms, collect 48ms, tests 2.81s, environment 0ms, prepare 4ms)[22m
+
