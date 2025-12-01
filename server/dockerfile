@@ -13,6 +13,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 # Copy the actual server source (tsconfig.json is inside server/)
 COPY server/ ./
+# Copy shared types (referenced by server code)
+COPY shared/ ../shared/
 RUN npm run build
 
 # --- Runtime image
