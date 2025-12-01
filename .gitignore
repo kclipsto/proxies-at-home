@@ -1,5 +1,6 @@
 server/src/cached-images/*
 server/src/uploaded-images/*
+server/dist/
 server/coverage/*
 client/coverage/*
 coverage/*
