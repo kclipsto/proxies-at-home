@@ -15,7 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY server/ ./
 # Copy shared types (referenced by server code)
 COPY shared/ ../shared/
-RUN npm run build
+RUN ls -la ../shared/ && npm run build && ls -la dist/
 
 # --- Runtime image
 FROM node:20-alpine AS runtime
