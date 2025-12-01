@@ -1,16 +1,20 @@
 {
-    "extends": "./tsconfig.json",
     "compilerOptions": {
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "outDir": "./dist",
-        "noEmit": false,
-        "target": "ES2022"
+        "target": "ES2022",
+        "strict": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "declaration": false
     },
     "include": [
-        "src/**/*"
+        "src/**/*",
+        "../shared/**/*"
     ],
     "exclude": [
-        "src/**/*.test.ts"
+        "src/**/*.test.ts",
+        "src/repro_*.ts"
     ]
 }
