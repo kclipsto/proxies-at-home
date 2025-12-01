@@ -79,8 +79,7 @@ export async function trimBleedFromBitmap(img: ImageBitmap, bleedTrimPx?: number
     const w = img.width - trim * 2;
     const h = img.height - trim * 2;
     if (w <= 0 || h <= 0) return img;
-    const newImg = await createImageBitmap(img, trim, trim, w, h);
-    return newImg;
+    return await createImageBitmap(img, trim, trim, w, h);
 }
 
 export async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number, init?: RequestInit): Promise<ImageBitmap> {
