@@ -2,32 +2,40 @@
 
 # --- Install deps for the server package
 FROM node:20-alpine AS deps
-WORKDIR /app
-# Only copy the server package manifest to avoid pulling the root one
+WORKDIR /app/server
+
+# Install only server deps
 COPY server/package*.json ./
 RUN npm ci
 
-# --- Build TypeScript -> dist
+# --- Build TypeScript -> server/dist/server/src/index.js
 FROM node:20-alpine AS build
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+WORKDIR /app/server
+
+# Reuse installed node_modules from deps
+COPY --from=deps /app/server/node_modules ./node_modules
+
 # Copy the actual server source (tsconfig.json is inside server/)
 COPY server/ ./
+
 # Copy shared types (referenced by server code)
 COPY shared/ ../shared/
+
+# This should output to /app/server/dist/server/src/index.js
 RUN npm run build
 
 # --- Runtime image
 FROM node:20-alpine AS runtime
-WORKDIR /app
+WORKDIR /app/server
 ENV NODE_ENV=production
 
-# Only ship what we need to run
-COPY --from=build /app/dist ./dist
+# Only ship what we need to run: the built dist
+COPY --from=build /app/server/dist ./dist
+
+# Server package.json + lockfile for prod deps
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 
 # Koyeb will set PORT; make sure your code uses process.env.PORT
 EXPOSE 3001
-CMD ["node", "dist/index.js"]
-
+CMD ["node", "dist/server/src/index.js"]
