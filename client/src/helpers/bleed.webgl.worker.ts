@@ -1,8 +1,4 @@
-import {
-    toProxied,
-    trimBleedFromBitmap,
-    fetchWithRetry,
-} from "./imageProcessing";
+import { fetchWithRetry, toProxied, calibratedBleedTrimPxForHeight } from "./imageProcessing";
 import { processCardImageWebGL } from "./webglImageProcessing";
 
 export { };
@@ -51,15 +47,25 @@ self.onmessage = async (e: MessageEvent) => {
             }
         }
 
-        let imageBitmap = await createImageBitmap(blob);
+        // Helper function to trim MPC bleed from Blob
+        async function createTrimmedBitmap(blob: Blob): Promise<ImageBitmap> {
+            // Get dimensions to calculate trim amount
+            const tempBitmap = await createImageBitmap(blob);
+            const trim = calibratedBleedTrimPxForHeight(tempBitmap.height);
+            const w = tempBitmap.width - trim * 2;
+            const h = tempBitmap.height - trim * 2;
+            tempBitmap.close();
 
-        if (isUserUpload && hasBakedBleed) {
-            const trimmed = await trimBleedFromBitmap(imageBitmap);
-            if (trimmed !== imageBitmap) {
-                imageBitmap.close();
-                imageBitmap = trimmed;
-            }
+            // Create cropped bitmap from Blob for Firefox compatibility
+            // (Firefox handles createImageBitmap(Blob, ...) correctly but not createImageBitmap(ImageBitmap, ...))
+            return w > 0 && h > 0
+                ? await createImageBitmap(blob, trim, trim, w, h)
+                : await createImageBitmap(blob);
         }
+
+        const imageBitmap = isUserUpload && hasBakedBleed
+            ? await createTrimmedBitmap(blob)
+            : await createImageBitmap(blob);
 
         const result = await processCardImageWebGL(imageBitmap, bleedEdgeWidth, {
             unit,
