@@ -14,7 +14,7 @@ export function GuidesSection() {
     const guideWidthInput = useNormalizedInput(
         guideWidth,
         setGuideWidth,
-        { min: 0.1, max: 10 }
+        { min: 0, max: 10 }
     );
 
     return (
