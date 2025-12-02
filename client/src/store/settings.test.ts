@@ -171,4 +171,111 @@ describe("useSettingsStore", () => {
         expect(merged.pageHeight).toBe(210);
         expect(merged.pageSizeUnit).toBe("mm");
     });
+
+    describe("Custom Page Size", () => {
+        it("should set custom page width and height", () => {
+            const { setPageWidth, setPageHeight } = useSettingsStore.getState();
+
+            setPageWidth(10);
+            let state = useSettingsStore.getState();
+            expect(state.pageWidth).toBe(10);
+            expect(state.customPageWidth).toBe(10);
+            expect(state.pageSizePreset).toBe("Custom");
+
+            setPageHeight(20);
+            state = useSettingsStore.getState();
+            expect(state.pageHeight).toBe(20);
+            expect(state.customPageHeight).toBe(20);
+            expect(state.pageSizePreset).toBe("Custom");
+        });
+
+        it("should convert units correctly", () => {
+            const { setPageWidth, setPageHeight, setPageSizeUnit } = useSettingsStore.getState();
+
+            // Set initial values in inches
+            setPageWidth(10);
+            setPageHeight(20);
+
+            // Convert to mm
+            setPageSizeUnit("mm");
+            let state = useSettingsStore.getState();
+            expect(state.pageSizeUnit).toBe("mm");
+            expect(state.pageWidth).toBeCloseTo(254);
+            expect(state.pageHeight).toBeCloseTo(508);
+            expect(state.customPageWidth).toBeCloseTo(254);
+            expect(state.customPageHeight).toBeCloseTo(508);
+            expect(state.customPageUnit).toBe("mm");
+
+            // Convert back to inches
+            setPageSizeUnit("in");
+            state = useSettingsStore.getState();
+            expect(state.pageSizeUnit).toBe("in");
+            expect(state.pageWidth).toBeCloseTo(10);
+            expect(state.pageHeight).toBeCloseTo(20);
+        });
+
+        it("should persist custom values when switching presets", () => {
+            const { setPageWidth, setPageHeight, setPageSizePreset } = useSettingsStore.getState();
+
+            // Set custom values
+            setPageWidth(15);
+            setPageHeight(25);
+
+            // Switch to preset
+            setPageSizePreset("Letter");
+            let state = useSettingsStore.getState();
+            expect(state.pageSizePreset).toBe("Letter");
+            expect(state.pageWidth).toBe(8.5);
+
+            // Switch back to Custom
+            setPageSizePreset("Custom");
+            state = useSettingsStore.getState();
+            expect(state.pageSizePreset).toBe("Custom");
+            expect(state.pageWidth).toBe(15);
+            expect(state.pageHeight).toBe(25);
+        });
+
+        it("should sync custom values on orientation swap", () => {
+            const { setPageWidth, setPageHeight, swapPageOrientation } = useSettingsStore.getState();
+
+            // Set custom values
+            setPageWidth(10);
+            setPageHeight(20);
+
+            // Swap orientation
+            swapPageOrientation();
+            let state = useSettingsStore.getState();
+            expect(state.pageOrientation).toBe("landscape");
+            expect(state.pageWidth).toBe(20);
+            expect(state.pageHeight).toBe(10);
+            // Verify custom values are also swapped
+            expect(state.customPageWidth).toBe(20);
+            expect(state.customPageHeight).toBe(10);
+        });
+
+        it("should merge custom state correctly", () => {
+            const options = useSettingsStore.persist.getOptions();
+            const merge = options.merge;
+
+            if (!merge) throw new Error("Merge function not found");
+
+            const currentState = useSettingsStore.getState();
+
+            // Test merging persisted custom state
+            const persistedState = {
+                pageSizePreset: "Custom",
+                customPageWidth: 12.5,
+                customPageHeight: 18.5,
+                customPageUnit: "in",
+                columns: 4
+            };
+
+            const merged = merge(persistedState, currentState) as Record<string, unknown>;
+
+            expect(merged.pageSizePreset).toBe("Custom");
+            expect(merged.pageWidth).toBe(12.5);
+            expect(merged.pageHeight).toBe(18.5);
+            expect(merged.pageSizeUnit).toBe("in");
+        });
+    });
 });

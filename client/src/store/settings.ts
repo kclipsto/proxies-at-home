@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { indexedDbStorage } from "./indexedDbStorage";
 
-export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid" | "Legal" | "ArchA" | "ArchB" | "SuperB" | "A2" | "A1";
+export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid" | "Legal" | "ArchA" | "ArchB" | "SuperB" | "A2" | "A1" | "Custom";
 export type PageOrientation = "portrait" | "landscape";
 
 type Store = {
@@ -12,6 +12,12 @@ type Store = {
   setPageSizePreset: (value: LayoutPreset) => void;
   pageWidth: number;
   pageHeight: number;
+  customPageWidth: number;
+  customPageHeight: number;
+  customPageUnit: "mm" | "in";
+  setPageWidth: (value: number) => void;
+  setPageHeight: (value: number) => void;
+  setPageSizeUnit: (value: "mm" | "in") => void;
   swapPageOrientation: () => void;
   columns: number;
   setColumns: (value: number) => void;
@@ -77,6 +83,9 @@ const defaultPageSettings = {
   pageSizePreset: "Letter" as LayoutPreset,
   pageWidth: 8.5,
   pageHeight: 11,
+  customPageWidth: 8.5,
+  customPageHeight: 11,
+  customPageUnit: "in" as "in" | "mm",
   columns: 3,
   rows: 3,
   bleedEdgeWidth: 1,
@@ -120,6 +129,7 @@ const layoutPresetsSizes: Record<
   SuperB: { pageWidth: 13, pageHeight: 19, pageSizeUnit: "in" },
   A2: { pageWidth: 420, pageHeight: 594, pageSizeUnit: "mm" },
   A1: { pageWidth: 594, pageHeight: 841, pageSizeUnit: "mm" },
+  Custom: { pageWidth: 8.5, pageHeight: 11, pageSizeUnit: "in" },
 };
 
 export const useSettingsStore = create<Store>()(
@@ -128,7 +138,18 @@ export const useSettingsStore = create<Store>()(
       ...defaultPageSettings,
 
       setPageSizePreset: (value) =>
-        set(() => {
+        set((state) => {
+          // For Custom preset, restore saved custom dimensions
+          if (value === "Custom") {
+            return {
+              pageSizePreset: value,
+              pageWidth: state.customPageWidth,
+              pageHeight: state.customPageHeight,
+              pageSizeUnit: state.customPageUnit,
+            };
+          }
+
+          // For other presets, apply preset dimensions
           const { pageWidth, pageHeight, pageSizeUnit } = layoutPresetsSizes[value];
           return {
             pageSizePreset: value,
@@ -139,13 +160,57 @@ export const useSettingsStore = create<Store>()(
           };
         }),
 
-      swapPageOrientation: () =>
+      setPageWidth: (value) =>
         set((state) => ({
-          pageOrientation:
-            state.pageOrientation === "portrait" ? "landscape" : "portrait",
-          pageWidth: state.pageHeight,
-          pageHeight: state.pageWidth,
+          pageWidth: value,
+          customPageWidth: value,
+          customPageHeight: state.pageHeight, // Sync current height to custom
+          pageSizePreset: "Custom",
+          customPageUnit: state.pageSizeUnit,
         })),
+
+      setPageHeight: (value) =>
+        set((state) => ({
+          pageHeight: value,
+          customPageHeight: value,
+          customPageWidth: state.pageWidth, // Sync current width to custom
+          pageSizePreset: "Custom",
+          customPageUnit: state.pageSizeUnit,
+        })),
+
+      setPageSizeUnit: (newUnit) =>
+        set((state) => {
+          // If already in the target unit, no conversion needed
+          if (state.pageSizeUnit === newUnit) {
+            return {};
+          }
+
+          // Convert dimensions
+          const conversionFactor = newUnit === "mm" ? 25.4 : 1 / 25.4;
+          return {
+            pageSizeUnit: newUnit,
+            pageWidth: state.pageWidth * conversionFactor,
+            pageHeight: state.pageHeight * conversionFactor,
+            customPageWidth: state.pageWidth * conversionFactor,
+            customPageHeight: state.pageHeight * conversionFactor,
+            customPageUnit: newUnit,
+            pageSizePreset: "Custom",
+          };
+        }),
+
+      swapPageOrientation: () =>
+        set((state) => {
+          const isCustom = state.pageSizePreset === "Custom";
+          return {
+            pageOrientation:
+              state.pageOrientation === "portrait" ? "landscape" : "portrait",
+            pageWidth: state.pageHeight,
+            pageHeight: state.pageWidth,
+            // If in Custom mode, also swap the custom dimensions so they persist correctly
+            customPageWidth: isCustom ? state.customPageHeight : state.customPageWidth,
+            customPageHeight: isCustom ? state.customPageWidth : state.customPageHeight,
+          };
+        }),
 
       setColumns: (columns) => set({ columns }),
       setRows: (rows) => set({ rows }),
@@ -224,7 +289,7 @@ export const useSettingsStore = create<Store>()(
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 4, // Increment version for new fields
+      version: 5, // Increment version for new fields
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -256,6 +321,13 @@ export const useSettingsStore = create<Store>()(
           };
         }
 
+        if (version < 5) {
+          return {
+            ...defaultPageSettings,
+            ...(persistedState as Partial<Store>),
+          };
+        }
+
         return persistedState as Partial<Store>;
       },
 
@@ -265,6 +337,15 @@ export const useSettingsStore = create<Store>()(
         const preset = merged.pageSizePreset ?? defaultPageSettings.pageSizePreset;
         const orientation = merged.pageOrientation ?? defaultPageSettings.pageOrientation;
 
+        // If Custom, use the persisted custom values directly (they represent the visible state)
+        if (preset === "Custom") {
+          merged.pageWidth = merged.customPageWidth;
+          merged.pageHeight = merged.customPageHeight;
+          merged.pageSizeUnit = merged.customPageUnit;
+          return merged;
+        }
+
+        // For other presets, calculate based on orientation
         const {
           pageWidth: portraitWidth,
           pageHeight: portraitHeight,
