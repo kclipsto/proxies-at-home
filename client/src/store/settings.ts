@@ -79,6 +79,8 @@ type Store = {
   setFilterColors: (value: string[]) => void;
   filterMatchType: "partial" | "exact";
   setFilterMatchType: (value: "partial" | "exact") => void;
+  hasHydrated: boolean;
+  setHasHydrated: (value: boolean) => void;
 };
 
 const defaultPageSettings = {
@@ -291,6 +293,8 @@ export const useSettingsStore = create<Store>()(
       setFilterColors: (value) => set({ filterColors: value }),
       filterMatchType: "partial",
       setFilterMatchType: (value) => set({ filterMatchType: value }),
+      hasHydrated: false,
+      setHasHydrated: (value) => set({ hasHydrated: value }),
 
       resetSettings: () => set({ ...defaultPageSettings }),
     }),
@@ -301,7 +305,7 @@ export const useSettingsStore = create<Store>()(
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { pageWidth, pageHeight, pageSizeUnit, ...rest } = state;
+        const { pageWidth, pageHeight, pageSizeUnit, hasHydrated, ...rest } = state;
         return rest;
       },
 
@@ -368,6 +372,9 @@ export const useSettingsStore = create<Store>()(
         merged.pageSizeUnit = pageSizeUnit;
 
         return merged;
+      },
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
       },
     }
   )

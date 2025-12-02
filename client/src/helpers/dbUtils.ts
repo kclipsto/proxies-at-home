@@ -218,10 +218,11 @@ export async function changeCardArtwork(
   newImageId: string,
   cardToUpdate: CardOption,
   applyToAll: boolean,
-  newName?: string
+  newName?: string,
+  newImageUrls?: string[]
 ): Promise<void> {
   await db.transaction("rw", db.cards, db.images, async () => {
-    if (oldImageId === newImageId && !newName) return;
+    if (oldImageId === newImageId && !newName && !newImageUrls) return;
 
     // Determine which cards to update
     const cardsToUpdate = applyToAll
@@ -262,13 +263,20 @@ export async function changeCardArtwork(
 
     // 3. Increment the new image's refCount or create the new image
     if (newImage) {
-      await db.images.update(newImageId, {
+      const updates: Partial<import("../db").Image> = {
         refCount: newImage.refCount + cardsToUpdate.length,
-      });
+      };
+      if (newImageUrls && newImageUrls.length > 0) {
+        updates.imageUrls = newImageUrls;
+      }
+      await db.images.update(newImageId, updates);
     } else {
-      // This case handles a new remote image - get imageUrls from the old image if available
+      // This case handles a new remote image
       const oldImage = await db.images.get(oldImageId);
-      const imageUrls = oldImage?.imageUrls || [newImageId];
+      // Use provided newImageUrls if available.
+      // If not provided, and we are NOT renaming, fallback to oldImage.imageUrls.
+      // If renaming, we assume it's a different card, so we default to just the newImageId.
+      const imageUrls = newImageUrls || (newName ? [newImageId] : (oldImage?.imageUrls || [newImageId]));
 
       await db.images.add({
         id: newImageId,

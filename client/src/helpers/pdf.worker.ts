@@ -14,269 +14,200 @@ function getLocalBleedImageUrl(originalUrl: string, apiBase: string) {
 }
 
 
-function drawFullPageGuides(ctx: OffscreenCanvasRenderingContext2D, pageW: number, pageH: number, startX: number, startY: number, columns: number, rows: number, contentW: number, contentH: number, cardW: number, cardH: number, bleedPx: number, guideWidthPx: number, spacingPx = 0, occupiedCols?: Set<number>, occupiedRows?: Set<number>, cutLineStyle: 'none' | 'edges' | 'full' = 'full') {
-    if (cutLineStyle === 'none' || guideWidthPx <= 0) return;
+/**
+ * Create a reusable full-page guides canvas
+ */
+function createFullPageGuidesCanvas(
+    pageW: number, pageH: number, startX: number, startY: number,
+    columns: number, rows: number, contentW: number, contentH: number,
+    cardW: number, cardH: number, bleedPx: number, guideWidthPx: number,
+    spacingPx: number, occupiedCols: Set<number>, occupiedRows: Set<number>,
+    cutLineStyle: 'none' | 'edges' | 'full'
+): OffscreenCanvas | null {
+    if (cutLineStyle === 'none' || guideWidthPx <= 0) return null;
 
+    const canvas = new OffscreenCanvas(pageW, pageH);
+    const ctx = canvas.getContext('2d')!;
 
+    const xCuts: number[] = [];
+    for (let c = 0; c < columns; c++) {
+        if (occupiedCols.has(c)) {
+            const cellLeft = startX + c * (cardW + spacingPx);
+            xCuts.push(cellLeft + bleedPx);
+            xCuts.push(cellLeft + bleedPx + contentW);
+        }
+    }
+    const yCuts: number[] = [];
+    for (let r = 0; r < rows; r++) {
+        if (occupiedRows.has(r)) {
+            const cellTop = startY + r * (cardH + spacingPx);
+            yCuts.push(cellTop + bleedPx);
+            yCuts.push(cellTop + bleedPx + contentH);
+        }
+    }
 
-    ctx.save();
     ctx.fillStyle = "#000000";
 
-    // We need to distinguish between left and right edges to offset them correctly (outward)
-    // Left edge of a card: guide should be to the left of the cut line (x - width)
-    // Right edge of a card: guide should be to the right of the cut line (x)
-
-    // Re-calculate cuts with direction
-    const xCutsMap = new Map<number, 'left' | 'right' | 'both'>();
-    for (let c = 0; c < columns; c++) {
-        if (occupiedCols && !occupiedCols.has(c)) continue;
-
-        const cellLeft = startX + c * (cardW + spacingPx);
-        const leftCut = cellLeft + bleedPx;
-        const rightCut = cellLeft + bleedPx + contentW;
-
-        // Left cut -> grow left
-        xCutsMap.set(leftCut, xCutsMap.get(leftCut) === 'right' ? 'both' : 'left');
-        // Right cut -> grow right
-        xCutsMap.set(rightCut, xCutsMap.get(rightCut) === 'left' ? 'both' : 'right');
-    }
-
     // Draw vertical lines
-    for (const [x, type] of xCutsMap.entries()) {
-        const drawLine = (offsetPx: number) => {
-            if (cutLineStyle === 'full') {
-                ctx.fillRect(x + offsetPx, 0, guideWidthPx, pageH);
-            } else {
-                // Edges only
-                // Top stub
-                if (startY > 0) {
-                    ctx.fillRect(x + offsetPx, 0, guideWidthPx, startY);
-                }
-                // Bottom stub
-                const botStubStart = startY + rows * cardH + Math.max(0, rows - 1) * spacingPx;
-                const botStubH = pageH - botStubStart;
-                if (botStubH > 0) {
-                    ctx.fillRect(x + offsetPx, botStubStart, guideWidthPx, botStubH);
-                }
+    for (const x of xCuts) {
+        if (cutLineStyle === 'full') {
+            ctx.fillRect(x, 0, guideWidthPx, pageH);
+        } else {
+            if (startY > 0) {
+                ctx.fillRect(x, 0, guideWidthPx, startY);
             }
-        };
-
-        if (type === 'left' || type === 'both') {
-            drawLine(-guideWidthPx); // Grow left
+            const botStubStart = startY + rows * cardH + (rows - 1) * spacingPx;
+            const botStubH = pageH - botStubStart;
+            if (botStubH > 0) {
+                ctx.fillRect(x, botStubStart, guideWidthPx, botStubH);
+            }
         }
-        if (type === 'right' || type === 'both') {
-            drawLine(0); // Grow right
-        }
-    }
-
-    // Horizontal cuts
-    const yCutsMap = new Map<number, 'top' | 'bottom' | 'both'>();
-    for (let r = 0; r < rows; r++) {
-        if (occupiedRows && !occupiedRows.has(r)) continue;
-
-        const cellTop = startY + r * (cardH + spacingPx);
-        const topCut = cellTop + bleedPx;
-        const botCut = cellTop + bleedPx + contentH;
-
-        yCutsMap.set(topCut, yCutsMap.get(topCut) === 'bottom' ? 'both' : 'top');
-        yCutsMap.set(botCut, yCutsMap.get(botCut) === 'top' ? 'both' : 'bottom');
     }
 
     // Draw horizontal lines
-    for (const [y, type] of yCutsMap.entries()) {
-        const drawLine = (offsetPx: number) => {
-            if (cutLineStyle === 'full') {
-                ctx.fillRect(0, y + offsetPx, pageW, guideWidthPx);
-            } else {
-                // Edges only
-                // Left stub
-                if (startX > 0) {
-                    ctx.fillRect(0, y + offsetPx, startX, guideWidthPx);
-                }
-                // Right stub
-                const rightStubStart = startX + columns * cardW + Math.max(0, columns - 1) * spacingPx;
-                const rightStubW = pageW - rightStubStart;
-                if (rightStubW > 0) {
-                    ctx.fillRect(rightStubStart, y + offsetPx, rightStubW, guideWidthPx);
-                }
+    for (const y of yCuts) {
+        if (cutLineStyle === 'full') {
+            ctx.fillRect(0, y, pageW, guideWidthPx);
+        } else {
+            if (startX > 0) {
+                ctx.fillRect(0, y, startX, guideWidthPx);
             }
-        };
-
-        if (type === 'top' || type === 'both') {
-            drawLine(-guideWidthPx); // Grow up
-        }
-        if (type === 'bottom' || type === 'both') {
-            drawLine(0); // Grow down
+            const rightStubStart = startX + columns * cardW + (columns - 1) * spacingPx;
+            const rightStubW = pageW - rightStubStart;
+            if (rightStubW > 0) {
+                ctx.fillRect(rightStubStart, y, rightStubW, guideWidthPx);
+            }
         }
     }
-    ctx.restore();
+
+    return canvas;
 }
 
+function scaleGuideWidthForDPI(screenPx: number, screenPPI = 96, targetDPI: number) {
+    return Math.round((screenPx / screenPPI) * targetDPI);
+}
 
-
-// Corner radius for MTG cards per wiki: 2.5mm
+// MTG card corner radius: 2.5mm
 const CARD_CORNER_RADIUS_MM = 2.5;
 
-function drawPerCardGuides(
-    ctx: OffscreenCanvasRenderingContext2D,
-    x: number,
-    y: number,
+type GuideStyle = 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
+
+/**
+ * Create a reusable guide overlay canvas that can be stamped onto each card
+ */
+function createGuideCanvas(
     contentW: number,
     contentH: number,
     bleedPx: number,
     guideColor: string,
     guideWidthPx: number,
     dpi: number,
-    style: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none',
+    style: GuideStyle = 'corners',
     placement: 'inside' | 'outside' = 'outside'
-) {
-    if (style === 'none' || guideWidthPx <= 0) return;
+): OffscreenCanvas | null {
+    if (style === 'none' || guideWidthPx <= 0) return null;
 
-    // Round to nearest pixel for sub-pixel accuracy (minimum 1px)
-    const roundedWidth = Math.max(1, Math.round(guideWidthPx));
+    const cardW = contentW + 2 * bleedPx;
+    const cardH = contentH + 2 * bleedPx;
+    const canvas = new OffscreenCanvas(cardW, cardH);
+    const ctx = canvas.getContext('2d')!;
 
+    const gx = bleedPx;
+    const gy = bleedPx;
+    const w = Math.max(1, Math.round(guideWidthPx));
 
-    const gx = x + bleedPx;
-    const gy = y + bleedPx;
+    ctx.fillStyle = guideColor;
+    ctx.strokeStyle = guideColor;
+    ctx.lineWidth = w;
 
-    ctx.save();
+    // Calculate offset based on placement
+    // For outside: offset outward by guideWidth (so inner edge touches cut line)
+    // For inside: no offset (so outer edge touches cut line)
+    // Note: This logic depends on the shape type
+    const offset = placement === 'outside' ? -w : 0;
 
     if (style === 'corners') {
-        // Corner marks logic with rounded width
-        const guideLenPx = MM_TO_PX(2, dpi);
-        ctx.fillStyle = guideColor;
-
-        if (placement === 'outside') {
-            // Offset outward by full width so guide is outside the cut line
-            // TL - top-left corner
-            ctx.fillRect(gx - roundedWidth, gy - roundedWidth, roundedWidth, guideLenPx + roundedWidth);  // vertical
-            ctx.fillRect(gx - roundedWidth, gy - roundedWidth, guideLenPx + roundedWidth, roundedWidth);  // horizontal
-
-            // TR - top-right corner
-            ctx.fillRect(gx + contentW - guideLenPx, gy - roundedWidth, guideLenPx + roundedWidth, roundedWidth);  // horizontal
-            ctx.fillRect(gx + contentW, gy - roundedWidth, roundedWidth, guideLenPx + roundedWidth); // vertical
-
-            // BL - bottom-left corner
-            ctx.fillRect(gx - roundedWidth, gy + contentH - guideLenPx, roundedWidth, guideLenPx + roundedWidth);  // vertical
-            ctx.fillRect(gx - roundedWidth, gy + contentH, guideLenPx + roundedWidth, roundedWidth); // horizontal
-
-            // BR - bottom-right corner
-            ctx.fillRect(gx + contentW - guideLenPx, gy + contentH, guideLenPx + roundedWidth, roundedWidth); // horizontal
-            ctx.fillRect(gx + contentW, gy + contentH - guideLenPx, roundedWidth, guideLenPx + roundedWidth); // vertical
-        } else {
-            // Inside: guides grow inward from the cut line
-            // TL - top-left corner
-            ctx.fillRect(gx, gy, roundedWidth, guideLenPx);  // vertical
-            ctx.fillRect(gx, gy, guideLenPx, roundedWidth);  // horizontal
-
-            // TR - top-right corner
-            ctx.fillRect(gx + contentW - guideLenPx, gy, guideLenPx, roundedWidth);  // horizontal
-            ctx.fillRect(gx + contentW - roundedWidth, gy, roundedWidth, guideLenPx); // vertical
-
-            // BL - bottom-left corner
-            ctx.fillRect(gx, gy + contentH - guideLenPx, roundedWidth, guideLenPx);  // vertical
-            ctx.fillRect(gx, gy + contentH - roundedWidth, guideLenPx, roundedWidth); // horizontal
-
-            // BR - bottom-right corner
-            ctx.fillRect(gx + contentW - guideLenPx, gy + contentH - roundedWidth, guideLenPx, roundedWidth); // horizontal
-            ctx.fillRect(gx + contentW - roundedWidth, gy + contentH - guideLenPx, roundedWidth, guideLenPx); // vertical
-        }
+        const len = MM_TO_PX(2, dpi);
+        // TL
+        ctx.fillRect(gx + offset, gy + offset, w, len);
+        ctx.fillRect(gx + offset, gy + offset, len, w);
+        // TR
+        ctx.fillRect(gx + contentW - len - offset, gy + offset, len, w);
+        ctx.fillRect(gx + contentW - w - offset, gy + offset, w, len);
+        // BL
+        ctx.fillRect(gx + offset, gy + contentH - len - offset, w, len);
+        ctx.fillRect(gx + offset, gy + contentH - w - offset, len, w);
+        // BR
+        ctx.fillRect(gx + contentW - len - offset, gy + contentH - w - offset, len, w);
+        ctx.fillRect(gx + contentW - w - offset, gy + contentH - len - offset, w, len);
     } else if (style === 'rounded-corners') {
-        // Rounded corner marks
-        const cornerRadiusPx = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
-        ctx.strokeStyle = guideColor;
-        ctx.lineWidth = roundedWidth;
+        const r = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
+        // For rounded corners, the offset logic is slightly different because we draw arcs
+        // The arc path is at radius + halfWidth
+        // If outside: we want inner edge at radius, so path is at radius + halfWidth (offset = 0 relative to corner center)
+        // If inside: we want outer edge at radius, so path is at radius - halfWidth??
 
-        const halfWidth = roundedWidth / 2;
-        // Both placements: inner edge at card radius (2.5mm)
-        // Arc path is at cornerRadius + halfWidth, so inner edge = path - halfWidth = cornerRadius
-        const arcRadius = cornerRadiusPx + halfWidth;
+        // For rounded corners:
+        // Arc center C = gx + r + posOffset
+        // Arc path radius R = r + w/2
+        // Leftmost point of arc path = C - R = gx + r + posOffset - (r + w/2) = gx + posOffset - w/2
+
+        // We want:
+        // Outside: path at gx - w/2 (stroke gx-w to gx) => posOffset = 0
+        // Inside: path at gx + w/2 (stroke gx to gx+w) => posOffset = w
+
+        const posOffset = placement === 'outside' ? 0 : w;
 
         ctx.beginPath();
-        if (placement === 'outside') {
-            // TL
-            ctx.moveTo(gx - halfWidth, gy + cornerRadiusPx);
-            ctx.arc(gx + cornerRadiusPx, gy + cornerRadiusPx, arcRadius, Math.PI, 1.5 * Math.PI);
-
-            // TR
-            ctx.moveTo(gx + contentW - cornerRadiusPx, gy - halfWidth);
-            ctx.arc(gx + contentW - cornerRadiusPx, gy + cornerRadiusPx, arcRadius, 1.5 * Math.PI, 0);
-
-            // BR
-            ctx.moveTo(gx + contentW + halfWidth, gy + contentH - cornerRadiusPx);
-            ctx.arc(gx + contentW - cornerRadiusPx, gy + contentH - cornerRadiusPx, arcRadius, 0, 0.5 * Math.PI);
-
-            // BL
-            ctx.moveTo(gx + cornerRadiusPx, gy + contentH + halfWidth);
-            ctx.arc(gx + cornerRadiusPx, gy + contentH - cornerRadiusPx, arcRadius, 0.5 * Math.PI, Math.PI);
-        } else {
-            // Inside: arcs grow inward
-            // TL
-            ctx.moveTo(gx + halfWidth, gy + cornerRadiusPx);
-            ctx.arc(gx + cornerRadiusPx, gy + cornerRadiusPx, arcRadius, Math.PI, 1.5 * Math.PI);
-
-            // TR
-            ctx.moveTo(gx + contentW - cornerRadiusPx, gy + halfWidth);
-            ctx.arc(gx + contentW - cornerRadiusPx, gy + cornerRadiusPx, arcRadius, 1.5 * Math.PI, 0);
-
-            // BR
-            ctx.moveTo(gx + contentW - halfWidth, gy + contentH - cornerRadiusPx);
-            ctx.arc(gx + contentW - cornerRadiusPx, gy + contentH - cornerRadiusPx, arcRadius, 0, 0.5 * Math.PI);
-
-            // BL
-            ctx.moveTo(gx + cornerRadiusPx, gy + contentH - halfWidth);
-            ctx.arc(gx + cornerRadiusPx, gy + contentH - cornerRadiusPx, arcRadius, 0.5 * Math.PI, Math.PI);
-        }
-
+        // TL
+        ctx.arc(gx + r + posOffset, gy + r + posOffset, r + w / 2, Math.PI, 1.5 * Math.PI);
+        // TR
+        ctx.moveTo(gx + contentW - r - posOffset, gy + posOffset);
+        ctx.arc(gx + contentW - r - posOffset, gy + r + posOffset, r + w / 2, 1.5 * Math.PI, 2 * Math.PI);
+        // BR
+        ctx.moveTo(gx + contentW - posOffset, gy + contentH - r - posOffset);
+        ctx.arc(gx + contentW - r - posOffset, gy + contentH - r - posOffset, r + w / 2, 0, 0.5 * Math.PI);
+        // BL
+        ctx.moveTo(gx + r + posOffset, gy + contentH - posOffset);
+        ctx.arc(gx + r + posOffset, gy + contentH - r - posOffset, r + w / 2, 0.5 * Math.PI, Math.PI);
         ctx.stroke();
     } else {
-        // Solid or dashed rounded/square rectangle
-        const isSquare = style === 'solid-squared-rect' || style === 'dashed-squared-rect';
-        const isDashed = style === 'dashed-rounded-rect' || style === 'dashed-squared-rect';
+        const isSquare = style.includes('squared');
+        const isDashed = style.includes('dashed');
+        // CSS border-radius is outer edge; canvas stroke is centered on path
+        // To match CSS: path radius = cornerRadius + halfWidth (outer = path + w/2)
+        const halfWidth = w / 2;
+        const cornerRadius = isSquare ? 0 : MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
 
-        const cornerRadiusPx = isSquare ? 0 : MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
-        ctx.strokeStyle = guideColor;
-        ctx.lineWidth = roundedWidth;
+        // For rects:
+        // Outside: box is expanded by w on all sides
+        // Inside: box is exactly content size
+        const rectX = gx + (placement === 'outside' ? -w : 0);
+        const rectY = gy + (placement === 'outside' ? -w : 0);
+        const rectW = contentW + (placement === 'outside' ? 2 * w : 0);
+        const rectH = contentH + (placement === 'outside' ? 2 * w : 0);
+
+        // Radius adjustment:
+        // Match SortableCard logic: both inside and outside use the same radius formula
+        // Outer edge = cornerRadius + w
+        // Path radius = cornerRadius + w/2
+        const pathRadius = cornerRadius + halfWidth;
 
         if (isDashed) {
-            // Scale dash pattern based on DPI
-            const dashPx = MM_TO_PX(1, dpi);
-            const gapPx = MM_TO_PX(0.5, dpi);
-            ctx.setLineDash([dashPx, gapPx]);
+            const dashLen = MM_TO_PX(2, dpi);
+            ctx.setLineDash([dashLen, dashLen]);
         }
 
         ctx.beginPath();
-        const halfWidth = roundedWidth / 2;
-
-        if (placement === 'outside') {
-            // Stroke is centered on path. Inner edge at cut line means path is offset outward by halfWidth.
-            ctx.roundRect(
-                gx - halfWidth,
-                gy - halfWidth,
-                contentW + roundedWidth,
-                contentH + roundedWidth,
-                cornerRadiusPx + halfWidth
-            );
-        } else {
-            // Inside: inner edge at card radius (2.5mm), path at radius + halfWidth
-            ctx.roundRect(
-                gx + halfWidth,
-                gy + halfWidth,
-                contentW - roundedWidth,
-                contentH - roundedWidth,
-                cornerRadiusPx + halfWidth  // Path radius so inner edge is at cornerRadiusPx
-            );
-        }
+        ctx.roundRect(rectX + halfWidth, rectY + halfWidth, rectW - w, rectH - w, pathRadius);
         ctx.stroke();
     }
 
-    ctx.restore();
+    return canvas;
 }
 
 
 
-
-// Removed unused scaleGuideWidthForDPI function since we now convert mm to px directly
 
 const canvasCache = new Map<string, OffscreenCanvas>();
 
@@ -287,13 +218,7 @@ self.onmessage = async (event: MessageEvent) => {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
             imagesById, API_BASE, darkenNearBlack, cutLineStyle, perCardGuideStyle, guidePlacement
-        } = settings as {
-            // ... other props
-            perCardGuideStyle: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
-            guidePlacement: 'inside' | 'outside';
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            [key: string]: any;
-        };
+        } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
         const pageHeightPx = pageSizeUnit === "in" ? IN(pageHeight, DPI) : MM_TO_PX(pageHeight, DPI);
@@ -304,9 +229,6 @@ self.onmessage = async (event: MessageEvent) => {
         const cardHeightPx = contentHeightInPx + 2 * bleedPx;
         const spacingPx = MM_TO_PX(cardSpacingMm || 0, DPI);
         const gridWidthPx = columns * cardWidthPx + Math.max(0, columns - 1) * spacingPx;
-
-        // Convert guide width from CSS pixels (96 DPI) to target DPI
-        const guideWidthPx = guideWidthCssPx <= 0 ? 0 : Math.max(1, Math.round(guideWidthCssPx * (DPI / 96)));
         const gridHeightPx = rows * cardHeightPx + Math.max(0, rows - 1) * spacingPx;
         const positionOffsetXPx = MM_TO_PX(cardPositionX || 0, DPI);
         const positionOffsetYPx = MM_TO_PX(cardPositionY || 0, DPI);
@@ -319,6 +241,15 @@ self.onmessage = async (event: MessageEvent) => {
         ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
         let imagesProcessed = 0;
+        const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthCssPx, 96, DPI);
+
+        // Create reusable guide overlay canvas once
+        const guideCanvas = createGuideCanvas(
+            contentWidthInPx, contentHeightInPx, bleedPx,
+            guideColor, scaledGuideWidth, DPI, perCardGuideStyle ?? 'corners',
+            guidePlacement ?? 'outside'
+        );
+
         // Determine occupied rows and columns
         const occupiedCols = new Set<number>();
         const occupiedRows = new Set<number>();
@@ -327,8 +258,15 @@ self.onmessage = async (event: MessageEvent) => {
             occupiedRows.add(Math.floor(i / columns));
         }
 
-        // Draw full page guides (behind cards)
-        drawFullPageGuides(ctx, pageWidthPx, pageHeightPx, startX, startY, columns, rows, contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx, bleedPx, guideWidthPx, spacingPx, occupiedCols, occupiedRows, cutLineStyle);
+        // Create and draw full page guides (behind cards)
+        const fullPageGuidesCanvas = createFullPageGuidesCanvas(
+            pageWidthPx, pageHeightPx, startX, startY, columns, rows,
+            contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx,
+            bleedPx, scaledGuideWidth, spacingPx, occupiedCols, occupiedRows, cutLineStyle
+        );
+        if (fullPageGuidesCanvas) {
+            ctx.drawImage(fullPageGuidesCanvas, 0, 0);
+        }
 
         for (const [idx, card] of pageCards.entries()) {
             const col = idx % columns;
@@ -427,7 +365,10 @@ self.onmessage = async (event: MessageEvent) => {
                 finalCardCanvas.close();
             }
 
-            drawPerCardGuides(ctx, x, y, contentWidthInPx, contentHeightInPx, bleedPx, guideColor, guideWidthPx, DPI, perCardGuideStyle, guidePlacement);
+            // Stamp the pre-rendered guide overlay
+            if (guideCanvas) {
+                ctx.drawImage(guideCanvas, x, y);
+            }
 
             imagesProcessed++;
             self.postMessage({ type: 'progress', pageIndex, imagesProcessed });

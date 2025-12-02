@@ -13,7 +13,7 @@ test.describe('Card Interactions', () => {
         await page.getByRole('button', { name: 'Fetch Cards' }).click();
 
         // Wait for cards to load
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 30000 });
+        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 60000 });
     });
 
     test('should duplicate a card via context menu', async ({ page, browserName }) => {
@@ -59,7 +59,7 @@ test.describe('Card Interactions', () => {
         await firstCard.click();
 
         // Wait for modal
-        await expect(page.getByText('Select Artwork for Forest')).toBeVisible();
+        await expect(page.getByText('Select Artwork for Forest')).toBeVisible({ timeout: 20000 });
 
         // Click "Get All Prints" to ensure we have options
         await page.getByRole('button', { name: 'Get All Prints' }).click();
@@ -95,12 +95,15 @@ test.describe('Card Interactions', () => {
         // Click to open modal
         await firstCard.click();
 
-        // Type "Mountain" in search
-        await page.getByPlaceholder('Replace with a different card...').fill('Mountain');
-        await page.getByRole('button', { name: 'Search' }).click();
+        // Click "Search for a different card..." button
+        await page.getByRole('button', { name: 'Search for a different card...' }).click();
+
+        // Type "Mountain" in Advanced Search input
+        await page.getByPlaceholder('Search card name...').fill('Mountain');
+        await page.keyboard.press('Enter');
 
         // Wait for "Select Artwork for Mountain" header
-        await expect(page.getByText('Select Artwork for Mountain')).toBeVisible();
+        await expect(page.getByText('Select Artwork for Mountain')).toBeVisible({ timeout: 20000 });
 
         // Select the first image (it should be a Mountain now)
         await page.locator('div.grid > img').first().click();

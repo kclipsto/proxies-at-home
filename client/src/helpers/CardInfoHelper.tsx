@@ -1,5 +1,13 @@
 import type { CardInfo } from "../../../shared/types";
 
+/**
+ * Check if a query ends with incomplete tag syntax (e.g., "set:", "c:", "t:")
+ * Used to prevent API requests while the user is still typing
+ */
+export function hasIncompleteTagSyntax(query: string): boolean {
+  return /\b\w+:\s*$/i.test(query);
+}
+
 export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
   let s = input.trim();
 
@@ -29,20 +37,81 @@ export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
 
   // Check for {Number} only format (e.g. Name {123}) - User requested to drop number
   const numBracketsOnly = /\s*\{([a-z0-9]+)\}\s*$/i;
-  const mNumOnly = s.match(numBracketsOnly);
-  if (mNumOnly) {
-    // Just remove it
-    s = s.replace(numBracketsOnly, "").trim();
-  }
+  const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
+  const setColonTail = /\s*(?:set:|s:)([a-z0-9]+)\s*$/i;
+  const numColonTail = /\s*(?:num:|cn:)([a-z0-9]+)\s*$/i;
 
-  // Check for (Set) Number format (e.g. (ABC) 123)
-  if (!setCode && !number) {
-    const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
-    const m = s.match(setNumTail);
-    if (m) {
-      setCode = m[1]?.toLowerCase();
-      number = m[2] ?? undefined;
-      s = s.replace(setNumTail, "").trim();
+  let parsing = true;
+  while (parsing) {
+    parsing = false;
+
+    // 1. Try to extract Set/Num from [Set] {Num} or [Set]
+    if (!setCode) {
+      const m = s.match(setNumBrackets);
+      if (m) {
+        setCode = m[1].toLowerCase();
+        if (m[2]) number = m[2];
+        s = s.replace(setNumBrackets, "").trim();
+        parsing = true;
+        continue;
+      }
+    }
+
+    // 2. Strip {Num} pattern (not captured - for compatibility)
+    if (!number) {
+      const m = s.match(numBracketsOnly);
+      if (m) {
+        s = s.replace(numBracketsOnly, "").trim();
+        parsing = true;
+        continue;
+      }
+    }
+
+    // 3. Try to extract (Set) Number
+    if (!setCode && !number) {
+      const m = s.match(setNumTail);
+      if (m) {
+        setCode = m[1].toLowerCase();
+        number = m[2] ?? undefined;
+        s = s.replace(setNumTail, "").trim();
+        parsing = true;
+        continue;
+      }
+    }
+
+    // 4. Try set: or s:
+    if (!setCode) {
+      const m = s.match(setColonTail);
+      if (m) {
+        setCode = m[1].toLowerCase();
+        s = s.replace(setColonTail, "").trim();
+        parsing = true;
+        continue;
+      }
+    }
+
+    // 5. Try num: or cn:
+    if (!number) {
+      const m = s.match(numColonTail);
+      if (m) {
+        number = m[1];
+        s = s.replace(numColonTail, "").trim();
+        parsing = true;
+        continue;
+      }
+    }
+
+    // 6. Generic cleanup (remove other brackets/carets like [Foil])
+    if (s.match(bracketTail)) {
+      s = s.replace(bracketTail, "").trim();
+      parsing = true;
+      continue;
+    }
+
+    if (s.match(caretTail)) {
+      s = s.replace(caretTail, "").trim();
+      parsing = true;
+      continue;
     }
   }
 

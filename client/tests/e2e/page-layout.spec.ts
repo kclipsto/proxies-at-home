@@ -61,10 +61,8 @@ test.describe('Page Layout Logic', () => {
         await expect(heightInput).toHaveValue('18.50');
 
         // Toggle unit to mm
-        // const unitToggle = page.getByRole('checkbox', { name: 'Unit' }); // Flowbite ToggleSwitch uses a checkbox input
-        // Or we can find it by label if the structure allows, but ToggleSwitch structure is specific.
-        // Let's try clicking the toggle switch container or label if needed, but checkbox interaction is standard.
-        // The label "Unit" is associated with the toggle.
+        // The ToggleSwitch uses a checkbox input with id "unit-toggle"
+        // We'll click the label associated with it
 
         // Wait for toggle to be visible and verify labels
         // Use specific locator to avoid strict mode violation with other "mm" text on page

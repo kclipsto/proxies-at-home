@@ -8,23 +8,24 @@ import {
   Modal,
   ModalBody,
   ModalHeader,
-  TextInput,
 } from "flowbite-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { API_BASE } from "../constants";
-import { db } from "../db";
-import { useArtworkModalStore } from "../store";
+import { useArtworkModalStore } from "@/store/artworkModal";
 import type { ScryfallCard } from "../../../shared/types";
-import { ArrowLeft } from "lucide-react";
-import { useRef } from "react";
+import { ArrowLeft, ArrowRightLeft } from "lucide-react";
+import { fetchCardWithPrints } from "@/helpers/scryfallApi";
+import { db } from "../db";
+import { AdvancedSearch } from "./AdvancedSearch";
+import { Search } from "lucide-react";
 
 export function ArtworkModal() {
   const [isGettingMore, setIsGettingMore] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [applyToAll, setApplyToAll] = useState(false);
   const [previewCardData, setPreviewCardData] = useState<ScryfallCard | null>(
     null
   );
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const isModalOpen = useArtworkModalStore((state) => state.open);
   const modalCard = useArtworkModalStore((state) => state.card);
@@ -34,8 +35,8 @@ export function ArtworkModal() {
   useEffect(() => {
     if (!isModalOpen) {
       setPreviewCardData(null);
-      setSearchQuery("");
       setApplyToAll(false);
+      setIsSearchOpen(false);
     }
   }, [isModalOpen]);
 
@@ -45,10 +46,23 @@ export function ArtworkModal() {
       [modalCard?.imageId]
     ) || null;
 
+  // Create object URL for the processed display blob if available
+  const [processedDisplayUrl, setProcessedDisplayUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (imageObject?.displayBlob) {
+      const url = URL.createObjectURL(imageObject.displayBlob);
+      setProcessedDisplayUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setProcessedDisplayUrl(null);
+    }
+  }, [imageObject?.displayBlob]);
+
   const displayData = {
     name: previewCardData?.name || modalCard?.name,
     imageUrls: previewCardData?.imageUrls || imageObject?.imageUrls,
     id: previewCardData?.imageUrls?.[0] || imageObject?.id,
+    processedDisplayUrl: !previewCardData ? processedDisplayUrl : null,
   };
 
   async function getMorePrints() {
@@ -82,24 +96,28 @@ export function ArtworkModal() {
       newImageId,
       modalCard,
       applyToAll,
-      isReplacing ? previewCardData.name : undefined
+      isReplacing ? previewCardData.name : undefined,
+      isReplacing ? previewCardData.imageUrls : undefined
     );
 
     closeModal();
   }
 
-  async function handleSearch() {
-    const name = searchQuery.trim();
+  async function handleSearch(name: string, exact: boolean = false) {
     if (!name) return;
 
-    const res = await axios.post<ScryfallCard[]>(
-      `${API_BASE}/api/cards/images`,
-      { cardNames: [name] }
-    );
-
-    const newCardData = res.data?.[0];
-    if (newCardData) {
-      setPreviewCardData(newCardData);
+    setIsGettingMore(true);
+    try {
+      const cardWithPrints = await fetchCardWithPrints(name, exact, false);
+      if (cardWithPrints) {
+        setPreviewCardData(cardWithPrints);
+      } else {
+        console.warn("No cards found for query:", name);
+      }
+    } catch (e) {
+      console.error("Search failed:", e);
+    } finally {
+      setIsGettingMore(false);
     }
   }
 
@@ -109,9 +127,18 @@ export function ArtworkModal() {
     const handler = (e: MouseEvent) => {
       if (isModalOpen && contentRef.current) {
         if (!contentRef.current.contains(e.target as Node)) {
-          e.preventDefault();
-          e.stopPropagation();
-          closeModal();
+          // Only close if AdvancedSearch is NOT open
+          // We can't easily check if the click was inside AdvancedSearch portal here,
+          // but AdvancedSearch has its own backdrop click handler.
+          // However, if we click AdvancedSearch backdrop, this might trigger.
+          // Let's rely on AdvancedSearch being a portal with higher Z-index.
+          // But wait, if we click outside ArtworkModal content, we want to close ArtworkModal.
+          // If AdvancedSearch is open, we probably shouldn't close ArtworkModal.
+          if (!isSearchOpen) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeModal();
+          }
         }
       }
     };
@@ -121,7 +148,7 @@ export function ArtworkModal() {
     }
 
     return () => window.removeEventListener("click", handler, true);
-  }, [isModalOpen, closeModal]);
+  }, [isModalOpen, closeModal, isSearchOpen]);
 
   const [zoomLevel, setZoomLevel] = useState(1);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -176,94 +203,106 @@ export function ArtworkModal() {
   }, []);
 
   return (
-    <Modal show={isModalOpen} onClose={closeModal} size="4xl" dismissible>
-      <div ref={contentRef}>
-        <ModalHeader>
-          {previewCardData && (
-            <Button
-              size="sm"
-              className="mr-2"
-              onClick={() => setPreviewCardData(null)}
-            >
-              <ArrowLeft className="size-5" />
-            </Button>
-          )}
-          Select Artwork for {displayData.name}
-        </ModalHeader>
-        <ModalBody>
-          <div className="sticky top-0 z-10 bg-white dark:bg-gray-700 py-4">
-            <div className="flex gap-2 mb-4">
-              <TextInput
-                className="flex-grow"
-                sizing="lg"
-                type="text"
-                placeholder="Replace with a different card..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleSearch();
-                  }
-                }}
-              />
-              <Button size="lg" onClick={handleSearch}>Search</Button>
-            </div>
-            {modalCard && (
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="apply-to-all"
-                  checked={applyToAll}
-                  onChange={(e) => setApplyToAll(e.target.checked)}
-                  className="size-5"
-                />
-                <Label htmlFor="apply-to-all" className="text-base">
-                  Apply to all cards named "{modalCard?.name}"
-                </Label>
-              </div>
-            )}
-          </div>
-
-          {modalCard && (
-            <>
-              <div
-                className="max-h-[60vh] overflow-y-auto pt-4"
-                style={{ touchAction: "pan-x pan-y" }}
-                ref={gridRef}
-              >
-                <div
-                  className="grid grid-cols-2 md:grid-cols-3 gap-4"
-                  style={{ zoom: zoomLevel }}
-                >
-                  {(displayData.imageUrls ?? []).map((pngUrl, i) => (
-                    <img
-                      key={i}
-                      src={pngUrl}
-                      loading="lazy"
-                      className={`w-full cursor-pointer border-4 ${displayData.id === pngUrl
-                        ? "border-green-500"
-                        : "border-transparent"
-                        }`}
-                      onClick={() => handleSelectArtwork(pngUrl)}
-                    />
-                  ))}
-                </div>
-              </div>
-
+    <>
+      <Modal show={isModalOpen} onClose={closeModal} size="4xl" dismissible>
+        <div ref={contentRef}>
+          <ModalHeader>
+            {previewCardData && (
               <Button
-                className="w-full mt-4"
-                color="blue"
-                size="xl"
-                onClick={getMorePrints}
-                disabled={isGettingMore}
+                size="sm"
+                className="mr-2"
+                onClick={() => setPreviewCardData(null)}
               >
-                {isGettingMore ? "Loading prints..." : "Get All Prints"}
+                <ArrowLeft className="size-5" />
               </Button>
-            </>
-          )}
-        </ModalBody>
-      </div>
-    </Modal>
+            )}
+            Select Artwork for {displayData.name}
+          </ModalHeader>
+          <ModalBody className="overflow-hidden p-0">
+            <div className="flex flex-col h-[70vh]">
+              <div className="flex-none bg-white dark:bg-gray-700 p-6 pb-0 z-10">
+                <div className="mb-4">
+                  <Button
+                    color="blue"
+                    className="w-full"
+                    onClick={() => setIsSearchOpen(true)}
+                  >
+                    <Search className="mr-2 h-4 w-4" />
+                    Search for a different card...
+                  </Button>
+                </div>
+                {modalCard && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <Checkbox
+                      id="apply-to-all"
+                      checked={applyToAll}
+                      onChange={(e) => setApplyToAll(e.target.checked)}
+                      className="size-5"
+                    />
+                    <Label htmlFor="apply-to-all" className="text-base">
+                      Apply to all cards named "{modalCard?.name}"
+                    </Label>
+                  </div>
+                )}
+              </div>
+
+              {modalCard && (
+                <div
+                  className="flex-grow overflow-y-auto p-6 pt-0"
+                  style={{ touchAction: "pan-x pan-y" }}
+                  ref={gridRef}
+                >
+                  <div
+                    className="grid grid-cols-2 md:grid-cols-3 gap-4"
+                    style={{ zoom: zoomLevel }}
+                  >
+                    {(displayData.imageUrls ?? []).map((pngUrl, i) => {
+                      const isSelected = displayData.id === pngUrl;
+                      // Use processed blob for selected artwork to show bleed/darkening
+                      const imageSrc = isSelected && displayData.processedDisplayUrl
+                        ? displayData.processedDisplayUrl
+                        : pngUrl;
+                      return (
+                        <img
+                          key={i}
+                          src={imageSrc}
+                          loading="lazy"
+                          className={`w-full cursor-pointer border-4 rounded-xl ${isSelected
+                            ? "border-green-500"
+                            : "border-transparent"
+                            }`}
+                          onClick={() => handleSelectArtwork(pngUrl)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {modalCard && (
+                <div className="flex-none p-6 pt-4 bg-white dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 z-10">
+                  <Button
+                    className="w-full"
+                    color="blue"
+                    size="xl"
+                    onClick={getMorePrints}
+                    disabled={isGettingMore}
+                  >
+                    {isGettingMore ? "Loading prints..." : "Get All Prints"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </ModalBody>
+        </div>
+      </Modal>
+      <AdvancedSearch
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelectCard={(name) => handleSearch(name, true)}
+        title="Select Card"
+        actionIcon={<ArrowRightLeft className="w-6 h-6" />}
+      />
+    </>
   );
 }

@@ -1,10 +1,10 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import { Button } from "flowbite-react";
-import { db, type PdfExportSession } from "../../db";
+import { db } from "../../db";
 
 
 import { useFilteredAndSortedCards } from "@/hooks/useFilteredAndSortedCards";
@@ -42,19 +42,9 @@ export function ExportActions({ cards }: Props) {
 
   const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
-  // Resume/Error Modal State
-  const [showResumeModal, setShowResumeModal] = useState(false);
+  // Error Modal State
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [resumeSession, setResumeSession] = useState<PdfExportSession | null>(null);
-  const [errorInfo, setErrorInfo] = useState<{
-    message: string;
-    canResume: boolean;
-    sessionId?: string;
-    pageIndex?: number;
-  } | null>(null);
-
-  // Ref to hold session for modal actions to avoid stale closures if needed
-  const resumeSessionRef = useRef<PdfExportSession | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleCopyDecklist = async () => {
     const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: "alpha" });
@@ -67,7 +57,7 @@ export function ExportActions({ cards }: Props) {
     downloadDecklist(`decklist_${date}.txt`, text);
   };
 
-  const performExport = async (sessionToResume: PdfExportSession | null) => {
+  const handleExport = async () => {
     if (!filteredAndSortedCards.length) return;
 
     const { exportProxyPagesToPdf } = await import(
@@ -125,85 +115,19 @@ export function ExportActions({ cards }: Props) {
         cutLineStyle,
         perCardGuideStyle,
         guidePlacement,
-        resumeSession: sessionToResume,
       });
-
-      // Success - clear any saved sessions
-      await db.pdfExportSessions.clear();
-
     } catch (err: unknown) {
       if (err instanceof Error && err.message === "Cancelled by user") {
         return; // User cancelled, do nothing
       }
 
       console.error("Export failed:", err);
-
-      // Check if it's a resumable error
-      if (err && typeof err === 'object' && 'canResume' in err) {
-        const exportError = err as {
-          error: Error;
-          sessionId: string;
-          canResume: boolean;
-          pageIndex?: number;
-        };
-
-        setErrorInfo({
-          message: exportError.error.message,
-          canResume: exportError.canResume,
-          sessionId: exportError.sessionId,
-          pageIndex: exportError.pageIndex
-        });
-        setShowErrorModal(true);
-      } else {
-        // Generic error
-        setErrorInfo({
-          message: err instanceof Error ? err.message : String(err),
-          canResume: false
-        });
-        setShowErrorModal(true);
-      }
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setShowErrorModal(true);
     } finally {
       setLoadingTask(null);
       setOnCancel(null);
     }
-  };
-
-  const handleExport = async () => {
-    if (!filteredAndSortedCards.length) return;
-
-    // Check for existing session
-    const existingSessions = await db.pdfExportSessions
-      .where('timestamp')
-      .above(Date.now() - 1000 * 60 * 60) // Last hour
-      .toArray();
-
-    if (existingSessions.length > 0) {
-      // Show modal to ask user
-      const session = existingSessions[0];
-      setResumeSession(session);
-      resumeSessionRef.current = session;
-      setShowResumeModal(true);
-      return;
-    }
-
-    await performExport(null);
-  };
-
-  const handleResumeConfirm = async () => {
-    setShowResumeModal(false);
-    await performExport(resumeSessionRef.current);
-  };
-
-  const handleResumeCancel = async () => {
-    setShowResumeModal(false);
-    await db.pdfExportSessions.clear();
-    await performExport(null); // Start fresh
-  };
-
-  const handleErrorRetry = async () => {
-    setShowErrorModal(false);
-    // Re-check for session (it should be there since error saved it)
-    await handleExport();
   };
 
   async function handleExportZip() {
@@ -257,78 +181,22 @@ export function ExportActions({ cards }: Props) {
         </Button>
       </a>
 
-      {showResumeModal && resumeSession && createPortal(
-        <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
-            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-              Resume PDF Export?
-            </div>
-            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-              Found incomplete export from{' '}
-              {new Date(resumeSession.timestamp).toLocaleString()}.
-              Resume where you left off?
-            </div>
-            <div className="flex justify-center gap-4">
-              <Button
-                color="blue"
-                onClick={handleResumeConfirm}
-              >
-                Resume
-              </Button>
-              <Button
-                color="gray"
-                onClick={handleResumeCancel}
-              >
-                Start Fresh
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {showErrorModal && errorInfo && createPortal(
+      {showErrorModal && errorMessage && createPortal(
         <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
             <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
               PDF Export Failed
             </div>
             <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-              {errorInfo.canResume ? (
-                <>
-                  Export failed at page {(errorInfo.pageIndex || 0) + 1}.
-                  Your progress has been saved.
-                  <br /><br />
-                  <span className="text-sm text-gray-400">{errorInfo.message}</span>
-                </>
-              ) : (
-                errorInfo.message
-              )}
+              {errorMessage}
             </div>
             <div className="flex justify-center gap-4">
-              {errorInfo.canResume ? (
-                <>
-                  <Button
-                    color="blue"
-                    onClick={handleErrorRetry}
-                  >
-                    Retry
-                  </Button>
-                  <Button
-                    color="gray"
-                    onClick={() => setShowErrorModal(false)}
-                  >
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  color="gray"
-                  onClick={() => setShowErrorModal(false)}
-                >
-                  Close
-                </Button>
-              )}
+              <Button
+                color="gray"
+                onClick={() => setShowErrorModal(false)}
+              >
+                Close
+              </Button>
             </div>
           </div>
         </div>,

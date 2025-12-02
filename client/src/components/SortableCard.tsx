@@ -1,6 +1,8 @@
 import { memo, useRef } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
+import type { DraggableAttributes } from "@dnd-kit/core";
 import { useArtworkModalStore, useSettingsStore } from "../store";
 import type { CardOption } from "../../../shared/types";
 
@@ -42,10 +44,8 @@ export const CardView = memo(function CardView({
   isOverlay,
 }: SortableCardProps & {
   style?: React.CSSProperties;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  listeners?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  attributes?: any;
+  listeners?: SyntheticListenerMap;
+  attributes?: DraggableAttributes;
   forwardedRef?: React.Ref<HTMLDivElement>;
   isOverlay?: boolean;
   isDragging?: boolean;

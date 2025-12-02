@@ -55,7 +55,7 @@ interface ScryfallCardFace {
   mana_cost?: string;
 }
 
-interface ScryfallCard {
+export interface ScryfallApiCard {
   image_uris?: {
     png?: string;
   };
@@ -66,10 +66,12 @@ interface ScryfallCard {
   type_line?: string;
   layout?: string;
   rarity?: string;
+  set?: string;
+  collector_number?: string;
 }
 
 interface ScryfallResponse {
-  data: ScryfallCard[];
+  data: ScryfallApiCard[];
   has_more: boolean;
   next_page: string | null;
 }
@@ -81,7 +83,7 @@ interface ScryfallResponse {
  */
 async function fetchAllPages<T>(
   query: string,
-  extractor: (card: ScryfallCard) => T[]
+  extractor: (card: ScryfallApiCard) => T[]
 ): Promise<T[]> {
   const encodedUrl = `${SCRYFALL_API}?q=${encodeURIComponent(query)}`;
   const results: T[] = [];
@@ -127,7 +129,7 @@ async function fetchPngsByQuery(query: string): Promise<string[]> {
   });
 }
 
-async function fetchCardsByQuery(query: string): Promise<ScryfallCard[]> {
+async function fetchCardsByQuery(query: string): Promise<ScryfallApiCard[]> {
   return fetchAllPages(query, (card) => [card]);
 }
 
@@ -204,7 +206,7 @@ export async function getCardsWithImagesForCardInfo(
   unique = "art",
   language = "en",
   fallbackToEnglish = true
-): Promise<ScryfallCard[]> {
+): Promise<ScryfallApiCard[]> {
   const { name, set, number } = cardInfo || {};
 
   const executeStrategy = (queryTemplate: (lang: string) => string) => {
@@ -253,7 +255,7 @@ export async function getCardDataForCardInfo(
   cardInfo: CardInfo,
   language = "en",
   fallbackToEnglish = true
-): Promise<ScryfallCard | null> {
+): Promise<ScryfallApiCard | null> {
   const { name, set, number } = cardInfo || {};
   if (!name) return null;
 

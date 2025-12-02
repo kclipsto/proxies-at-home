@@ -7,6 +7,7 @@ export type LoadingTask =
   | "Uploading Images"
   | "Clearing Images"
   | "Exporting ZIP"
+  | "Adding Card"
   | null;
 
 type Store = {

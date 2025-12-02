@@ -15,8 +15,8 @@ test.describe('Darken Near Black Feature', () => {
         await fileInput.setInputFiles(path.join(__dirname, '../fixtures/dark-test.png'));
 
         // Wait for upload to process
-        await expect(page.getByText('Uploading Images')).toBeVisible({ timeout: 10000 });
-        await expect(page.getByText('Uploading Images')).not.toBeVisible({ timeout: 30000 });
+        await expect(page.getByText('Processing Images')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText('Processing Images')).not.toBeVisible({ timeout: 30000 });
 
         // Wait for card to appear
         // The SortableCard component has a drag handle with title "Drag"

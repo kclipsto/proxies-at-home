@@ -161,6 +161,7 @@ void main() {
     vec4 color = texture(u_image, imageUV);
 
     // Darken Near Black Logic
+    // Darken Near Black Logic
     if (u_darken) {
         float threshold = 30.0 / 255.0; // 30 in 0..255
         if (color.r < threshold && color.g < threshold && color.b < threshold) {

@@ -176,7 +176,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   });
 
   // Cleanup on unmount
-  // Cleanup on unmount
   useEffect(() => {
     const cache = urlCacheRef.current;
     return () => {
@@ -482,8 +481,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     };
   }, [setZoom]);
 
-  // Handle Pinch-to-Zoom on Mobile
-  // Handle Pinch-to-Zoom on Mobile
   // Handle Pinch-to-Zoom on Mobile
   usePinch(
     ({ offset: [s], origin: [ox, oy], first, last, event }) => {

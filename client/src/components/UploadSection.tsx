@@ -5,14 +5,11 @@ import fullLogo from "@/assets/fullLogo.png";
 import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
 import {
   cardKey,
-  extractCardInfo,
   parseDeckToInfos,
 } from "@/helpers/CardInfoHelper";
 import {
-  getMpcImageUrl,
   inferCardNameFromFilename,
-  parseMpcText,
-  tryParseMpcSchemaXml,
+  processMpcImport,
 } from "@/helpers/Mpc";
 import { useCardsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
@@ -30,7 +27,9 @@ import { ExternalLink, HelpCircle, Download, MousePointerClick, Move, Copy, Uplo
 import { createPortal } from "react-dom";
 import { AutoTooltip } from "./AutoTooltip";
 import { PullToRefresh } from "./PullToRefresh";
+import { AdvancedSearch } from "./AdvancedSearch";
 import type { CardInfo } from "../../../shared/types";
+
 
 async function readText(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -42,27 +41,26 @@ async function readText(file: File): Promise<string> {
 
 type Props = {
   isCollapsed?: boolean;
-  cardCount: number; // Passed from parent to avoid redundant DB query
+  cardCount: number;
   mobile?: boolean;
   onUploadComplete?: () => void;
 };
 
 export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete }: Props) {
   const [deckText, setDeckText] = useState("");
-  // Controller for fetches
   const fetchController = useRef<AbortController | null>(null);
-  // Controller for background enrichment tasks
   const enrichmentController = useRef<AbortController | null>(null);
+
 
   const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
   const setLoadingMessage = useLoadingStore((state) => state.setLoadingMessage);
 
   const globalLanguage = useSettingsStore((s) => s.globalLanguage ?? "en");
+
+
   const setGlobalLanguage = useSettingsStore(
     (s) => s.setGlobalLanguage ?? (() => { })
   );
-
-
 
   async function addUploadedFiles(
     files: FileList,
@@ -87,195 +85,61 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
     if (cardsToAdd.length > 0) {
       await addCards(cardsToAdd);
-      enrichCardsMetadata(cardsToAdd);
+      onUploadComplete?.();
     }
   }
 
-  const handleUploadMpcFill = async (
+  const createFileUploadHandler = (hasBakedBleed: boolean) => async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    setLoadingTask("Uploading Images");
-
-    try {
-      const files = e.target.files;
-      if (files && files.length) {
-        await addUploadedFiles(files, { hasBakedBleed: true });
-        onUploadComplete?.();
+    if (e.target.files && e.target.files.length > 0) {
+      setLoadingTask("Processing Images");
+      try {
+        await addUploadedFiles(e.target.files, { hasBakedBleed });
+      } finally {
+        setLoadingTask(null);
       }
-    } finally {
-      if (e.target) e.target.value = "";
-
-      setLoadingTask(null);
     }
   };
 
-  const handleUploadStandard = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    setLoadingTask("Uploading Images");
-    try {
-      const files = e.target.files;
-      if (files && files.length) {
-        await addUploadedFiles(files, { hasBakedBleed: false });
-        onUploadComplete?.();
-      }
-    } finally {
-      if (e.target) e.target.value = "";
-      setLoadingTask(null);
-    }
-  };
+  const handleUploadMpcFill = createFileUploadHandler(true);
+  const handleUploadStandard = createFileUploadHandler(false);
 
   const handleImportMpcXml = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoadingTask("Processing Images");
     try {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const text = await readText(file);
 
-      const raw = await readText(file);
-      const schemaItems = tryParseMpcSchemaXml(raw);
-      const items =
-        schemaItems && schemaItems.length ? schemaItems : parseMpcText(raw);
+      const result = await processMpcImport(text, (_current, _total, message) => {
+        setLoadingTask("Fetching cards");
+        setLoadingMessage(message);
+      });
 
-      const cardsToAdd: Array<
-        Omit<CardOption, "uuid" | "order"> & { imageId?: string }
-      > = [];
-
-      for (const it of items) {
-        const qty = it.qty || 1;
-        // Clean the name and extract set/number if present
-        const rawName = it.name || (it.filename ? inferCardNameFromFilename(it.filename) : "Custom Art");
-        const info = extractCardInfo(rawName);
-        const name = info.name;
-
-        const mpcUrl = getMpcImageUrl(it.frontId);
-        const imageUrls = mpcUrl ? [mpcUrl] : [];
-
-        // Add image once with the full quantity count
-        const imageId = await addRemoteImage(imageUrls, qty);
-
-        for (let i = 0; i < qty; i++) {
-          cardsToAdd.push({
-            name,
-            set: info.set,
-            number: info.number,
-            imageId: imageId,
-            isUserUpload: true,
-            hasBakedBleed: true,
-          });
-        }
-      }
-
-      if (cardsToAdd.length > 0) {
-        await addCards(cardsToAdd);
+      if (result.success && result.count > 0) {
         useSettingsStore.getState().setSortBy("manual");
-        // Enrich metadata in background
-        // Enrich metadata in background
-        enrichCardsMetadata(cardsToAdd);
         onUploadComplete?.();
+      } else if (result.error) {
+        alert(result.error);
+      } else {
+        alert("No cards found in the file.");
       }
+    } catch (e) {
+      console.error(e);
+      alert("Failed to parse file.");
     } finally {
+      setLoadingTask(null);
       if (e.target) e.target.value = "";
     }
   };
 
-  const enrichCardsMetadata = async (cards: Partial<CardOption>[]) => {
-    // Abort any previous enrichment task to avoid queue congestion
-    if (enrichmentController.current) {
-      enrichmentController.current.abort();
-    }
-    enrichmentController.current = new AbortController();
-    const signal = enrichmentController.current.signal;
+  const processCardFetch = async (infos: CardInfo[]) => {
+    setLoadingTask("Fetching cards"); // Fix case
+    setLoadingMessage("Connecting to Scryfall...");
 
-    const uniqueNames = new Set<string>();
-    cards.forEach((c) => {
-      if (c.name && c.name !== "Custom Art") {
-        // Clean the name using extractCardInfo to handle [Set] {Number} and other tags
-        const info = extractCardInfo(c.name);
-        uniqueNames.add(info.name);
-      }
-    });
-
-    if (uniqueNames.size === 0) return;
-
-    const cardInfos: CardInfo[] = Array.from(uniqueNames).map((name) => ({
-      name,
-      quantity: 1,
-    }));
-
-    // We don't want to block the UI, so we don't await this fully or set global loading state
-    // But we might want to show a small indicator or just let it happen.
-    // For now, let's just run it.
-
-    try {
-      await fetchEventSource(`${API_BASE}/api/stream/cards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cardQueries: cardInfos,
-          language: globalLanguage,
-        }),
-        signal,
-        onmessage: async (ev) => {
-          if (ev.event === "card-found") {
-            const card = JSON.parse(ev.data) as ScryfallCard;
-            if (!card?.name) return;
-
-            // Find all cards in DB with this name and update them
-            // We need to be careful not to overwrite existing data if it's already there?
-            // But here we are enriching, so we assume it's missing.
-
-            // We can use a bulk update or iterate.
-            // Since we don't have IDs of the cards we just added easily available (unless we query them back),
-            // we can query by name.
-
-            // Use a transaction to update all matching cards efficiently
-            await db.transaction('rw', db.cards, async () => {
-              const cardsToUpdate = await db.cards
-                .where("name")
-                .equalsIgnoreCase(card.name)
-                .toArray();
-
-              const updates: CardOption[] = [];
-              for (const c of cardsToUpdate) {
-                // Only update if missing metadata
-                if (!c.colors || !c.cmc || !c.type_line || !c.rarity || !c.mana_cost) {
-                  updates.push({
-                    ...c,
-                    colors: card.colors,
-                    cmc: card.cmc,
-                    type_line: card.type_line,
-                    rarity: card.rarity,
-                    mana_cost: card.mana_cost,
-                  });
-                }
-              }
-
-              if (updates.length > 0) {
-                await db.cards.bulkPut(updates);
-              }
-            });
-          }
-        },
-        onerror: (err) => {
-          // Ignore abort errors
-          if (err instanceof Error && err.name === 'AbortError') {
-            throw err;
-          }
-          throw err; // Stop retrying
-        }
-      });
-    } catch (e) {
-      // Ignore abort errors
-      if (e instanceof Error && e.name === 'AbortError') {
-        return;
-      }
-    } finally {
-      if (enrichmentController.current?.signal === signal) {
-        enrichmentController.current = null;
-      }
-    }
-  };
-
-  const handleSubmit = async () => {
+    // Abort previous fetch if any
     if (fetchController.current) {
       fetchController.current.abort();
     }
@@ -283,11 +147,6 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     const signal = fetchController.current.signal;
 
     try {
-      const infos = parseDeckToInfos(deckText || "");
-      if (!infos.length) return;
-
-      setLoadingTask("Fetching cards");
-
       const uniqueMap = new Map<string, CardInfo>();
       for (const info of infos) uniqueMap.set(cardKey(info), info);
       const uniqueInfos = Array.from(uniqueMap.values());
@@ -334,11 +193,25 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
             })[] = [];
 
             for (const info of infos) {
-              const k = cardKey(info);
-              const fallbackK = cardKey({ name: info.name });
-              const card = optionByKey[k] ?? optionByKey[fallbackK];
+              // Build lookup key from the original query
+              const fullKey = cardKey(info);
+
+              // Only use name-only fallback if user didn't specify a set
+              // If they specified a set but not a number, try set-only key
+              let card = optionByKey[fullKey];
+              if (!card && info.set) {
+                // User specified set - try set-only key, but no name-only fallback
+                const setOnlyKey = cardKey({ name: info.name, set: info.set });
+                card = optionByKey[setOnlyKey];
+              } else if (!card && !info.set) {
+                // User didn't specify set - allow name-only fallback
+                const nameOnlyKey = cardKey({ name: info.name });
+                card = optionByKey[nameOnlyKey];
+              }
+
               const quantity = info.quantity ?? 1;
               const imageId = await addRemoteImage(card?.imageUrls ?? [], quantity);
+
               for (let i = 0; i < quantity; i++) {
                 cardsToAdd.push({
                   name: card?.name || info.name,
@@ -370,13 +243,12 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
           fetchController.current = null;
         },
         onerror: (err) => {
-          // The library handles retries, this is for fatal errors
           setLoadingTask(null);
           if (err.name !== "AbortError") {
             alert("An error occurred while fetching cards. Please try again.");
           }
           fetchController.current = null;
-          throw err; // This will stop retries
+          throw err;
         },
       });
     } catch (err: unknown) {
@@ -390,6 +262,12 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
         alert("An unknown error occurred while fetching cards.");
       }
     }
+  };
+
+  const handleSubmit = async () => {
+    const infos = parseDeckToInfos(deckText || "");
+    if (!infos.length) return;
+    await processCardFetch(infos);
   };
 
   const clearAllCardsAndImages = useCardsStore(
@@ -411,7 +289,6 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
   const confirmClear = async () => {
     setLoadingTask("Clearing Images");
 
-    // Abort any running fetches
     if (fetchController.current) {
       fetchController.current.abort();
       fetchController.current = null;
@@ -423,9 +300,6 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
     try {
       await clearAllCardsAndImages();
-      // The server cache clear is now handled by the clearAllCardsAndImages action if needed
-      // or can be removed if the server cache is no longer relevant for client-side clear.
-      // For now, we'll keep the server call as it might be clearing other things.
       try {
         await axios.delete(`${API_BASE}/api/cards/images`, {
           timeout: 15000,
@@ -446,6 +320,12 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
       setLoadingTask(null);
       setShowClearConfirmModal(false);
     }
+  };
+
+  const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
+
+  const handleAddCard = async (cardName: string, set?: string, number?: string) => {
+    await processCardFetch([{ name: cardName, set, number, quantity: 1 }]);
   };
 
   const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
@@ -613,6 +493,29 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
               </Button>
             </div>
 
+            <div className="flex gap-2">
+              <Button
+                color="indigo"
+                size="lg"
+                onClick={() => setIsAdvancedSearchOpen(true)}
+                className="flex-1"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Advanced Search
+              </Button>
+            </div>
+
+            {/* Advanced Search Modal */}
+            {isAdvancedSearchOpen && (
+              <AdvancedSearch
+                isOpen={isAdvancedSearchOpen}
+                onClose={() => setIsAdvancedSearchOpen(false)}
+                onSelectCard={handleAddCard}
+              />
+            )}
+
             {/* Language Selector - Hidden in Landscape (moved to left col), Visible in Portrait */}
             <div className={`space-y-1 ${mobile ? 'landscape:hidden' : ''}`}>
               <div className="flex items-center justify-between">
@@ -676,39 +579,38 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
           </div>
         </div>
         <HR className="my-0 dark:bg-gray-500" />
-      </PullToRefresh>
-
-      {
-        showClearConfirmModal && createPortal(
-          <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
-              <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-                Confirm Clear Cards
+        {
+          showClearConfirmModal && createPortal(
+            <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
+              <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+                <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                  Confirm Clear Cards
+                </div>
+                <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                  Are you sure you want to clear all cards? This action cannot be
+                  undone.
+                </div>
+                <div className="flex justify-center gap-4">
+                  <Button
+                    color="failure"
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={confirmClear}
+                  >
+                    Yes, I'm sure
+                  </Button>
+                  <Button
+                    color="gray"
+                    onClick={() => setShowClearConfirmModal(false)}
+                  >
+                    No, cancel
+                  </Button>
+                </div>
               </div>
-              <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                Are you sure you want to clear all cards? This action cannot be
-                undone.
-              </div>
-              <div className="flex justify-center gap-4">
-                <Button
-                  color="failure"
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                  onClick={confirmClear}
-                >
-                  Yes, I'm sure
-                </Button>
-                <Button
-                  color="gray"
-                  onClick={() => setShowClearConfirmModal(false)}
-                >
-                  No, cancel
-                </Button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )
-      }
+            </div>,
+            document.body
+          )
+        }
+      </PullToRefresh >
     </div >
   );
 }

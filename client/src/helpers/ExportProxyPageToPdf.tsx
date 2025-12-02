@@ -1,7 +1,6 @@
 import { API_BASE } from "@/constants";
 import type { CardOption } from "../../../shared/types";
 import { PDFDocument } from "pdf-lib";
-import { db, type PdfExportSession } from "../db";
 import { AsyncLock } from "./AsyncLock";
 
 /**
@@ -50,7 +49,6 @@ export async function exportProxyPagesToPdf({
   cutLineStyle,
   perCardGuideStyle,
   guidePlacement,
-  resumeSession,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
@@ -75,7 +73,6 @@ export async function exportProxyPagesToPdf({
   cutLineStyle: 'none' | 'edges' | 'full';
   perCardGuideStyle: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
   guidePlacement: 'inside' | 'outside';
-  resumeSession?: PdfExportSession | null;
 }): Promise<void> {
   if (!cards || !cards.length) {
     return;
@@ -84,35 +81,7 @@ export async function exportProxyPagesToPdf({
   const perPage = Math.max(1, columns * rows);
   const totalImages = cards.length;
   let totalImagesProcessed = 0;
-  let pdfBuffers: Uint8Array[] = [];
-  let startChunkIndex = 0;
-  const sessionId = crypto.randomUUID();
-
-  // Resume from checkpoint if available
-  if (resumeSession) {
-    const settingsMatch =
-      resumeSession.settings.dpi === dpi &&
-      resumeSession.settings.bleedEdge === bleedEdge &&
-      resumeSession.settings.bleedEdgeWidthMm === bleedEdgeWidthMm &&
-      resumeSession.settings.pageWidth === pageWidth &&
-      resumeSession.settings.pageHeight === pageHeight &&
-      resumeSession.settings.pageSizeUnit === pageSizeUnit &&
-      resumeSession.settings.columns === columns &&
-      resumeSession.settings.rows === rows &&
-      resumeSession.settings.cardSpacingMm === cardSpacingMm &&
-      resumeSession.settings.cardPositionX === cardPositionX &&
-      resumeSession.settings.cardPositionY === cardPositionY &&
-      resumeSession.settings.darkenNearBlack === darkenNearBlack &&
-      resumeSession.settings.cutLineStyle === cutLineStyle;
-
-    if (settingsMatch) {
-      pdfBuffers = resumeSession.completedChunks.slice();
-      startChunkIndex = resumeSession.lastChunkIndex + 1;
-      console.log(`Resuming from chunk ${startChunkIndex}/${resumeSession.totalChunks}`);
-    } else {
-      console.warn('Settings changed, cannot resume. Starting fresh.');
-    }
-  }
+  const pdfBuffers: Uint8Array[] = [];
 
   const pagesIterator = pageGenerator(cards, perPage);
 
@@ -154,8 +123,9 @@ export async function exportProxyPagesToPdf({
       const workerPromise = new Promise<Uint8Array>((resolve, reject) => {
         (async () => {
           const pdfDoc = await PDFDocument.create();
-          const maxWorkers =
-            Math.floor(Math.log2(navigator.hardwareConcurrency || 1)) + 1;
+          // Worker count based on hardware
+          const baseWorkers = Math.floor(Math.log2(navigator.hardwareConcurrency || 1)) + 1;
+          const maxWorkers = baseWorkers;
 
           // Initialize task queue with all pages
           const taskQueue = chunkPages.map((pageCards, index) => ({
@@ -163,13 +133,8 @@ export async function exportProxyPagesToPdf({
             pageIndex: index,
           }));
 
-          // Skip tasks that were already completed in previous session
-          if (startChunkIndex > 0) {
-            taskQueue.splice(0, startChunkIndex);
-          }
-
           const pageImageUrls = new Map<number, string>();
-          let nextPageIndexToAdd = startChunkIndex;
+          let nextPageIndexToAdd = 0;
 
           const pageImageProgress = new Array(chunkPages.length).fill(0);
 
@@ -205,8 +170,7 @@ export async function exportProxyPagesToPdf({
                       break;
 
                     case 'ERROR':
-                      await this.saveCheckpoint();
-                      this.handleError(event.error, event.pageIndex);
+                      this.handleError(event.error);
                       break;
                   }
                 } finally {
@@ -284,54 +248,16 @@ export async function exportProxyPagesToPdf({
                 }
               },
 
-              async saveCheckpoint() {
-                // Save completed chunks to IndexedDB
-                // We only save chunks that have been fully generated and added to pdfBuffers
-                if (pdfBuffers.length > 0) {
-                  await db.pdfExportSessions.put({
-                    id: sessionId,
-                    timestamp: Date.now(),
-                    completedChunks: pdfBuffers.slice(), // Save copy of completed chunks
-                    totalChunks: chunkPages.length + (startChunkIndex > 0 ? startChunkIndex : 0), // Total including skipped ones
-                    lastChunkIndex: pdfBuffers.length - 1 + startChunkIndex,
-                    settings: {
-                      dpi,
-                      bleedEdge,
-                      bleedEdgeWidthMm,
-                      pageWidth,
-                      pageHeight,
-                      pageSizeUnit,
-                      columns,
-                      rows,
-                      cardSpacingMm,
-                      cardPositionX,
-                      cardPositionY,
-                      darkenNearBlack,
-                      cutLineStyle,
-                    },
-                  });
-                }
-              },
-
               async finalize() {
                 workerPool.forEach(w => w.worker.terminate());
                 const pdfBytes = await pdfDoc.save();
                 resolve(pdfBytes);
               },
 
-              handleError(error: Error, pageIndex?: number) {
+              handleError(error: Error) {
                 pageImageUrls.forEach(url => URL.revokeObjectURL(url));
                 workerPool.forEach(w => w.worker.terminate());
-
-                // Reject with enhanced error info for resume
-                // We pass back the error so the outer loop can handle it
-                // We add canResume flag if we have *some* progress (handled in outer loop)
-                reject({
-                  error,
-                  pageIndex,
-                  sessionId,
-                  canResume: pdfBuffers.length > 0 // This refers to outer variable
-                });
+                reject(error);
               }
             };
           })();
@@ -348,9 +274,8 @@ export async function exportProxyPagesToPdf({
             worker.onmessage = async (event: MessageEvent) => {
               const { type, error, pageIndex, url, imagesProcessed } = event.data;
 
-              workerInfo.busy = false; // Mark as available
-
               if (error) {
+                workerInfo.busy = false; // Mark as available only on completion/error
                 await coordinator.handleEvent({
                   type: 'ERROR',
                   error: new Error(`Error from worker for page ${pageIndex + 1}: ${error}`),
@@ -369,6 +294,7 @@ export async function exportProxyPagesToPdf({
               }
 
               if (type === "result" && url) {
+                workerInfo.busy = false; // Mark as available only on completion
                 await coordinator.handleEvent({
                   type: 'PAGE_COMPLETE',
                   pageIndex,

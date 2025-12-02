@@ -73,16 +73,10 @@ const EdgeCutLines = memo(function EdgeCutLines({
     }
   }
 
-  // Guide width is in CSS pixels (96 DPI)
+  // Guide width is in CSS pixels
   const guideWidthPx = Math.max(1, Math.round(guideWidth));
 
   const els: React.ReactElement[] = [];
-
-  // Vertical cuts
-  // We need to distinguish between left and right edges to offset them correctly (outward)
-  // Left edge of a card: guide should be to the left of the cut line (x - width)
-  // Right edge of a card: guide should be to the right of the cut line (x)
-
   // Re-calculate cuts with direction
   const xCutsMap = new Map<number, 'left' | 'right' | 'both'>();
   for (let c = 0; c < columns; c++) {
@@ -100,16 +94,6 @@ const EdgeCutLines = memo(function EdgeCutLines({
   }
 
   [...xCutsMap.entries()].forEach(([x, type], i) => {
-    // If 'both', it means two cards share this edge (spacing=0).
-    // We should probably draw a double-width line centered? Or two lines?
-    // User wants to cut "inside".
-    // If we have Card1 | Card2.
-    // Card1 Right Edge -> Grow Right.
-    // Card2 Left Edge -> Grow Left.
-    // They overlap.
-    // If we draw both, we get a line from x to x+w AND x-w to x.
-    // Total width 2w centered at x.
-
     const drawLine = (offsetPx: number) => {
       if (cutLineStyle === "full") {
         els.push(
