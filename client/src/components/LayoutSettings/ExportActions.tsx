@@ -37,6 +37,8 @@ export function ExportActions({ cards }: Props) {
   const cardPositionY = useSettingsStore((state) => state.cardPositionY);
   const dpi = useSettingsStore((state) => state.dpi);
   const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
+  const perCardGuideStyle = useSettingsStore((state) => state.perCardGuideStyle);
+  const guidePlacement = useSettingsStore((state) => state.guidePlacement);
 
   const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
@@ -105,7 +107,7 @@ export function ExportActions({ cards }: Props) {
         bleedEdge,
         bleedEdgeWidthMm: bleedEdgeWidth,
         guideColor,
-        guideWidthPx: guideWidth,
+        guideWidthCssPx: guideWidth,
         pageOrientation,
         pageSizeUnit,
         pageWidth,
@@ -121,6 +123,8 @@ export function ExportActions({ cards }: Props) {
         cancellationPromise,
         darkenNearBlack,
         cutLineStyle,
+        perCardGuideStyle,
+        guidePlacement,
         resumeSession: sessionToResume,
       });
 

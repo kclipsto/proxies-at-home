@@ -29,7 +29,7 @@ const EdgeCutLines = memo(function EdgeCutLines({
   const cardPositionY = useSettingsStore((state) => state.cardPositionY);
   const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
 
-  if (cutLineStyle === "none") return null;
+  if (cutLineStyle === "none" || guideWidth <= 0) return null;
 
   const pageWidthMm = pageSizeUnit === "mm" ? pageWidth : pageWidth * 25.4;
   const pageHeightMm = pageSizeUnit === "mm" ? pageHeight : pageHeight * 25.4;
@@ -73,121 +73,179 @@ const EdgeCutLines = memo(function EdgeCutLines({
     }
   }
 
+  // Guide width is in CSS pixels (96 DPI)
+  const guideWidthPx = Math.max(1, Math.round(guideWidth));
+
   const els: React.ReactElement[] = [];
 
   // Vertical cuts
-  [...xCuts].forEach((x, i) => {
-    if (cutLineStyle === "full") {
-      els.push(
-        <div
-          key={`v-${i}`}
-          style={{
-            position: "absolute",
-            left: `${x}mm`,
-            top: 0,
-            width: `${guideWidth}px`,
-            height: `${pageHeightMm}mm`,
-            backgroundColor: "black",
-            pointerEvents: "none",
-          }}
-        />
-      );
-    } else {
-      // Edges only
-      // Top stub
-      if (startYmm > 0) {
+  // We need to distinguish between left and right edges to offset them correctly (outward)
+  // Left edge of a card: guide should be to the left of the cut line (x - width)
+  // Right edge of a card: guide should be to the right of the cut line (x)
+
+  // Re-calculate cuts with direction
+  const xCutsMap = new Map<number, 'left' | 'right' | 'both'>();
+  for (let c = 0; c < columns; c++) {
+    if (occupiedCols.has(c)) {
+      const cellLeft = startXmm + c * (totalCardWidthMm + cardSpacingMm);
+      const leftCut = cellLeft + cutInX;
+      const rightCut = cellLeft + cutOutX;
+
+      // Left cut (left edge of card content) -> grow left
+      xCutsMap.set(leftCut, xCutsMap.get(leftCut) === 'right' ? 'both' : 'left');
+
+      // Right cut (right edge of card content) -> grow right
+      xCutsMap.set(rightCut, xCutsMap.get(rightCut) === 'left' ? 'both' : 'right');
+    }
+  }
+
+  [...xCutsMap.entries()].forEach(([x, type], i) => {
+    // If 'both', it means two cards share this edge (spacing=0).
+    // We should probably draw a double-width line centered? Or two lines?
+    // User wants to cut "inside".
+    // If we have Card1 | Card2.
+    // Card1 Right Edge -> Grow Right.
+    // Card2 Left Edge -> Grow Left.
+    // They overlap.
+    // If we draw both, we get a line from x to x+w AND x-w to x.
+    // Total width 2w centered at x.
+
+    const drawLine = (offsetPx: number) => {
+      if (cutLineStyle === "full") {
         els.push(
           <div
-            key={`v-top-${i}`}
+            key={`v-${i}-${offsetPx}`}
             style={{
               position: "absolute",
-              left: `${x}mm`,
+              left: `calc(${x}mm + ${offsetPx}px)`,
               top: 0,
-              width: `${guideWidth}px`,
-              height: `${startYmm}mm`,
+              width: `${guideWidthPx}px`,
+              height: `${pageHeightMm}mm`,
               backgroundColor: "black",
               pointerEvents: "none",
             }}
           />
         );
+      } else {
+        // Edges only
+        if (startYmm > 0) {
+          els.push(
+            <div
+              key={`v-top-${i}-${offsetPx}`}
+              style={{
+                position: "absolute",
+                left: `calc(${x}mm + ${offsetPx}px)`,
+                top: 0,
+                width: `${guideWidthPx}px`,
+                height: `${startYmm}mm`,
+                backgroundColor: "black",
+                pointerEvents: "none",
+              }}
+            />
+          );
+        }
+        const botStubStart = startYmm + gridHeightMm;
+        const botStubH = pageHeightMm - botStubStart;
+        if (botStubH > 0) {
+          els.push(
+            <div
+              key={`v-bot-${i}-${offsetPx}`}
+              style={{
+                position: "absolute",
+                left: `calc(${x}mm + ${offsetPx}px)`,
+                top: `${botStubStart}mm`,
+                width: `${guideWidthPx}px`,
+                height: `${botStubH}mm`,
+                backgroundColor: "black",
+                pointerEvents: "none",
+              }}
+            />
+          );
+        }
       }
-      // Bottom stub
-      const botStubStart = startYmm + gridHeightMm;
-      const botStubH = pageHeightMm - botStubStart;
-      if (botStubH > 0) {
-        els.push(
-          <div
-            key={`v-bot-${i}`}
-            style={{
-              position: "absolute",
-              left: `${x}mm`,
-              top: `${botStubStart}mm`,
-              width: `${guideWidth}px`,
-              height: `${botStubH}mm`,
-              backgroundColor: "black",
-              pointerEvents: "none",
-            }}
-          />
-        );
-      }
+    };
+
+    if (type === 'left' || type === 'both') {
+      drawLine(-guideWidthPx); // Grow left
+    }
+    if (type === 'right' || type === 'both') {
+      drawLine(0); // Grow right
     }
   });
 
   // Horizontal cuts
-  [...yCuts].forEach((y, i) => {
-    if (cutLineStyle === "full") {
-      els.push(
-        <div
-          key={`h-${i}`}
-          style={{
-            position: "absolute",
-            top: `${y}mm`,
-            left: 0,
-            height: `${guideWidth}px`,
-            width: `${pageWidthMm}mm`,
-            backgroundColor: "black",
-            pointerEvents: "none",
-          }}
-        />
-      );
-    } else {
-      // Edges only
-      // Left stub
-      if (startXmm > 0) {
+  const yCutsMap = new Map<number, 'top' | 'bottom' | 'both'>();
+  for (let r = 0; r < rows; r++) {
+    if (occupiedRows.has(r)) {
+      const cellTop = startYmm + r * (totalCardHeightMm + cardSpacingMm);
+      const topCut = cellTop + cutInY;
+      const botCut = cellTop + cutOutY;
+
+      yCutsMap.set(topCut, yCutsMap.get(topCut) === 'bottom' ? 'both' : 'top');
+      yCutsMap.set(botCut, yCutsMap.get(botCut) === 'top' ? 'both' : 'bottom');
+    }
+  }
+
+  [...yCutsMap.entries()].forEach(([y, type], i) => {
+    const drawLine = (offsetPx: number) => {
+      if (cutLineStyle === "full") {
         els.push(
           <div
-            key={`h-left-${i}`}
+            key={`h-${i}-${offsetPx}`}
             style={{
               position: "absolute",
-              top: `${y}mm`,
+              top: `calc(${y}mm + ${offsetPx}px)`,
               left: 0,
-              height: `${guideWidth}px`,
-              width: `${startXmm}mm`,
+              height: `${guideWidthPx}px`,
+              width: `${pageWidthMm}mm`,
               backgroundColor: "black",
               pointerEvents: "none",
             }}
           />
         );
+      } else {
+        if (startXmm > 0) {
+          els.push(
+            <div
+              key={`h-left-${i}-${offsetPx}`}
+              style={{
+                position: "absolute",
+                top: `calc(${y}mm + ${offsetPx}px)`,
+                left: 0,
+                height: `${guideWidthPx}px`,
+                width: `${startXmm}mm`,
+                backgroundColor: "black",
+                pointerEvents: "none",
+              }}
+            />
+          );
+        }
+        const rightStubStart = startXmm + gridWidthMm;
+        const rightStubW = pageWidthMm - rightStubStart;
+        if (rightStubW > 0) {
+          els.push(
+            <div
+              key={`h-right-${i}-${offsetPx}`}
+              style={{
+                position: "absolute",
+                top: `calc(${y}mm + ${offsetPx}px)`,
+                left: `${rightStubStart}mm`,
+                height: `${guideWidthPx}px`,
+                width: `${rightStubW}mm`,
+                backgroundColor: "black",
+                pointerEvents: "none",
+              }}
+            />
+          );
+        }
       }
-      // Right stub
-      const rightStubStart = startXmm + gridWidthMm;
-      const rightStubW = pageWidthMm - rightStubStart;
-      if (rightStubW > 0) {
-        els.push(
-          <div
-            key={`h-right-${i}`}
-            style={{
-              position: "absolute",
-              top: `${y}mm`,
-              left: `${rightStubStart}mm`,
-              height: `${guideWidth}px`,
-              width: `${rightStubW}mm`,
-              backgroundColor: "black",
-              pointerEvents: "none",
-            }}
-          />
-        );
-      }
+    };
+
+    if (type === 'top' || type === 'both') {
+      drawLine(-guideWidthPx); // Grow up
+    }
+    if (type === 'bottom' || type === 'both') {
+      drawLine(0); // Grow down
     }
   });
 

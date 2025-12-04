@@ -33,7 +33,7 @@ export async function exportProxyPagesToPdf({
   bleedEdge,
   bleedEdgeWidthMm,
   guideColor,
-  guideWidthPx,
+  guideWidthCssPx,
   pageSizeUnit,
   pageWidth,
   pageHeight,
@@ -48,6 +48,8 @@ export async function exportProxyPagesToPdf({
   cancellationPromise,
   darkenNearBlack,
   cutLineStyle,
+  perCardGuideStyle,
+  guidePlacement,
   resumeSession,
 }: {
   cards: CardOption[];
@@ -55,7 +57,7 @@ export async function exportProxyPagesToPdf({
   bleedEdge: boolean;
   bleedEdgeWidthMm: number;
   guideColor: string;
-  guideWidthPx: number;
+  guideWidthCssPx: number;
   pageOrientation: "portrait" | "landscape";
   pageSizeUnit: "mm" | "in";
   pageWidth: number;
@@ -71,6 +73,8 @@ export async function exportProxyPagesToPdf({
   cancellationPromise: Promise<void>;
   darkenNearBlack: boolean;
   cutLineStyle: 'none' | 'edges' | 'full';
+  perCardGuideStyle: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
+  guidePlacement: 'inside' | 'outside';
   resumeSession?: PdfExportSession | null;
 }): Promise<void> {
   if (!cards || !cards.length) {
@@ -261,12 +265,14 @@ export async function exportProxyPagesToPdf({
                       cardPositionX,
                       cardPositionY,
                       guideColor,
-                      guideWidthPx,
+                      guideWidthCssPx,
                       DPI: dpi,
                       imagesById,
                       API_BASE,
                       darkenNearBlack,
                       cutLineStyle,
+                      perCardGuideStyle,
+                      guidePlacement,
                     };
 
                     idleWorker.worker.postMessage({

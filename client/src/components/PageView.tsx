@@ -25,7 +25,6 @@ import EdgeCutLines from "../components/FullPageGuides";
 import SortableCard, { CardView } from "../components/SortableCard";
 import { db, type Image } from "../db"; // Import the Dexie database instance
 import type { CardOption } from "../../../shared/types";
-import { getBleedInPixels } from "../helpers/ImageHelper";
 import { deleteCard, duplicateCard, rebalanceCardOrders } from "@/helpers/dbUtils";
 import type { useImageProcessing } from "../hooks/useImageProcessing";
 import { useArtworkModalStore } from "../store";
@@ -37,7 +36,6 @@ import { useShallow } from "zustand/react/shallow";
 import { useOnClickOutside } from "../hooks/useOnClickOutside";
 import { PullToRefresh } from "./PullToRefresh";
 
-const unit = "mm";
 const baseCardWidthMm = 63;
 const baseCardHeightMm = 88;
 
@@ -194,8 +192,8 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
 
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
-  const bleedPixels = getBleedInPixels(effectiveBleedWidth, unit);
-  const guideOffset = `${(bleedPixels * (25.4 / 300)).toFixed(3)}mm`;
+  // Guide offset is simply the bleed width in mm (no pixel conversion needed)
+  const guideOffset = `${effectiveBleedWidth}mm`;
   const totalCardWidth = baseCardWidthMm + effectiveBleedWidth * 2;
   const totalCardHeight = baseCardHeightMm + effectiveBleedWidth * 2;
   const pageCapacity = columns * rows;

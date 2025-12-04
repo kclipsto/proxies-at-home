@@ -1,5 +1,5 @@
 import {
-    IN,
+    MM_TO_PX,
     getBleedInPixels,
 } from "./imageProcessing";
 import {
@@ -89,12 +89,14 @@ export async function generateBleedCanvasWebGL(
     opts: { unit?: "mm" | "in"; dpi?: number; darkenNearBlack?: boolean }
 ): Promise<OffscreenCanvas> {
     const dpi = opts?.dpi ?? 300;
-    const targetCardWidth = IN(2.48, dpi);
-    const targetCardHeight = IN(3.47, dpi);
+    const targetCardWidth = MM_TO_PX(63, dpi);  // Standard MTG card width: 63mm
+    const targetCardHeight = MM_TO_PX(88, dpi); // Standard MTG card height: 88mm
     const bleed = Math.round(getBleedInPixels(bleedWidth, opts?.unit ?? "mm", dpi));
 
     const finalWidth = Math.ceil(targetCardWidth + bleed * 2);
     const finalHeight = Math.ceil(targetCardHeight + bleed * 2);
+
+
 
     // Create fresh canvas and context for this image
     const canvas = new OffscreenCanvas(finalWidth, finalHeight);
@@ -112,17 +114,27 @@ export async function generateBleedCanvasWebGL(
     const progs = initWebGLPrograms(gl);
     const quadBuffer = createQuadBuffer(gl);
 
-    // Calculate image placement
+    // Calculate image placement (for source image sampling)
     const { drawWidth, drawHeight, offsetX, offsetY } = calculateImagePlacement(
         img,
         targetCardWidth,
         targetCardHeight
     );
 
-    // Calculate offset in WebGL coordinates (bottom-left origin)
-    // The image needs to be centered in the bleed area
-    const imageOffsetX = bleed - offsetX;
-    const imageOffsetY = bleed - offsetY;
+    // The content area is ALWAYS positioned at (bleed, bleed) with size targetCardWidth × targetCardHeight
+    // This ensures equal bleed margins on all sides
+    const contentOffsetX = bleed;
+    const contentOffsetY = bleed;
+
+    // Calculate the scale factor and source crop offsets for the shader
+    // The shader will sample the source image with proper scaling and cropping
+    const scaleX = drawWidth / img.width;
+    const scaleY = drawHeight / img.height;
+    // offsetX/Y are how much of the SCALED image to crop, so we need to convert to source image pixels
+    const sourceOffsetX = offsetX / scaleX;
+    const sourceOffsetY = offsetY / scaleY;
+
+
 
     // Setup Viewport
     gl.viewport(0, 0, finalWidth, finalHeight);
@@ -163,8 +175,13 @@ export async function generateBleedCanvasWebGL(
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
     gl.uniform1i(gl.getUniformLocation(progs.init, "u_image"), 0);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), drawWidth, drawHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), imageOffsetX, imageOffsetY);
+    // Content area is exactly targetCardWidth × targetCardHeight, positioned at (bleed, bleed)
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), targetCardWidth, targetCardHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), contentOffsetX, contentOffsetY);
+    // Pass source image dimensions and crop offsets for proper sampling
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_scale"), scaleX, scaleY);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -217,9 +234,14 @@ export async function generateBleedCanvasWebGL(
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_image"), 1);
 
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.final, "u_imageSize"), drawWidth, drawHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.final, "u_offset"), imageOffsetX, imageOffsetY);
+    // Content area is exactly targetCardWidth × targetCardHeight, positioned at (bleed, bleed)
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_imageSize"), targetCardWidth, targetCardHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_offset"), contentOffsetX, contentOffsetY);
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_darken"), opts.darkenNearBlack ? 1 : 0);
+    // Pass source image dimensions and crop offsets for proper sampling
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 

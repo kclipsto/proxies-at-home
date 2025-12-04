@@ -46,6 +46,10 @@ type Store = {
   setDpi: (value: number) => void;
   cutLineStyle: 'none' | 'edges' | 'full';
   setCutLineStyle: (value: 'none' | 'edges' | 'full') => void;
+  perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-squared-rect' | 'solid-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none';
+  setPerCardGuideStyle: (value: 'corners' | 'rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'none') => void;
+  guidePlacement: 'inside' | 'outside';
+  setGuidePlacement: (value: 'inside' | 'outside') => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
   settingsPanelState: {
@@ -92,13 +96,15 @@ const defaultPageSettings = {
   bleedEdge: true,
   darkenNearBlack: true,
   guideColor: "#39FF14",
-  guideWidth: 0.5,
+  guideWidth: 1,
   cardSpacingMm: 0,
   cardPositionX: 0,
   cardPositionY: 0,
   zoom: 1,
   dpi: 900,
   cutLineStyle: "full" as "full" | "edges" | "none",
+  perCardGuideStyle: "corners" as "corners" | "rounded-corners" | "solid-rounded-rect" | "dashed-rounded-rect" | "solid-squared-rect" | "dashed-squared-rect" | "none",
+  guidePlacement: "outside" as "inside" | "outside",
   globalLanguage: "en",
   settingsPanelState: {
     order: ["layout", "bleed", "guides", "card", "filterSort", "application"],
@@ -225,6 +231,8 @@ export const useSettingsStore = create<Store>()(
       setCardPositionY: (mm) => set({ cardPositionY: mm }),
       setDpi: (dpi) => set({ dpi }),
       setCutLineStyle: (value) => set({ cutLineStyle: value }),
+      setPerCardGuideStyle: (value) => set({ perCardGuideStyle: value }),
+      setGuidePlacement: (value) => set({ guidePlacement: value }),
       setGlobalLanguage: (lang) => set({ globalLanguage: lang }),
       setPanelOrder: (order) =>
         set((state) => ({
@@ -289,7 +297,7 @@ export const useSettingsStore = create<Store>()(
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 5, // Increment version for new fields
+      version: 6, // Increment version for perCardGuideStyle
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -321,10 +329,11 @@ export const useSettingsStore = create<Store>()(
           };
         }
 
-        if (version < 5) {
+        if (version < 7) {
           return {
             ...defaultPageSettings,
             ...(persistedState as Partial<Store>),
+            perCardGuideStyle: 'corners',
           };
         }
 
