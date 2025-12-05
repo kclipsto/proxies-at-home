@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from "react";
+import logo from "/logo.svg";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 
@@ -19,7 +20,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="relative flex items-center justify-center">
           <div className="absolute w-40 h-40 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-          <img src="/logo.svg" alt="Proxxied" className="w-24 h-24 animate-pulse" />
+          <img src={logo} alt="Proxxied" className="w-24 h-24 animate-pulse" />
         </div>
       </div>
     }>

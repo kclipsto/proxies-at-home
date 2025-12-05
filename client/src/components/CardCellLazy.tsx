@@ -32,7 +32,7 @@ const CardCellLazy = memo(function CardCellLazy({
         </div>
       )}
       {state === "error" && !hasImage && (
-        <div className="absolute inset-0 grid place-items-center z-10">
+        <div className="absolute inset-0 grid place-items-center z-10 pointer-events-none">
           <div className="px-2 py-1 text-xs bg-red-600 text-white rounded">
             load failed
           </div>

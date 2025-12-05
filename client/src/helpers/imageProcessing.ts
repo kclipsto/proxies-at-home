@@ -11,10 +11,30 @@ export function toProxied(url: string, apiBase: string) {
     if (!url) return url;
     if (url.startsWith("data:")) return url;
     if (url.startsWith("blob:")) return url;
-    // Prevent double-proxying of internal API URLs
+
+    // Prevent double-proxying of internal API URLs, but ensure they use the correct apiBase (port)
     if (url.includes("/api/cards/images/")) {
+        if (apiBase && apiBase.startsWith("http")) {
+            try {
+                // If it's an absolute URL, check if we need to update the origin/port
+                const urlObj = new URL(url);
+                if (urlObj.hostname === "localhost" || urlObj.hostname === "127.0.0.1") {
+                    const apiBaseObj = new URL(apiBase);
+                    urlObj.protocol = apiBaseObj.protocol;
+                    urlObj.host = apiBaseObj.host;
+                    urlObj.port = apiBaseObj.port;
+                    return urlObj.toString();
+                }
+            } catch {
+                // If it's a relative URL, prepend the apiBase
+                const cleanBase = apiBase.replace(/\/+$/, "");
+                const cleanPath = url.startsWith("/") ? url : `/${url}`;
+                return `${cleanBase}${cleanPath}`;
+            }
+        }
         return url;
     }
+
     const prefix = `${apiBase}/api/cards/images/proxy?url=`;
     if (url.startsWith(prefix)) return url;
 
@@ -42,6 +62,7 @@ export async function fetchWithRetry(url: string, retries = 3, baseDelay = 1000,
 
         await new Promise(res => setTimeout(res, totalDelay));
     }
+    console.error(`[Fetch] Failed after ${retries} attempts:`, url);
     throw new Error(`Fetch failed for ${url} after ${retries} attempts.`);
 }
 

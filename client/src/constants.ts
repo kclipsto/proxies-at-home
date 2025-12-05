@@ -4,6 +4,8 @@ const fromEnv = import.meta.env.VITE_API_BASE;
 const serverPort = new URLSearchParams(window.location.search).get("serverPort");
 const localServerUrl = serverPort ? `http://localhost:${serverPort}` : "";
 
+// console.log("[Client] Init API_BASE", { serverPort, localServerUrl, fromEnv: import.meta.env.VITE_API_BASE });
+
 export const API_BASE =
   localServerUrl ||
   (fromEnv && fromEnv.replace(/\/$/, "")) ||

@@ -1,9 +1,9 @@
 {
     "compilerOptions": {
         "target": "ESNext",
-        "module": "commonjs",
-        "moduleResolution": "Node",
-        "outDir": "../dist-electron",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "outDir": "./dist",
         "rootDir": ".",
         "strict": true,
         "esModuleInterop": true,

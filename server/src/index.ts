@@ -31,6 +31,7 @@ export function startServer(port: number = 3001): Promise<number> {
 
 // Check if run directly
 const __filename = fileURLToPath(import.meta.url);
+console.log('Server check:', { argv1: process.argv[1], filename: __filename });
 if (process.argv[1] === __filename) {
   const PORT = Number(process.env.PORT || 3001);
   startServer(PORT);
