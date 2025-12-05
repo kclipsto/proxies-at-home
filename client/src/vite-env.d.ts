@@ -10,3 +10,10 @@ interface ImportMeta {
 
 declare module 'swiper/css';
 declare module 'swiper/css/effect-coverflow';
+declare global {
+  interface Window {
+    electronAPI?: {
+      serverUrl: () => Promise<string>;
+    };
+  }
+}
