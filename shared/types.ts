@@ -14,6 +14,18 @@ export interface CardOption {
   cmc?: number;
   type_line?: string;
   rarity?: string;
+  // Enrichment tracking
+  needsEnrichment?: boolean;
+  enrichmentRetryCount?: number;
+  enrichmentNextRetryAt?: number;
+}
+
+export interface PrintInfo {
+  imageUrl: string;
+  set: string;
+  number: string;
+  lang?: string;
+  rarity?: string;
 }
 
 export interface ScryfallCard {
@@ -27,6 +39,7 @@ export interface ScryfallCard {
   cmc?: number;
   type_line?: string;
   rarity?: string;
+  prints?: PrintInfo[];
 }
 
 export type CardInfo = {

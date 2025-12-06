@@ -7,10 +7,12 @@ import { ResizeHandle } from "../components/ResizeHandle";
 import { PageSettingsControls } from "../components/PageSettingsControls";
 import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
+import { useCardEnrichment } from "../hooks/useCardEnrichment";
 import { useSettingsStore } from "../store";
 import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
+import { importStats } from "../helpers/importStats";
 
 const PageView = lazy(() =>
   import("../components/PageView").then((module) => ({
@@ -170,6 +172,9 @@ export default function ProxyBuilderPage() {
       imageProcessor,
     });
 
+  // Background enrichment for MPC imports
+  const { enrichmentProgress } = useCardEnrichment();
+
   useEffect(() => {
     if (!allCards) return;
 
@@ -177,20 +182,29 @@ export default function ProxyBuilderPage() {
       const allImages = await db.images.toArray();
       const imagesById = new Map(allImages.map((img) => [img.id, img]));
 
-      const unprocessedCards = allCards.filter((card: CardOption) => {
-        if (!card.imageId) return false;
+      const unprocessedCards = [];
+      const tracking = importStats.isTracking();
+
+      for (const card of allCards) {
+        if (!card.imageId) continue;
         const img = imagesById.get(card.imageId);
 
-        // Check if BOTH display blobs exist AND settings match
-        // This prevents re-processing on page load when images are fully cached
-        // Note: We check export settings, not display (display is always 300 DPI)
-        return !(
+        // Check if fully processed
+        const isProcessed =
           img?.displayBlob &&
           img?.displayBlobDarkened &&
           img.exportDpi === dpi &&
-          img.exportBleedWidth === (bleedEdge ? bleedEdgeWidth : 0)
-        );
-      });
+          img.exportBleedWidth === (bleedEdge ? bleedEdgeWidth : 0);
+
+        if (!isProcessed) {
+          unprocessedCards.push(card);
+        } else if (tracking) {
+          // If tracking import, report cache hits immediately
+          // This ensures the summary logs even if all cards are skipped
+          importStats.markCacheHit(card.uuid);
+          importStats.markCardProcessed(card.uuid);
+        }
+      }
 
       for (const card of unprocessedCards) {
         void ensureProcessed(card, Priority.LOW);
@@ -302,6 +316,12 @@ export default function ProxyBuilderPage() {
                 active={activeMobileView === "preview"}
               />
             </Suspense>
+            {enrichmentProgress && (
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-[100] flex items-center gap-2 pointer-events-none whitespace-nowrap">
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                <span>Fetching metadata for {enrichmentProgress.total} cards...</span>
+              </div>
+            )}
           </div>
 
           <div className={activeMobileView === "settings" ? "block h-full" : "hidden"}>
@@ -319,68 +339,80 @@ export default function ProxyBuilderPage() {
 
   // Desktop Layout
   return (
-    <div className="flex flex-row h-[100dvh] justify-between overflow-hidden">
-      <div
-        className="relative transition-all duration-200 ease-in-out z-30 h-full overflow-hidden"
-        style={{
-          width: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
-          minWidth: isUploadPanelCollapsed ? 60 : 320,
-        }}
-      >
-        <UploadSection
-          isCollapsed={isUploadPanelCollapsed}
-          cardCount={cardCount}
-        />
-      </div>
-      <ResizeHandle
-        isCollapsed={isUploadPanelCollapsed}
-        onToggle={toggleUploadPanel}
-        onResizeStart={handleUploadPanelMouseDown}
-        onReset={() => {
-          setUploadPanelWidth(320);
-          if (isUploadPanelCollapsed) toggleUploadPanel();
-        }}
-        className="-ml-2 -mr-2"
-        side="left"
-      />
-
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden relative h-full">
-        <Suspense fallback={<PageViewLoader />}>
-          <PageView
-            loadingMap={loadingMap}
-            ensureProcessed={ensureProcessed}
-            cards={allCards}
-            images={allImages}
+    <>
+      <div className="flex flex-row h-[100dvh] justify-between overflow-hidden">
+        <div
+          className="relative transition-all duration-200 ease-in-out z-30 h-full overflow-hidden"
+          style={{
+            width: isUploadPanelCollapsed ? 60 : uploadPanelWidth,
+            minWidth: isUploadPanelCollapsed ? 60 : 320,
+          }}
+        >
+          <UploadSection
+            isCollapsed={isUploadPanelCollapsed}
+            cardCount={cardCount}
           />
-        </Suspense>
-      </div>
-      <ResizeHandle
-        isCollapsed={isSettingsPanelCollapsed}
-        onToggle={toggleSettingsPanel}
-        onResizeStart={handleMouseDown}
-        onReset={() => {
-          setSettingsPanelWidth(320);
-          if (isSettingsPanelCollapsed) toggleSettingsPanel();
-        }}
-        className="-ml-2 -mr-2"
-        side="right"
-      />
-      <div
-        className="h-full overflow-hidden"
-        style={{
-          width: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
-          minWidth: isSettingsPanelCollapsed ? 60 : 320,
-          transition: "width 0.2s ease-in-out",
-        }}
-      >
-        <PageSettingsControls
-          reprocessSelectedImages={reprocessSelectedImages}
-          cancelProcessing={cancelProcessing}
-          cards={allCards}
+        </div>
+        <ResizeHandle
+          isCollapsed={isUploadPanelCollapsed}
+          onToggle={toggleUploadPanel}
+          onResizeStart={handleUploadPanelMouseDown}
+          onReset={() => {
+            setUploadPanelWidth(320);
+            if (isUploadPanelCollapsed) toggleUploadPanel();
+          }}
+          className="-ml-2 -mr-2"
+          side="left"
         />
+
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-hidden relative h-full">
+          <Suspense fallback={<PageViewLoader />}>
+            <PageView
+              loadingMap={loadingMap}
+              ensureProcessed={ensureProcessed}
+              cards={allCards}
+              images={allImages}
+            />
+          </Suspense>
+
+          {/* Enrichment Progress Toast - Positioned relative to PageView */}
+          {enrichmentProgress && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-[100] flex items-center gap-2 pointer-events-none whitespace-nowrap">
+              <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+              Fetching metadata for {enrichmentProgress.total} cards...
+            </div>
+          )}
+        </div>
+        <ResizeHandle
+          isCollapsed={isSettingsPanelCollapsed}
+          onToggle={toggleSettingsPanel}
+          onResizeStart={handleMouseDown}
+          onReset={() => {
+            setSettingsPanelWidth(320);
+            if (isSettingsPanelCollapsed) toggleSettingsPanel();
+          }}
+          className="-ml-2 -mr-2"
+          side="right"
+        />
+        <div
+          className="h-full overflow-hidden"
+          style={{
+            width: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
+            minWidth: isSettingsPanelCollapsed ? 60 : 320,
+            transition: "width 0.2s ease-in-out",
+          }}
+        >
+          <PageSettingsControls
+            reprocessSelectedImages={reprocessSelectedImages}
+            cancelProcessing={cancelProcessing}
+            cards={allCards}
+          />
+        </div>
       </div>
-    </div >
+
+
+    </>
   );
 }
 

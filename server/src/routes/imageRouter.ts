@@ -5,7 +5,7 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import multer from "multer";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { getImagesForCardInfo } from "../utils/getCardImagesPaged.js";
+import { getImagesForCardInfo, getCardDataForCardInfo, getCardsWithImagesForCardInfo } from "../utils/getCardImagesPaged.js";
 import { normalizeCardInfos } from "../utils/cardUtils.js";
 import type { CardInfo } from "../../../shared/types.js";
 
@@ -204,22 +204,53 @@ imageRouter.post("/", async (req: Request<unknown, unknown, ImageRequestBody>, r
     const results = await Promise.all(
       infos.map((ci) =>
         limit(async () => {
-          // 20s safety timeout per card so one slow POP can’t hang everything
+          // 20s safety timeout per card so one slow POP can't hang everything
           const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("scryfall-timeout")), 20000));
           const task = (async () => {
-            const imageUrls = await getImagesForCardInfo(ci, unique, ci.language, fallbackToEnglish);
-            return {
-              name: ci.name,
-              set: ci.set,
-              number: ci.number,
-              imageUrls,
-              language: ci.language,
-            };
+            // When fetching prints, get full card data for per-print metadata
+            if (unique === "prints") {
+              const cards = await getCardsWithImagesForCardInfo(ci, unique, ci.language, fallbackToEnglish);
+              const imageUrls: string[] = [];
+              const prints: Array<{ imageUrl: string; set: string; number: string; lang?: string; rarity?: string }> = [];
+
+              for (const card of cards) {
+                const pngUrl = card.image_uris?.png ||
+                  (card.card_faces && card.card_faces[0]?.image_uris?.png);
+                if (pngUrl) {
+                  imageUrls.push(pngUrl);
+                  prints.push({
+                    imageUrl: pngUrl,
+                    set: card.set ?? "",
+                    number: card.collector_number ?? "",
+                    rarity: card.rarity,
+                  });
+                }
+              }
+
+              return {
+                name: ci.name,
+                set: ci.set,
+                number: ci.number,
+                imageUrls,
+                prints,
+                language: ci.language,
+              };
+            } else {
+              // For "art" unique, just get image URLs (faster, no per-print metadata needed)
+              const imageUrls = await getImagesForCardInfo(ci, unique, ci.language, fallbackToEnglish);
+              return {
+                name: ci.name,
+                set: ci.set,
+                number: ci.number,
+                imageUrls,
+                language: ci.language,
+              };
+            }
           })();
           try {
             return await Promise.race([task, timeout]);
           } catch {
-            // On timeout/error, return empty list (UI won’t spin forever)
+            // On timeout/error, return empty list (UI won't spin forever)
             return { name: ci.name, set: ci.set, number: ci.number, imageUrls: [], language: ci.language };
           }
         })
@@ -233,6 +264,96 @@ imageRouter.post("/", async (req: Request<unknown, unknown, ImageRequestBody>, r
     return res.status(500).json({ error: "Failed to fetch images from Scryfall." });
   } finally {
     console.log(`[POST /images] ${infos.length} cards in ${Date.now() - started}ms`);
+  }
+});
+
+// -------------------- API: batch enrich cards --------------------
+
+interface EnrichRequestBody {
+  cards: Array<{ name: string; set?: string; number?: string }>;
+}
+
+interface EnrichedCard {
+  name: string;
+  set?: string;
+  number?: string;
+  colors?: string[];
+  mana_cost?: string;
+  cmc?: number;
+  type_line?: string;
+  rarity?: string;
+  lang?: string;
+}
+
+imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestBody>, res: Response) => {
+  const cards = Array.isArray(req.body.cards) ? req.body.cards : [];
+
+  if (cards.length === 0) {
+    return res.json([]);
+  }
+
+  if (cards.length > 100) {
+    return res.status(400).json({ error: "Maximum 100 cards per batch" });
+  }
+
+  const started = Date.now();
+  console.log(`[Enrich] Starting batch enrichment for ${cards.length} cards`);
+
+  try {
+    const results = await Promise.all(
+      cards.map((card) =>
+        limit(async () => {
+          const timeout = new Promise<null>((_, rej) =>
+            setTimeout(() => rej(new Error("scryfall-timeout")), 20000)
+          );
+          const task = (async (): Promise<EnrichedCard | null> => {
+            const data = await getCardDataForCardInfo({
+              name: card.name,
+              set: card.set,
+              number: card.number,
+            });
+
+            if (data) {
+              // Extract colors from card_faces for DFCs
+              let colors = data.colors;
+              let mana_cost = data.mana_cost;
+
+              if ((!colors || !mana_cost) && data.card_faces && data.card_faces.length > 0) {
+                if (!colors) colors = data.card_faces[0].colors;
+                if (!mana_cost) mana_cost = data.card_faces[0].mana_cost;
+              }
+
+              return {
+                name: card.name,
+                set: data.set || card.set,
+                number: data.collector_number || card.number,
+                colors,
+                mana_cost,
+                cmc: data.cmc,
+                type_line: data.type_line,
+                rarity: data.rarity,
+              };
+            }
+            return null;
+          })();
+
+          try {
+            return await Promise.race([task, timeout]);
+          } catch {
+            console.warn(`[Enrich] Timeout for card: ${card.name}`);
+            return null;
+          }
+        })
+      )
+    );
+
+    console.log(`[Enrich] Completed batch in ${Date.now() - started}ms. Success: ${results.filter(r => r !== null).length}/${cards.length}`);
+
+    return res.json(results);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[Enrich] Error:", msg);
+    return res.status(500).json({ error: "Failed to enrich cards." });
   }
 });
 
@@ -295,6 +416,7 @@ imageRouter.post("/images-stream", async (req: Request, res: Response) => {
 // -------------------- proxy (cached) --------------------
 
 imageRouter.get("/proxy", async (req: Request, res: Response) => {
+  const startTime = Date.now();
   const url = req.query.url;
   if (!url || typeof url !== "string") {
     return res.status(400).json({ error: "Missing or invalid ?url" });
@@ -311,14 +433,11 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
 
   try {
     if (fs.existsSync(localPath)) {
-      // Update access time for LRU
-      try {
-        const now = new Date();
-        fs.utimesSync(localPath, now, now);
-      } catch {
-        // Ignore access time update errors
-      }
+      // Update access time for LRU (fire-and-forget, don't block response)
+      const now = new Date();
+      fs.promises.utimes(localPath, now, now).catch(() => { /* ignore */ });
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      console.log(`[Proxy] CACHE HIT: ${Date.now() - startTime}ms`);
       return res.sendFile(localPath);
     }
 
@@ -327,7 +446,10 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
       ? `http://127.0.0.1:${process.env.PORT || 3001}${originalUrl}`
       : originalUrl;
 
+    const fetchStart = Date.now();
     const response = await getWithRetry(fetchUrl, { responseType: "arraybuffer", timeout: 12000 }, 3);
+    const fetchTime = Date.now() - fetchStart;
+
     if (response.status >= 400 || !response.data) {
       return res.status(502).json({ error: "Upstream error", status: response.status });
     }
@@ -340,10 +462,12 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
       return res.status(502).json({ error: "Upstream not image", ct });
     }
 
-    fs.writeFileSync(localPath, Buffer.from(response.data));
+    // Write to cache asynchronously (non-blocking)
+    await fs.promises.writeFile(localPath, Buffer.from(response.data));
 
     res.setHeader("Content-Type", ct);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    console.log(`[Proxy] CACHE MISS: fetch=${fetchTime}ms, total=${Date.now() - startTime}ms`);
     return res.sendFile(localPath);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

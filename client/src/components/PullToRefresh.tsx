@@ -6,11 +6,14 @@ import { type ReactNode, useState, forwardRef, useEffect } from "react";
 type Props = {
     children: ReactNode;
     disabled?: boolean;
+    hideScrollbars?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>;
 
-export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, className, style, onScroll, disabled, ...props }, ref) => {
+export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, className, style, onScroll, disabled, hideScrollbars = false, ...props }, ref) => {
     const [loading, setLoading] = useState(false);
     const [ready, setReady] = useState(false);
+    const [isPulling, setIsPulling] = useState(false);
+    const [hasScrollbar, setHasScrollbar] = useState(false);
 
     const [{ y }, api] = useSpring(() => ({ y: 0 }));
 
@@ -51,6 +54,9 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
             // Capture initial scroll position at the start of the gesture
             if (first) {
                 memo = element.scrollTop;
+                // Check if scrollbar is present (content larger than container)
+                // Use a small epsilon to account for sub-pixel rendering differences
+                setHasScrollbar(element.scrollHeight > element.clientHeight + 1);
             }
 
             // Calculate effective pull distance (subtracting the distance used to scroll to top)
@@ -59,6 +65,7 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
             // If gesture is canceled, reset everything
             if (canceled) {
                 setReady(false);
+                setIsPulling(false);
                 api.start({ y: 0 });
                 return memo;
             }
@@ -66,6 +73,8 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
             // Only engage if we are at the top and have pulled enough to overcome initial scroll
             if (element.scrollTop <= 0 && effectiveY > 0) {
                 if (down) {
+                    setIsPulling(true);
+
                     // Update ready state with hysteresis
                     if (effectiveY > TRIGGER_THRESHOLD && !ready) setReady(true);
                     if (effectiveY < CANCEL_THRESHOLD && ready) setReady(false);
@@ -73,6 +82,7 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
                     // Resistance effect
                     api.start({ y: Math.min(effectiveY * RESISTANCE, 150), immediate: true });
                 } else {
+                    setIsPulling(false);
                     if (ready) {
                         // Trigger refresh
                         setLoading(true);
@@ -86,6 +96,7 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
                 }
             } else {
                 // Not at top or not pulled enough, ensure reset
+                setIsPulling(false);
                 if (ready) setReady(false);
                 api.start({ y: 0 });
             }
@@ -123,11 +134,18 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
         }
     }, [ready]);
 
+    // Determine if we should force hiding scrollbars
+    // 1. Explicitly requested via prop (Settings panel)
+    // 2. OR: Content is short (no scrollbar normally), so we want to preventing one appearing during pull
+    const shouldHideScrollbars = isPulling || loading
+        ? (hideScrollbars || !hasScrollbar)
+        : false;
+
     return (
         <div
             ref={ref}
             {...bind()}
-            className={`h-full overflow-y-auto touch-pan-y overscroll-y-none relative ${className || ''}`}
+            className={`h-full overflow-y-auto touch-pan-y overscroll-y-none relative ${shouldHideScrollbars ? 'mobile-scrollbar-hide' : ''} ${className || ''}`}
             style={style}
             onScroll={handleScroll}
             {...props}

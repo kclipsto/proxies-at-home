@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { CardOption } from '@/types';
+import type { CardOption, PrintInfo } from '@/types';
 
 // Define a type for the image data to be stored
 export interface Image {
@@ -22,6 +22,9 @@ export interface Image {
 
   sourceUrl?: string;
   imageUrls?: string[];
+
+  // Per-print metadata for artwork selection
+  prints?: PrintInfo[];
 }
 
 
@@ -61,6 +64,12 @@ export class ProxxiedDexie extends Dexie {
     // Version 2: Add darkened blob fields (no schema change needed, just new optional fields)
     this.version(2).stores({
       cards: '&uuid, imageId, order, name',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      settings: '&id',
+    });
+    // Version 3: Add needsEnrichment index for efficient querying of unenriched cards
+    this.version(3).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment',
       images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
       settings: '&id',
     });

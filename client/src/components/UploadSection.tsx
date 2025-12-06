@@ -80,6 +80,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
         imageId: imageId,
         isUserUpload: true,
         hasBakedBleed: opts.hasBakedBleed,
+        needsEnrichment: true, // Try to fetch metadata based on inferred card name
       });
     }
 
@@ -93,9 +94,15 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     if (e.target.files && e.target.files.length > 0) {
+      const fileCount = e.target.files.length;
+      const startTime = performance.now();
+      console.log(`[Image Upload] Starting upload of ${fileCount} images`);
+
       setLoadingTask("Processing Images");
       try {
         await addUploadedFiles(e.target.files, { hasBakedBleed });
+        const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`[Image Upload] Completed ${fileCount} images in ${elapsed}s`);
       } finally {
         setLoadingTask(null);
       }
@@ -109,6 +116,9 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const startTime = performance.now();
+    console.log(`[MPC XML Import] Starting import of ${file.name}`);
+
     setLoadingTask("Processing Images");
     try {
       const text = await readText(file);
@@ -118,16 +128,26 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
         setLoadingMessage(message);
       });
 
+      if (result.success) {
+        onUploadComplete?.();
+      }
+
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
       if (result.success && result.count > 0) {
+        console.log(`[MPC XML Import] Completed ${result.count} cards in ${elapsed}s`);
         useSettingsStore.getState().setSortBy("manual");
         onUploadComplete?.();
       } else if (result.error) {
+        console.log(`[MPC XML Import] Failed after ${elapsed}s: ${result.error}`);
         alert(result.error);
       } else {
+        console.log(`[MPC XML Import] No cards found after ${elapsed}s`);
         alert("No cards found in the file.");
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+      console.error(`[MPC XML Import] Error after ${elapsed}s:`, err);
       alert("Failed to parse file.");
     } finally {
       setLoadingTask(null);
@@ -136,8 +156,14 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
   };
 
   const processCardFetch = async (infos: CardInfo[]) => {
-    setLoadingTask("Fetching cards"); // Fix case
+    const startTime = performance.now();
+    console.log(`[Deck Text Import] Starting fetch for ${infos.length} cards`);
+
+    setLoadingTask("Fetching cards");
     setLoadingMessage("Connecting to Scryfall...");
+
+    // Switch to preview immediately on mobile if requested
+    onUploadComplete?.();
 
     // Abort previous fetch if any
     if (fetchController.current) {
@@ -185,6 +211,14 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
               number: card.number,
             });
             optionByKey[k] = card;
+
+            // Also register set-only key (for queries like "Sol Ring (CMM)" without number)
+            if (card.set) {
+              const setOnlyKey = cardKey({ name: card.name, set: card.set });
+              if (!optionByKey[setOnlyKey]) optionByKey[setOnlyKey] = card;
+            }
+
+            // Also register name-only key (for queries like "Sol Ring" without set)
             const nameOnlyKey = cardKey({ name: card.name });
             if (!optionByKey[nameOnlyKey]) optionByKey[nameOnlyKey] = card;
           } else if (ev.event === "done") {
@@ -210,7 +244,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
               }
 
               const quantity = info.quantity ?? 1;
-              const imageId = await addRemoteImage(card?.imageUrls ?? [], quantity);
+              const imageId = await addRemoteImage(card?.imageUrls ?? [], quantity, card?.prints);
 
               for (let i = 0; i < quantity; i++) {
                 cardsToAdd.push({
@@ -233,6 +267,9 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
               await addCards(cardsToAdd);
               useSettingsStore.getState().setSortBy("manual");
             }
+
+            const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+            console.log(`[Deck Text Import] Completed ${cardsToAdd.length} cards in ${elapsed}s`);
 
             setDeckText("");
             onUploadComplete?.();

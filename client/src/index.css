@@ -90,7 +90,8 @@ button:active {
     height: 12px;
   }
 
-  .mobile-scrollbar-hide::-webkit-scrollbar {
+  .mobile-scrollbar-hide::-webkit-scrollbar,
+  .mobile-scrollbar-hide *::-webkit-scrollbar {
     display: none;
   }
 

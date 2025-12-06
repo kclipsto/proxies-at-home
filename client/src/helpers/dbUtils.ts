@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, type Image } from "@/db";
 import type { CardOption } from "../../../shared/types";
 
 /**
@@ -52,12 +52,15 @@ export async function addCustomImage(
  * Adds a new Scryfall/remote image to the database, handling deduplication.
  * If the image URL already exists, its refCount is incremented.
  * If it's new, it's added with a refCount of 1.
- * @param imageUrl The remote URL of the image.
+ * @param imageUrls The remote URLs of the image.
+ * @param count Number of references to add.
+ * @param prints Optional per-print metadata for artwork selection.
  * @returns The ID (URL) of the image in the database.
  */
 export async function addRemoteImage(
   imageUrls: string[],
-  count: number = 1
+  count: number = 1,
+  prints?: Array<{ imageUrl: string; set: string; number: string; rarity?: string }>
 ): Promise<string | undefined> {
   if (!imageUrls || imageUrls.length === 0) return undefined;
 
@@ -67,20 +70,115 @@ export async function addRemoteImage(
     const existingImage = await db.images.get(imageId);
 
     if (existingImage) {
-      await db.images.update(imageId, {
+      // Update refCount, and update prints if not already set
+      const updates: Partial<import("../db").Image> = {
         refCount: existingImage.refCount + count,
-      });
+      };
+      if (prints && !existingImage.prints) {
+        updates.prints = prints;
+      }
+      await db.images.update(imageId, updates);
     } else {
       await db.images.add({
         id: imageId,
         sourceUrl: imageUrls[0],
         imageUrls: imageUrls,
+        prints: prints,
         refCount: count,
       });
     }
   });
 
   return imageId;
+}
+
+/**
+ * Adds multiple remote images to the database in a single batch operation.
+ * Much faster than calling addRemoteImage sequentially.
+ * @param images Array of image data objects
+ * @returns Map of first URL to ImageID
+ */
+export async function addRemoteImages(
+  images: Array<{
+    imageUrls: string[];
+    count?: number;
+    prints?: Array<{ imageUrl: string; set: string; number: string; rarity?: string }>;
+  }>
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!images || images.length === 0) return result;
+
+  // 1. Calculate IDs and deduplicate inputs
+  const inputsById = new Map<string, {
+    id: string;
+    urls: string[];
+    count: number;
+    prints?: Image['prints'];
+  }>();
+
+  for (const img of images) {
+    if (!img.imageUrls || img.imageUrls.length === 0) continue;
+
+    // Use consistent ID generation logic matching addRemoteImage
+    const firstUrl = img.imageUrls[0];
+    const imageId = firstUrl.includes("scryfall")
+      ? firstUrl.split("?")[0]
+      : (firstUrl.includes("id=") ? firstUrl.split("id=")[1] : firstUrl);
+
+    result.set(firstUrl, imageId);
+
+    const check = inputsById.get(imageId);
+    if (check) {
+      check.count += (img.count || 1);
+    } else {
+      inputsById.set(imageId, {
+        id: imageId,
+        urls: img.imageUrls,
+        count: img.count || 1,
+        prints: img.prints,
+      });
+    }
+  }
+
+  // 2. Perform bulk DB operation
+  await db.transaction("rw", db.images, async () => {
+    const ids = Array.from(inputsById.keys());
+    const existingImages = await db.images.bulkGet(ids);
+
+    const updates: Image[] = [];
+
+    // Existing: index matches ids index
+    ids.forEach((id, index) => {
+      const input = inputsById.get(id)!;
+      const existing = existingImages[index];
+
+      if (existing) {
+        // Update refCount, preserving all other fields (blobs, etc.)
+        const update = {
+          ...existing,
+          refCount: existing.refCount + input.count,
+          // Only update prints if new input has them and existing doesn't
+          prints: (input.prints && !existing.prints) ? input.prints : existing.prints,
+        };
+        updates.push(update);
+      } else {
+        // New Image
+        updates.push({
+          id: id,
+          sourceUrl: input.urls[0],
+          imageUrls: input.urls,
+          prints: input.prints,
+          refCount: input.count,
+        });
+      }
+    });
+
+    if (updates.length > 0) {
+      await db.images.bulkPut(updates);
+    }
+  });
+
+  return result;
 }
 
 // This is a private helper and should not be exported.
@@ -126,7 +224,7 @@ export async function addCards(
   cardsData: Array<
     Omit<CardOption, "uuid" | "order"> & { imageId?: string }
   >
-): Promise<void> {
+): Promise<CardOption[]> {
   const maxOrder = (await db.cards.orderBy("order").last())?.order ?? 0;
 
   const newCards: CardOption[] = cardsData.map((cardData, i) => ({
@@ -138,6 +236,7 @@ export async function addCards(
   if (newCards.length > 0) {
     await db.cards.bulkAdd(newCards);
   }
+  return newCards;
 }
 
 /**
@@ -212,6 +311,9 @@ export async function duplicateCard(uuid: string): Promise<void> {
  * @param newImageId The new image ID.
  * @param cardToUpdate The primary card being updated.
  * @param applyToAll If true, all cards using oldImageId will be updated.
+ * @param newName Optional new name for the card.
+ * @param newImageUrls Optional new image URLs array.
+ * @param cardMetadata Optional metadata to update (set, number, colors, etc.)
  */
 export async function changeCardArtwork(
   oldImageId: string,
@@ -219,10 +321,24 @@ export async function changeCardArtwork(
   cardToUpdate: CardOption,
   applyToAll: boolean,
   newName?: string,
-  newImageUrls?: string[]
+  newImageUrls?: string[],
+  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>
 ): Promise<void> {
+  console.log("[changeCardArtwork] Called with:", {
+    oldImageId,
+    newImageId,
+    cardName: cardToUpdate.name,
+    applyToAll,
+    newName,
+    hasNewImageUrls: !!newImageUrls,
+    cardMetadata,
+  });
+
   await db.transaction("rw", db.cards, db.images, async () => {
-    if (oldImageId === newImageId && !newName && !newImageUrls) return;
+    if (oldImageId === newImageId && !newName && !newImageUrls && !cardMetadata) {
+      console.log("[changeCardArtwork] No changes needed - early return");
+      return;
+    }
 
     // Determine which cards to update
     const cardsToUpdate = applyToAll
@@ -253,6 +369,12 @@ export async function changeCardArtwork(
     if (newName) {
       changes.name = newName;
     }
+    // Apply metadata updates (set, number, colors, etc.)
+    if (cardMetadata) {
+      Object.assign(changes, cardMetadata);
+    }
+
+    console.log("[changeCardArtwork] Applying changes to", cardsToUpdate.length, "cards:", changes);
 
     await db.cards.bulkUpdate(
       cardsToUpdate.map((c) => ({

@@ -85,16 +85,21 @@ async function fetchAllPages<T>(
   query: string,
   extractor: (card: ScryfallApiCard) => T[]
 ): Promise<T[]> {
+  const startTime = Date.now();
   const encodedUrl = `${SCRYFALL_API}?q=${encodeURIComponent(query)}`;
   const results: T[] = [];
   let next: string | null = encodedUrl;
+  let pageCount = 0;
 
   try {
     while (next) {
       await delayScryfallRequest();
+      const pageStart = Date.now();
       // Explicitly cast the response to avoid circular inference issues with 'next'
       const resp: AxiosResponse<ScryfallResponse> = await AX.get<ScryfallResponse>(next);
       const { data, has_more, next_page } = resp.data;
+      pageCount++;
+      console.log(`[Scryfall] Page ${pageCount}: ${Date.now() - pageStart}ms`);
 
       if (data) {
         for (const card of data) {
@@ -109,6 +114,7 @@ async function fetchAllPages<T>(
     console.warn("[Scryfall] Query failed:", query, msg);
   }
 
+  console.log(`[Scryfall] Total: ${pageCount} pages, ${results.length} results, ${Date.now() - startTime}ms`);
   return results;
 }
 
@@ -213,23 +219,26 @@ export async function getCardsWithImagesForCardInfo(
     return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
   };
 
-  // 1) Exact printing
-  if (unique === "prints" && set && number) {
+  // 1) Exact printing - when user specifies set AND number
+  // This takes priority regardless of unique parameter
+  if (set && number) {
     const results = await executeStrategy((lang) =>
       `set:${set} number:${escapeColon(number)} name:"${name}" include:extras unique:prints lang:${lang}`
     );
     if (results.length) return results;
+    // If no results with exact match, fall through to broader search
   }
 
-  // 2) Set + name
-  if (unique === "prints" && set && !number) {
+  // 2) Set + name - when user specifies set but not number
+  if (set && !number) {
     const results = await executeStrategy((lang) =>
       `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
     );
     if (results.length) return results;
+    // If no results with set filter, fall through to name-only
   }
 
-  // 3) Name-only
+  // 3) Name-only search - get all arts/prints based on unique parameter
   const results = await executeStrategy((lang) =>
     `!"${name}" include:extras unique:${unique} lang:${lang}`
   );

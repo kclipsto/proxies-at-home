@@ -60,14 +60,28 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
           const primaryCard = scryfallCards[0];
           const imageUrls: string[] = [];
+          const prints: Array<{ imageUrl: string; set: string; number: string; rarity?: string }> = [];
 
           for (const c of scryfallCards) {
             if (c.image_uris?.png) {
               imageUrls.push(c.image_uris.png);
+              prints.push({
+                imageUrl: c.image_uris.png,
+                set: c.set ?? "",
+                number: c.collector_number ?? "",
+                rarity: c.rarity,
+              });
             } else if (c.card_faces) {
               for (const face of c.card_faces) {
                 if (face.image_uris?.png) {
                   imageUrls.push(face.image_uris.png);
+                  // For DFCs, use parent card's set/number for each face
+                  prints.push({
+                    imageUrl: face.image_uris.png,
+                    set: c.set ?? "",
+                    number: c.collector_number ?? "",
+                    rarity: c.rarity,
+                  });
                 }
               }
             }
@@ -83,12 +97,18 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
               if (!mana_cost) mana_cost = primaryCard.card_faces[0].mana_cost;
             }
 
+            // Use the user's requested set/number if specified, otherwise use Scryfall's values
+            // This ensures the client can match the response to the original query
+            const responseSet = ci.set || primaryCard.set;
+            const responseNumber = ci.number || primaryCard.collector_number;
+
             const cardToSend: ScryfallCard = {
               name: ci.name,
-              set: primaryCard.set,
-              number: primaryCard.collector_number,
+              set: responseSet,
+              number: responseNumber,
               lang: language,
               imageUrls,
+              prints,
               colors: colors,
               mana_cost: mana_cost,
               cmc: primaryCard.cmc,
@@ -96,7 +116,7 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
               rarity: primaryCard.rarity,
             };
             res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
-            console.log(`[STREAM] Found ${imageUrls.length} arts for: ${ci.name}`);
+            console.log(`[STREAM] Found ${imageUrls.length} arts for: ${ci.name}${ci.set ? ` (${ci.set})` : ''}${ci.number ? ` ${ci.number}` : ''}`);
           } else {
             throw new Error("No images found for card on Scryfall.");
           }

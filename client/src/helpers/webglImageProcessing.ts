@@ -246,6 +246,7 @@ export async function generateBleedCanvasWebGL(
 
 /**
  * Process a card image to generate all required blobs (export + display, normal + darkened)
+ * Optimized: Runs JFA once and generates both versions with two final render passes
  */
 export async function processCardImageWebGL(
     img: ImageBitmap,
@@ -261,49 +262,197 @@ export async function processCardImageWebGL(
     exportBlobDarkened: Blob;
     displayBlobDarkened: Blob;
 }> {
+    const startTime = performance.now();
     const exportDpi = opts?.exportDpi ?? 300;
     const displayDpi = opts?.displayDpi ?? 300;
     const unit = opts?.unit ?? "mm";
 
-    // Generate high-resolution canvas for export using WebGL (normal version)
-    const highResCanvas = await generateBleedCanvasWebGL(img, bleedWidthMm, {
-        unit,
-        dpi: exportDpi,
-        darkenNearBlack: false,
+    const targetCardWidth = IN(2.48, exportDpi);
+    const targetCardHeight = IN(3.47, exportDpi);
+    const bleed = Math.round(getBleedInPixels(bleedWidthMm, unit, exportDpi));
+
+    const finalWidth = Math.ceil(targetCardWidth + bleed * 2);
+    const finalHeight = Math.ceil(targetCardHeight + bleed * 2);
+
+    // Create WebGL context once for all processing
+    const canvas = new OffscreenCanvas(finalWidth, finalHeight);
+    const gl = canvas.getContext("webgl2", {
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: true,
+        antialias: false,
     });
-    const exportBlob = await highResCanvas.convertToBlob({ type: "image/png" });
 
-    // Generate low-resolution canvas for display by downscaling (normal version)
-    const displayWidth = (highResCanvas.width / exportDpi) * displayDpi;
-    const displayHeight = (highResCanvas.height / exportDpi) * displayDpi;
-    const lowResCanvas = new OffscreenCanvas(displayWidth, displayHeight);
-    const lowResCtx = lowResCanvas.getContext("2d")!;
-    lowResCtx.imageSmoothingQuality = "high";
-    lowResCtx.drawImage(highResCanvas, 0, 0, displayWidth, displayHeight);
-    const displayBlob = await lowResCanvas.convertToBlob({ type: "image/png" });
+    if (!gl) {
+        throw new Error("WebGL2 not supported");
+    }
 
-    // Generate darkened versions
-    const highResCanvasDarkened = await generateBleedCanvasWebGL(img, bleedWidthMm, {
-        unit,
-        dpi: exportDpi,
-        darkenNearBlack: true,
-    });
-    const exportBlobDarkened = await highResCanvasDarkened.convertToBlob({ type: "image/png" });
+    const initTime = performance.now();
 
-    const lowResCanvasDarkened = new OffscreenCanvas(displayWidth, displayHeight);
-    const lowResCtxDarkened = lowResCanvasDarkened.getContext("2d")!;
-    lowResCtxDarkened.imageSmoothingQuality = "high";
-    lowResCtxDarkened.drawImage(highResCanvasDarkened, 0, 0, displayWidth, displayHeight);
-    const displayBlobDarkened = await lowResCanvasDarkened.convertToBlob({ type: "image/png" });
+    // Initialize WebGL resources once
+    const progs = initWebGLPrograms(gl);
+    const quadBuffer = createQuadBuffer(gl);
+
+    // Calculate image placement
+    const { drawWidth, drawHeight, offsetX, offsetY } = calculateImagePlacement(
+        img,
+        targetCardWidth,
+        targetCardHeight
+    );
+
+    const scaleX = drawWidth / img.width;
+    const scaleY = drawHeight / img.height;
+    const sourceOffsetX = offsetX / scaleX;
+    const sourceOffsetY = offsetY / scaleY;
+
+    gl.viewport(0, 0, finalWidth, finalHeight);
+
+    // Upload image texture once
+    const imgTexture = createTexture(gl, img.width, img.height, img);
+    gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    // Create ping-pong textures for JFA
+    gl.getExtension("EXT_color_buffer_float");
+    const texA = createTexture(gl, finalWidth, finalHeight, null, gl.RG32F, gl.RG, gl.FLOAT);
+    const texB = createTexture(gl, finalWidth, finalHeight, null, gl.RG32F, gl.RG, gl.FLOAT);
+    const fbA = createFramebuffer(gl, texA);
+    const fbB = createFramebuffer(gl, texB);
+
+    // Common attribute setup
+    const aPositionLoc = 0;
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+    gl.enableVertexAttribArray(aPositionLoc);
+    gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    const setupTime = performance.now();
+
+    // --- PASS 1: INIT (run once) ---
+    gl.useProgram(progs.init);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbA);
+    gl.clearColor(-1, -1, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+    gl.uniform1i(gl.getUniformLocation(progs.init, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), targetCardWidth, targetCardHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), bleed, bleed);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_scale"), scaleX, scaleY);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // --- PASS 2: JFA STEPS (run once) ---
+    gl.useProgram(progs.step);
+    gl.uniform2f(gl.getUniformLocation(progs.step, "u_resolution"), finalWidth, finalHeight);
+    const uStepLoc = gl.getUniformLocation(progs.step, "u_step");
+    const uSeedsLoc = gl.getUniformLocation(progs.step, "u_seeds");
+
+    let currentFb = fbA;
+    let currentTex = texA;
+    let nextFb = fbB;
+    let nextTex = texB;
+
+    const maxDim = Math.max(finalWidth, finalHeight);
+    const steps = Math.ceil(Math.log2(maxDim));
+
+    for (let i = steps - 1; i >= 0; i--) {
+        const stepSize = Math.pow(2, i);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, nextFb);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, currentTex);
+        gl.uniform1i(uSeedsLoc, 0);
+        gl.uniform1f(uStepLoc, stepSize);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Swap
+        const tempFb = currentFb;
+        currentFb = nextFb;
+        nextFb = tempFb;
+
+        const tempTex = currentTex;
+        currentTex = nextTex;
+        nextTex = tempTex;
+    }
+
+    const jfaTime = performance.now();
+
+    // Helper function to render final pass and extract blobs
+    async function renderFinalAndExtract(
+        glCtx: WebGL2RenderingContext,
+        darken: boolean
+    ): Promise<{ exportBlob: Blob; displayBlob: Blob }> {
+        // Render to screen (null framebuffer)
+        glCtx.bindFramebuffer(glCtx.FRAMEBUFFER, null);
+        glCtx.useProgram(progs.final);
+
+        glCtx.activeTexture(glCtx.TEXTURE0);
+        glCtx.bindTexture(glCtx.TEXTURE_2D, currentTex);
+        glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_seeds"), 0);
+
+        glCtx.activeTexture(glCtx.TEXTURE1);
+        glCtx.bindTexture(glCtx.TEXTURE_2D, imgTexture);
+        glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_image"), 1);
+
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_imageSize"), targetCardWidth, targetCardHeight);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_offset"), bleed, bleed);
+        glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_darken"), darken ? 1 : 0);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
+
+        glCtx.drawArrays(glCtx.TRIANGLES, 0, 6);
+
+        const exportBlob = await canvas.convertToBlob({ type: "image/png" });
+
+        // Create display version by downscaling
+        const displayWidth = (finalWidth / exportDpi) * displayDpi;
+        const displayHeight = (finalHeight / exportDpi) * displayDpi;
+        const lowResCanvas = new OffscreenCanvas(displayWidth, displayHeight);
+        const lowResCtx = lowResCanvas.getContext("2d")!;
+        lowResCtx.imageSmoothingQuality = "high";
+        lowResCtx.drawImage(canvas, 0, 0, displayWidth, displayHeight);
+        const displayBlob = await lowResCanvas.convertToBlob({ type: "image/png" });
+
+        return { exportBlob, displayBlob };
+    }
+
+    // --- PASS 3A: FINAL (normal, darken=false) ---
+    const normalResult = await renderFinalAndExtract(gl, false);
+    const normalTime = performance.now();
+
+    // --- PASS 3B: FINAL (darkened, darken=true) ---
+    const darkenedResult = await renderFinalAndExtract(gl, true);
+    const darkenTime = performance.now();
+
+    // Cleanup WebGL resources
+    gl.deleteTexture(texA);
+    gl.deleteTexture(texB);
+    gl.deleteTexture(imgTexture);
+    gl.deleteFramebuffer(fbA);
+    gl.deleteFramebuffer(fbB);
+    gl.deleteProgram(progs.init);
+    gl.deleteProgram(progs.step);
+    gl.deleteProgram(progs.final);
+    gl.deleteBuffer(quadBuffer);
+
+    const totalTime = performance.now();
+    console.log(`[WebGL] Processing: init=${(initTime - startTime).toFixed(1)}ms, setup=${(setupTime - initTime).toFixed(1)}ms, JFA=${(jfaTime - setupTime).toFixed(1)}ms, final=${(normalTime - jfaTime).toFixed(1)}ms, darkened=${(darkenTime - normalTime).toFixed(1)}ms, total=${(totalTime - startTime).toFixed(1)}ms`);
 
     return {
-        exportBlob,
+        exportBlob: normalResult.exportBlob,
         exportDpi,
         exportBleedWidth: bleedWidthMm,
-        displayBlob,
+        displayBlob: normalResult.displayBlob,
         displayDpi,
         displayBleedWidth: bleedWidthMm,
-        exportBlobDarkened,
-        displayBlobDarkened,
+        exportBlobDarkened: darkenedResult.exportBlob,
+        displayBlobDarkened: darkenedResult.displayBlob,
     };
 }

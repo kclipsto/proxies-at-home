@@ -3,6 +3,7 @@ import { API_BASE } from "@/constants";
 import { db } from "../db"; // Import the Dexie database instance
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { useSettingsStore } from "../store";
+import { importStats } from "../helpers/importStats";
 import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
 
@@ -47,26 +48,39 @@ export function useImageProcessing({
 
     const existingRequest = inFlight.current[imageId];
     if (existingRequest) {
-      return existingRequest;
+      if (priority === Priority.HIGH) {
+        imageProcessor.promoteToHighPriority(imageId);
+      }
+      return existingRequest.then(() => {
+        importStats.markCardProcessed(card.uuid);
+        setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
+      }, (e: unknown) => {
+        importStats.markCardFailed(card.uuid);
+        setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+        throw e;
+      });
     }
 
     const p = (async () => {
+      const startTime = performance.now();
       // Double-check after acquiring slot (settings might have changed)
       const currentImage = await db.images.get(imageId);
 
       if (
         currentImage?.displayBlob &&
         currentImage?.displayBlobDarkened &&
-        currentImage.exportDpi === dpi &&
         currentImage.exportBleedWidth === bleedEdgeWidth
       ) {
+        importStats.markCacheHit(card.uuid);
         return;
       }
+      importStats.markCacheMiss(card.uuid);
 
       const src = await getOriginalSrcForCard(card);
       if (!src) return;
       setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
       try {
+        const processStart = performance.now();
         const result = await imageProcessor.process({
           uuid: card.uuid,
           url: src,
@@ -78,6 +92,7 @@ export function useImageProcessing({
           dpi,
           darkenNearBlack,
         }, priority);
+        const processTime = performance.now();
 
         if ("displayBlob" in result) {
           const {
@@ -91,6 +106,7 @@ export function useImageProcessing({
             exportBlobDarkened,
           } = result;
 
+          const dbStart = performance.now();
           await db.images.update(imageId, {
             displayBlob,
             displayDpi,
@@ -101,6 +117,10 @@ export function useImageProcessing({
             displayBlobDarkened,
             exportBlobDarkened,
           });
+          const dbTime = performance.now();
+          const totalTime = performance.now();
+          console.log(`[ensureProcessed] ${card.name}: process=${(processTime - processStart).toFixed(0)}ms, dbWrite=${(dbTime - dbStart).toFixed(0)}ms, total=${(totalTime - startTime).toFixed(0)}ms`);
+          importStats.markCardProcessed(card.uuid);
         } else {
           throw new Error(result.error);
         }
@@ -110,6 +130,7 @@ export function useImageProcessing({
         if (e instanceof Error && e.message !== "Cancelled" && e.message !== "Promoted to high priority") {
           console.error("ensureProcessed error for", card.name, e);
           setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+          importStats.markCardFailed(card.uuid);
         }
       } finally {
         if (src.startsWith("blob:")) URL.revokeObjectURL(src);

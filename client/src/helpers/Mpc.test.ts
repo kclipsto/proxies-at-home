@@ -8,7 +8,7 @@ import {
   processMpcImport,
 } from './Mpc';
 import * as constants from '../constants';
-import { addRemoteImage, addCards } from "./dbUtils";
+import { addRemoteImage, addRemoteImages, addCards } from "./dbUtils";
 import { searchCards } from "./scryfallApi";
 
 // Mocks
@@ -286,7 +286,15 @@ describe('Mpc', () => {
         </order>
       `;
 
-      (addRemoteImage as Mock).mockResolvedValue("imgId");
+      const mockUrlMap = new Map();
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/front?id=123456789012`, "imgId1");
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/front?id=123456789013`, "imgId2");
+      (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
+
+      (addCards as Mock).mockResolvedValue([
+        { uuid: 'uuid1', name: 'MPC Import 1' },
+        { uuid: 'uuid2', name: 'MPC Import 2' }
+      ]);
 
       const onProgress = vi.fn();
       const result = await processMpcImport(validXml, onProgress);
@@ -294,16 +302,21 @@ describe('Mpc', () => {
       expect(result.success).toBe(true);
       expect(result.count).toBe(2);
 
-      // Should add images
-      expect(addRemoteImage).toHaveBeenCalledTimes(2); // 2 fronts
-      expect(addRemoteImage).toHaveBeenCalledWith([`${constants.API_BASE}/api/cards/images/front?id=123456789012`]);
-      expect(addRemoteImage).toHaveBeenCalledWith([`${constants.API_BASE}/api/cards/images/front?id=123456789013`]);
+      // Should batch add images
+      expect(addRemoteImages).toHaveBeenCalledTimes(1);
+      // Verify arg contains both images
+      const calledArgs = (addRemoteImages as Mock).mock.calls[0][0];
+      expect(calledArgs).toHaveLength(2);
+      expect(calledArgs).toEqual(expect.arrayContaining([
+        expect.objectContaining({ imageUrls: [`${constants.API_BASE}/api/cards/images/front?id=123456789012`] }),
+        expect.objectContaining({ imageUrls: [`${constants.API_BASE}/api/cards/images/front?id=123456789013`] })
+      ]));
 
       // Should add cards
       expect(addCards).toHaveBeenCalledTimes(1);
       expect(addCards).toHaveBeenCalledWith([
-        expect.objectContaining({ name: "MPC Import 1", imageId: "imgId", isUserUpload: true, hasBakedBleed: true }),
-        expect.objectContaining({ name: "MPC Import 2", imageId: "imgId", isUserUpload: true, hasBakedBleed: true }),
+        expect.objectContaining({ name: "MPC Import 1", imageId: "imgId1", isUserUpload: true, hasBakedBleed: true }),
+        expect.objectContaining({ name: "MPC Import 2", imageId: "imgId2", isUserUpload: true, hasBakedBleed: true }),
       ]);
 
       // Should call progress
@@ -325,7 +338,7 @@ describe('Mpc', () => {
       expect(addCards).not.toHaveBeenCalled();
     });
 
-    it("should enrich cards with Scryfall data", async () => {
+    it("should defer enrichment to background", async () => {
       const xml = `
         <order>
           <fronts>
@@ -338,22 +351,12 @@ describe('Mpc', () => {
         </order>
       `;
 
-      (addRemoteImage as Mock).mockResolvedValue("imgId");
+      const mockUrlMap = new Map();
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/front?id=front1`, "imgId");
+      (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
 
-      // Mock Scryfall response
-      (searchCards as Mock).mockResolvedValue([
-        {
-          name: "Sol Ring",
-          set: "cmd",
-          number: "1",
-          lang: "en",
-          colors: [],
-          mana_cost: "{1}",
-          cmc: 1,
-          type_line: "Artifact",
-          rarity: "uncommon",
-          imageUrls: []
-        }
+      (addCards as Mock).mockResolvedValue([
+        { uuid: 'uuid-sol-ring', name: 'Sol Ring' }
       ]);
 
       const result = await processMpcImport(xml);
@@ -362,8 +365,8 @@ describe('Mpc', () => {
       expect(addCards).toHaveBeenCalledWith([
         expect.objectContaining({
           name: "Sol Ring",
-          type_line: "Artifact",
-          mana_cost: "{1}"
+          needsEnrichment: true,
+          hasBakedBleed: true,
         }),
       ]);
     });
