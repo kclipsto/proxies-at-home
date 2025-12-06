@@ -24,28 +24,6 @@ export interface Image {
   imageUrls?: string[];
 }
 
-export interface PdfExportSession {
-  id: string; // UUID for this export session
-  timestamp: number;
-  completedChunks: Uint8Array[]; // Completed PDF buffers
-  totalChunks: number;
-  lastChunkIndex: number;
-  settings: {
-    dpi: number;
-    bleedEdge: boolean;
-    bleedEdgeWidthMm: number;
-    pageWidth: number;
-    pageHeight: number;
-    pageSizeUnit: 'mm' | 'in';
-    columns: number;
-    rows: number;
-    cardSpacingMm: number;
-    cardPositionX: number;
-    cardPositionY: number;
-    darkenNearBlack: boolean;
-    cutLineStyle: 'none' | 'edges' | 'full';
-  };
-}
 
 export type Json =
   | string
@@ -72,7 +50,6 @@ export class ProxxiedDexie extends Dexie {
 
   settings!: Table<Setting, string>;
 
-  pdfExportSessions!: Table<PdfExportSession, string>;
 
   constructor() {
     super('ProxxiedDB');
@@ -86,13 +63,6 @@ export class ProxxiedDexie extends Dexie {
       cards: '&uuid, imageId, order, name',
       images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
       settings: '&id',
-    });
-    // Version 3: Add PDF export sessions for checkpoint/resume
-    this.version(3).stores({
-      cards: '&uuid, imageId, order, name',
-      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
-      settings: '&id',
-      pdfExportSessions: '&id, timestamp',
     });
   }
 }

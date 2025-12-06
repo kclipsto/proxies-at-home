@@ -1,7 +1,7 @@
 declare const self: DedicatedWorkerGlobalScope;
 
 import {
-  IN,
+  MM_TO_PX,
   toProxied,
   getBleedInPixels,
   trimBleedFromBitmap,
@@ -59,8 +59,8 @@ async function generateBleedCanvas(
   opts: { unit?: "mm" | "in"; dpi?: number; darkenNearBlack?: boolean }
 ): Promise<OffscreenCanvas> {
   const dpi = opts?.dpi ?? 300;
-  const targetCardWidth = IN(2.48, dpi);
-  const targetCardHeight = IN(3.47, dpi);
+  const targetCardWidth = MM_TO_PX(63, dpi);  // Standard MTG card width: 63mm
+  const targetCardHeight = MM_TO_PX(88, dpi); // Standard MTG card height: 88mm
   const bleed = Math.round(
     getBleedInPixels(
       bleedWidth,
@@ -128,22 +128,19 @@ async function generateBleedCanvas(
     offsetY = (drawHeight - targetCardHeight) / 2;
   }
 
-  // Draw image at bleed offset
+  // Draw the image centered in the bleed canvas
   ctx.drawImage(img, bleed - offsetX, bleed - offsetY, drawWidth, drawHeight);
 
-  // Get image data for JFA
+  // Get image data for JFA processing
   const imageData = ctx.getImageData(0, 0, finalWidth, finalHeight);
 
-  // Apply JFA to fill transparent areas (bleed)
-  applyJFA(imageData);
-
-  // Apply darkenNearBlack AFTER JFA to clean up any artifacts
+  // Apply darkenNearBlack if needed
   if (opts?.darkenNearBlack) {
     const blackThreshold = 30;
     blackenAllNearBlackPixels(imageData, blackThreshold);
   }
 
-  // Put processed data back
+  applyJFA(imageData);
   ctx.putImageData(imageData, 0, 0);
 
   return canvas;

@@ -12,9 +12,12 @@ export function toProxied(url: string, apiBase: string) {
     if (url.startsWith("data:")) return url;
     if (url.startsWith("blob:")) return url;
     // Prevent double-proxying of internal API URLs
-    if (url.includes("/api/cards/images/")) return url;
+    if (url.includes("/api/cards/images/")) {
+        return url;
+    }
     const prefix = `${apiBase}/api/cards/images/proxy?url=`;
     if (url.startsWith(prefix)) return url;
+
     return `${prefix}${encodeURIComponent(url)}`;
 }
 
@@ -35,8 +38,6 @@ export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250, 
         const exponentialDelay = baseDelay * (2 ** i);
         const jitter = Math.random() * baseDelay;
         const totalDelay = exponentialDelay + jitter;
-
-
 
         await new Promise(res => setTimeout(res, totalDelay));
     }

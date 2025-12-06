@@ -11,7 +11,7 @@ vi.mock("@/store/settings", () => ({
 describe("ZoomControls", () => {
     it("should reset zoom on double click (desktop)", () => {
         const setZoom = vi.fn();
-        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: { zoom: number; setZoom: typeof setZoom }) => unknown) => selector({
+        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: unknown) => unknown) => selector({
             zoom: 1.5,
             setZoom,
         }));
@@ -25,7 +25,7 @@ describe("ZoomControls", () => {
 
     it("should reset zoom on double tap (mobile)", () => {
         const setZoom = vi.fn();
-        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: { zoom: number; setZoom: typeof setZoom }) => unknown) => selector({
+        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: unknown) => unknown) => selector({
             zoom: 1.5,
             setZoom,
         }));
@@ -44,7 +44,7 @@ describe("ZoomControls", () => {
 
     it("should not reset zoom on single tap", () => {
         const setZoom = vi.fn();
-        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: { zoom: number; setZoom: typeof setZoom }) => unknown) => selector({
+        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: unknown) => unknown) => selector({
             zoom: 1.5,
             setZoom,
         }));
@@ -60,7 +60,7 @@ describe("ZoomControls", () => {
 
     it("should not reset zoom on slow double tap", async () => {
         const setZoom = vi.fn();
-        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: { zoom: number; setZoom: typeof setZoom }) => unknown) => selector({
+        (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: (state: unknown) => unknown) => selector({
             zoom: 1.5,
             setZoom,
         }));

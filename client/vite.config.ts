@@ -64,4 +64,14 @@ export default defineConfig({
     setupFiles: ['./src/vitest.setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'flowbite-react', 'lucide-react'],
+          pdf: ['pdf-lib'],
+        },
+      },
+    },
+  },
 });

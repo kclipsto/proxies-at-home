@@ -322,7 +322,12 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
       return res.sendFile(localPath);
     }
 
-    const response = await getWithRetry(originalUrl, { responseType: "arraybuffer", timeout: 12000 }, 3);
+    // Fix for relative URLs (e.g. from client proxying to itself)
+    const fetchUrl = originalUrl.startsWith("/")
+      ? `http://127.0.0.1:${process.env.PORT || 3001}${originalUrl}`
+      : originalUrl;
+
+    const response = await getWithRetry(fetchUrl, { responseType: "arraybuffer", timeout: 12000 }, 3);
     if (response.status >= 400 || !response.data) {
       return res.status(502).json({ error: "Upstream error", status: response.status });
     }

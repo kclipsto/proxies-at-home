@@ -97,23 +97,27 @@ export default function ProxyBuilderPage() {
     return () => window.removeEventListener("resize", checkLayout);
   }, []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const createResizeHandler = useCallback((
+    getWidth: () => number,
+    setWidth: (w: number) => void,
+    isCollapsed: boolean,
+    toggle: () => void,
+    invertDelta: boolean = false
+  ) => (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startWidth = settingsPanelWidth;
-    let hasExpanded = !isSettingsPanelCollapsed;
+    const startWidth = getWidth();
+    let hasExpanded = !isCollapsed;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const delta = startX - e.clientX;
+      const delta = invertDelta ? (startX - e.clientX) : (e.clientX - startX);
 
-      // If collapsed and dragged more than 3px, expand
       if (!hasExpanded && Math.abs(delta) > 3) {
-        toggleSettingsPanel();
+        toggle();
         hasExpanded = true;
       }
 
-      const newWidth = startWidth + delta;
-      setSettingsPanelWidth(Math.max(320, Math.min(600, newWidth)));
+      setWidth(Math.max(320, Math.min(600, startWidth + delta)));
     };
 
     const handleMouseUp = () => {
@@ -123,35 +127,17 @@ export default function ProxyBuilderPage() {
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
-  }, [settingsPanelWidth, setSettingsPanelWidth, isSettingsPanelCollapsed, toggleSettingsPanel]);
+  }, []);
 
-  const handleUploadPanelMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = uploadPanelWidth;
-    let hasExpanded = !isUploadPanelCollapsed;
+  const handleMouseDown = useMemo(
+    () => createResizeHandler(() => settingsPanelWidth, setSettingsPanelWidth, isSettingsPanelCollapsed, toggleSettingsPanel, true),
+    [createResizeHandler, settingsPanelWidth, setSettingsPanelWidth, isSettingsPanelCollapsed, toggleSettingsPanel]
+  );
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const delta = e.clientX - startX;
-
-      // If collapsed and dragged more than 3px, expand
-      if (!hasExpanded && Math.abs(delta) > 3) {
-        toggleUploadPanel();
-        hasExpanded = true;
-      }
-
-      const newWidth = startWidth + delta;
-      setUploadPanelWidth(Math.max(320, Math.min(600, newWidth)));
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  }, [uploadPanelWidth, setUploadPanelWidth, isUploadPanelCollapsed, toggleUploadPanel]);
+  const handleUploadPanelMouseDown = useMemo(
+    () => createResizeHandler(() => uploadPanelWidth, setUploadPanelWidth, isUploadPanelCollapsed, toggleUploadPanel, false),
+    [createResizeHandler, uploadPanelWidth, setUploadPanelWidth, isUploadPanelCollapsed, toggleUploadPanel]
+  );
 
 
 

@@ -70,13 +70,13 @@ export class ImageProcessor {
     return [...this.highPriorityQueue, ...this.lowPriorityQueue];
   }
 
-  private maxWorkers: number;
+  private baseMaxWorkers: number;
   static mockProcess: unknown;
 
   private constructor() {
     // Cap at 8 workers to prevent network request storms and memory issues
     const concurrency = navigator.hardwareConcurrency || 4;
-    this.maxWorkers = Math.min(8, Math.max(1, concurrency - 1));
+    this.baseMaxWorkers = Math.min(8, Math.max(1, concurrency - 1));
     ImageProcessor.instances.add(this);
   }
 
@@ -136,7 +136,7 @@ export class ImageProcessor {
         clearTimeout(idleWorker.timeoutId);
       }
       worker = idleWorker.worker;
-    } else if (this.allWorkers.size < this.maxWorkers) {
+    } else if (this.allWorkers.size < this.baseMaxWorkers) {
       worker = this.createWorker();
     }
 

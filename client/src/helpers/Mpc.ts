@@ -1,12 +1,24 @@
 import { API_BASE } from "../constants";
+import { addRemoteImage, addCards } from "./dbUtils";
+import { extractCardInfo } from "./CardInfoHelper";
+import { searchCards } from "./scryfallApi";
+import type { CardOption } from "../../../shared/types";
 
-type MpcItem = {
+export type MpcItem = {
   qty: number;
   name: string;
   filename?: string;
   frontId?: string;
   backId?: string;
+  imageId?: string;
+  url?: string;
 };
+
+export interface MpcImportResult {
+  success: boolean;
+  count: number;
+  error?: string;
+}
 
 export function inferCardNameFromFilename(filename: string): string {
   const noExt = filename.replace(/\.[a-z0-9]+$/i, "");
@@ -172,4 +184,87 @@ export function parseMpcText(raw: string): MpcItem[] {
   }
 
   return out;
+}
+
+export async function processMpcImport(
+  xmlContent: string,
+  onProgress?: (current: number, total: number, message: string) => void
+): Promise<MpcImportResult> {
+  const mpcData = tryParseMpcSchemaXml(xmlContent);
+  if (!mpcData) {
+    return { success: false, count: 0, error: "Failed to parse MPC XML" };
+  }
+
+  const cardsToAdd: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }> = [];
+  const totalItems = mpcData.length;
+
+  // First pass: Add all images to DB and collect IDs
+  for (let i = 0; i < totalItems; i++) {
+    const item = mpcData[i];
+
+    if (onProgress) {
+      onProgress(i + 1, totalItems, `Processing image ${i + 1} of ${totalItems}...`);
+    }
+
+    const frontUrl = getMpcImageUrl(item.frontId);
+    const backUrl = getMpcImageUrl(item.backId);
+
+    // Add front image
+    let frontImageId: string | undefined;
+    if (frontUrl) {
+      frontImageId = await addRemoteImage([frontUrl as string]);
+    }
+
+    // Add back image if it exists (though we don't link it to the card currently)
+    if (backUrl) {
+      await addRemoteImage([backUrl]);
+    }
+
+    const rawName = item.name || `MPC Import ${i + 1}`;
+    const cardInfo = extractCardInfo(rawName);
+
+    // Enrich with Scryfall data if possible
+    let enrichedData: Partial<CardOption> = {};
+    try {
+      // We use the cleaned name for search
+      const searchResults = await searchCards(cardInfo.name);
+      const match = searchResults.find(
+        (c) =>
+          c.name === cardInfo.name &&
+          (!cardInfo.set || (c.set && c.set.toLowerCase() === cardInfo.set.toLowerCase())) &&
+          (!cardInfo.number || c.number === cardInfo.number)
+      ) || searchResults[0];
+
+      if (match) {
+        enrichedData = {
+          lang: match.lang,
+          colors: match.colors,
+          mana_cost: match.mana_cost,
+          cmc: match.cmc,
+          type_line: match.type_line,
+          rarity: match.rarity,
+          set: match.set,
+          number: match.number,
+        };
+      }
+    } catch (e) {
+      console.warn(`Failed to enrich card ${cardInfo.name}:`, e);
+    }
+
+    cardsToAdd.push({
+      name: cardInfo.name,
+      set: cardInfo.set,
+      number: cardInfo.number,
+      imageId: frontImageId || "",
+      isUserUpload: true,
+      hasBakedBleed: true,
+      ...enrichedData,
+    });
+  }
+
+  if (cardsToAdd.length > 0) {
+    await addCards(cardsToAdd);
+  }
+
+  return { success: true, count: cardsToAdd.length };
 }

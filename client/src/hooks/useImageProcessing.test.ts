@@ -17,6 +17,22 @@ vi.mock("../db", () => ({
 
 vi.mock("../helpers/imageProcessor");
 
+vi.mock("../store", () => ({
+  useSettingsStore: Object.assign(
+    vi.fn((selector) => selector({
+      dpi: 300,
+      darkenNearBlack: false,
+      hasHydrated: true,
+    })),
+    {
+      persist: {
+        hasHydrated: vi.fn().mockReturnValue(true),
+        onFinishHydration: vi.fn().mockReturnValue(() => { }),
+      },
+    }
+  ),
+}));
+
 describe("useImageProcessing", () => {
   const card: CardOption = {
     uuid: "123",
@@ -41,7 +57,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -61,7 +76,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -92,7 +106,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -113,7 +126,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -153,7 +165,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -189,7 +200,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -214,7 +224,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 
@@ -236,7 +245,6 @@ describe("useImageProcessing", () => {
         unit: "mm",
         bleedEdgeWidth: 1,
         imageProcessor: mockImageProcessor,
-        darkenNearBlack: false,
       })
     );
 

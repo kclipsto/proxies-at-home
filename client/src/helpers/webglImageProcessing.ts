@@ -119,10 +119,11 @@ export async function generateBleedCanvasWebGL(
         targetCardHeight
     );
 
-    // Calculate offset in WebGL coordinates (bottom-left origin)
-    // The image needs to be centered in the bleed area
-    const imageOffsetX = bleed - offsetX;
-    const imageOffsetY = bleed - offsetY;
+    // Calculate scale and source offset for shader coordinate mapping
+    const scaleX = drawWidth / img.width;
+    const scaleY = drawHeight / img.height;
+    const sourceOffsetX = offsetX / scaleX;
+    const sourceOffsetY = offsetY / scaleY;
 
     // Setup Viewport
     gl.viewport(0, 0, finalWidth, finalHeight);
@@ -163,8 +164,11 @@ export async function generateBleedCanvasWebGL(
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
     gl.uniform1i(gl.getUniformLocation(progs.init, "u_image"), 0);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), drawWidth, drawHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), imageOffsetX, imageOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), targetCardWidth, targetCardHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), bleed, bleed);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_scale"), scaleX, scaleY);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -217,9 +221,12 @@ export async function generateBleedCanvasWebGL(
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_image"), 1);
 
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.final, "u_imageSize"), drawWidth, drawHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.final, "u_offset"), imageOffsetX, imageOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_imageSize"), targetCardWidth, targetCardHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_offset"), bleed, bleed);
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_darken"), opts.darkenNearBlack ? 1 : 0);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
+    gl.uniform2f(gl.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 

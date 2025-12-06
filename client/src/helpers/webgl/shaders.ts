@@ -15,8 +15,11 @@ precision highp float;
 
 uniform sampler2D u_image;
 uniform vec2 u_resolution;
-uniform vec2 u_imageSize;
-uniform vec2 u_offset;
+uniform vec2 u_imageSize;      // Content area size (targetCardWidth x targetCardHeight)
+uniform vec2 u_offset;         // Content area position (bleed, bleed)
+uniform vec2 u_srcImageSize;   // Source image dimensions
+uniform vec2 u_srcOffset;      // Source crop offset (in source pixels)
+uniform vec2 u_scale;          // Scale factor (drawWidth/srcWidth, drawHeight/srcHeight)
 
 in vec2 v_uv;
 out vec4 outColor;
@@ -25,17 +28,22 @@ void main() {
     // Calculate pixel coordinate in the output buffer
     vec2 pixelCoord = v_uv * u_resolution;
 
-    // Calculate coordinate relative to the image
-    vec2 imageCoord = pixelCoord - u_offset;
+    // Calculate coordinate relative to the content area
+    vec2 contentCoord = pixelCoord - u_offset;
 
-    // Check if we are inside the image bounds
-    if (imageCoord.x >= 0.0 && imageCoord.x < u_imageSize.x &&
-        imageCoord.y >= 0.0 && imageCoord.y < u_imageSize.y) {
+    // Check if we are inside the content area bounds
+    if (contentCoord.x >= 0.0 && contentCoord.x < u_imageSize.x &&
+        contentCoord.y >= 0.0 && contentCoord.y < u_imageSize.y) {
         
-        // Sample the image
-        // Normalize image coord to 0..1 for texture sampling
-        // Flip Y because ImageBitmap has (0,0) at top-left but WebGL UVs expect bottom-left
-        vec2 imageUV = vec2(imageCoord.x / u_imageSize.x, 1.0 - imageCoord.y / u_imageSize.y);
+        // Convert content coordinate to source image UV with scaling and cropping
+        // contentCoord is in target pixels, we need to map to source pixels
+        // First, convert to "scaled image" coords, then add crop offset
+        vec2 scaledCoord = contentCoord;
+        // Add the crop offset (in scaled pixels) and convert to source image pixels
+        vec2 srcCoord = (scaledCoord / u_scale) + u_srcOffset;
+        
+        // Normalize to UV and flip Y for WebGL
+        vec2 imageUV = vec2(srcCoord.x / u_srcImageSize.x, 1.0 - srcCoord.y / u_srcImageSize.y);
         
         vec4 color = texture(u_image, imageUV);
 
@@ -106,14 +114,35 @@ precision highp float;
 uniform sampler2D u_seeds;
 uniform sampler2D u_image;
 uniform vec2 u_resolution;
-uniform vec2 u_imageSize;
-uniform vec2 u_offset;
+uniform vec2 u_imageSize;      // Content area size (targetCardWidth x targetCardHeight)
+uniform vec2 u_offset;         // Content area position (bleed, bleed)
 uniform bool u_darken;
+uniform vec2 u_srcImageSize;   // Source image dimensions
+uniform vec2 u_srcOffset;      // Source crop offset (in source pixels)
+uniform vec2 u_scale;          // Scale factor (drawWidth/srcWidth, drawHeight/srcHeight)
 
 in vec2 v_uv;
 out vec4 outColor;
 
+// Helper function to convert content coordinate to source image UV
+vec2 contentToSourceUV(vec2 contentCoord) {
+    // Convert content coordinate to source image coords with scaling and cropping
+    vec2 srcCoord = (contentCoord / u_scale) + u_srcOffset;
+    // Normalize to UV and flip Y for WebGL
+    return vec2(srcCoord.x / u_srcImageSize.x, 1.0 - srcCoord.y / u_srcImageSize.y);
+}
+
 void main() {
+    vec2 pixelCoord = v_uv * u_resolution;
+    
+    // Calculate coordinate relative to the content area
+    vec2 contentCoord = pixelCoord - u_offset;
+    
+    // Check if we are inside the content area bounds
+    bool insideContent = contentCoord.x >= 0.0 && contentCoord.x < u_imageSize.x &&
+                         contentCoord.y >= 0.0 && contentCoord.y < u_imageSize.y;
+    
+
     vec4 seedData = texture(u_seeds, v_uv);
     
     if (seedData.r < 0.0) {
@@ -124,14 +153,14 @@ void main() {
 
     vec2 seedCoord = seedData.rg;
     
-    // Convert seed coord (in output space) back to image UV
-    vec2 imageCoord = seedCoord - u_offset;
-    // Flip Y because ImageBitmap has (0,0) at top-left but WebGL UVs expect bottom-left
-    vec2 imageUV = vec2(imageCoord.x / u_imageSize.x, 1.0 - imageCoord.y / u_imageSize.y);
+    // Convert seed coord (in output space) back to content coordinate, then to source UV
+    vec2 seedContentCoord = seedCoord - u_offset;
+    vec2 imageUV = contentToSourceUV(seedContentCoord);
 
     // Sample original image
     vec4 color = texture(u_image, imageUV);
 
+    // Darken Near Black Logic
     // Darken Near Black Logic
     if (u_darken) {
         float threshold = 30.0 / 255.0; // 30 in 0..255
@@ -149,3 +178,4 @@ void main() {
     outColor = vec4(color.rgb, 1.0);
 }
 `;
+

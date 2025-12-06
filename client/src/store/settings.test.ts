@@ -244,7 +244,7 @@ describe("useSettingsStore", () => {
 
             // Swap orientation
             swapPageOrientation();
-            let state = useSettingsStore.getState();
+            const state = useSettingsStore.getState();
             expect(state.pageOrientation).toBe("landscape");
             expect(state.pageWidth).toBe(20);
             expect(state.pageHeight).toBe(10);

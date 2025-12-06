@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { extractCardInfo } from "../helpers/CardInfoHelper";
 import { useSettingsStore } from "../store/settings";
 import type { CardOption } from "../../../shared/types";
 
@@ -134,7 +135,7 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
             let comparison = 0;
             switch (sortBy) {
                 case "name":
-                    comparison = a.name.localeCompare(b.name);
+                    comparison = extractCardInfo(a.name).name.localeCompare(extractCardInfo(b.name).name);
                     break;
                 case "type":
                     comparison = getSortableType(a.type_line).localeCompare(

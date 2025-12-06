@@ -85,8 +85,8 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
             const cardToSend: ScryfallCard = {
               name: ci.name,
-              set: ci.set,
-              number: ci.number,
+              set: primaryCard.set,
+              number: primaryCard.collector_number,
               lang: language,
               imageUrls,
               colors: colors,

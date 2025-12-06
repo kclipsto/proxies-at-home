@@ -6,4 +6,5 @@ client/coverage/*
 coverage/*
 client/playwright-report/
 client/test-results/
+client/tests/e2e/pdf-export.spec.ts-snapshots/
 node_modules

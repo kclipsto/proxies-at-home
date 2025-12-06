@@ -9,6 +9,8 @@ vi.mock("../store", () => ({
     useSettingsStore: (selector: (state: unknown) => unknown) => selector({
         guideWidth: 10,
         guideColor: "#00ff00",
+        perCardGuideStyle: "corners",
+        guidePlacement: "inside",
     }),
     useArtworkModalStore: (selector: (state: unknown) => unknown) => selector({
         openModal: vi.fn(),

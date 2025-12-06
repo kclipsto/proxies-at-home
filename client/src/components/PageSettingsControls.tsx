@@ -274,52 +274,21 @@ export function PageSettingsControls({
           Settings
         </h2>
         <div className="ml-auto">
-          <AutoTooltip mobile={mobile} content={
-            (() => {
-              const allPanels = settingsPanelState.order;
-              const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
-              const totalCount = allPanels.length;
-              const shouldExpand = collapsedCount >= totalCount / 2;
-              return shouldExpand ? "Expand All" : "Collapse All";
-            })()
-          } placement="bottom-end">
-            <button
-              onClick={() => {
-                const allPanels = settingsPanelState.order;
-                const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
-                const totalCount = allPanels.length;
-                const shouldExpand = collapsedCount >= totalCount / 2;
-
-                if (shouldExpand) {
-                  expandAllPanels();
-                } else {
-                  collapseAllPanels();
-                }
-              }}
-              className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition-colors"
-              aria-label={
-                (() => {
-                  const allPanels = settingsPanelState.order;
-                  const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
-                  const totalCount = allPanels.length;
-                  const shouldExpand = collapsedCount >= totalCount / 2;
-                  return shouldExpand ? "Expand all sections" : "Collapse all sections";
-                })()
-              }
-            >
-              {(() => {
-                const allPanels = settingsPanelState.order;
-                const collapsedCount = allPanels.filter(id => !!settingsPanelState.collapsed[id]).length;
-                const totalCount = allPanels.length;
-                const shouldExpand = collapsedCount >= totalCount / 2;
-                return shouldExpand ? (
-                  <ChevronsDown className="size-6" />
-                ) : (
-                  <ChevronsUp className="size-6" />
-                );
-              })()}
-            </button>
-          </AutoTooltip>
+          {(() => {
+            const collapsedCount = settingsPanelState.order.filter(id => !!settingsPanelState.collapsed[id]).length;
+            const shouldExpand = collapsedCount >= settingsPanelState.order.length / 2;
+            return (
+              <AutoTooltip mobile={mobile} content={shouldExpand ? "Expand All" : "Collapse All"} placement="bottom-end">
+                <button
+                  onClick={() => shouldExpand ? expandAllPanels() : collapseAllPanels()}
+                  className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition-colors"
+                  aria-label={shouldExpand ? "Expand all sections" : "Collapse all sections"}
+                >
+                  {shouldExpand ? <ChevronsDown className="size-6" /> : <ChevronsUp className="size-6" />}
+                </button>
+              </AutoTooltip>
+            );
+          })()}
         </div>
       </div>
 

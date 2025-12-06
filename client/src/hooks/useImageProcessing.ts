@@ -16,11 +16,14 @@ export function useImageProcessing({
   imageProcessor: ImageProcessor;
 }) {
   const dpi = useSettingsStore((state) => state.dpi);
+  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
 
   const [loadingMap, setLoadingMap] = useState<
     Record<string, "idle" | "loading" | "error">
   >({});
   const inFlight = useRef<Record<string, Promise<void>>>({});
+
+  const hydrated = useSettingsStore((state) => state.hasHydrated);
 
   async function getOriginalSrcForCard(
     card: CardOption
@@ -38,22 +41,14 @@ export function useImageProcessing({
     const { imageId } = card;
     if (!imageId) return;
 
-    // CRITICAL: Check if processing is actually needed BEFORE checking inFlight
-    // This prevents spawning workers on page refresh when images are already cached
-
-    const existingImage = await db.images.get(imageId);
-
-    const hasBlobs = existingImage?.displayBlob && existingImage?.displayBlobDarkened;
-    const dpiMatch = existingImage?.exportDpi === dpi;
-    const bleedMatch = existingImage?.exportBleedWidth === bleedEdgeWidth;
-
-    if (hasBlobs && dpiMatch && bleedMatch) {
-      return; // Already processed with correct settings - skip entirely
+    if (!hydrated) {
+      return;
     }
 
-    // Check if already in flight
     const existingRequest = inFlight.current[imageId];
-    if (existingRequest) return existingRequest;
+    if (existingRequest) {
+      return existingRequest;
+    }
 
     const p = (async () => {
       // Double-check after acquiring slot (settings might have changed)
@@ -81,6 +76,7 @@ export function useImageProcessing({
           isUserUpload: card.isUserUpload,
           hasBakedBleed: card.hasBakedBleed,
           dpi,
+          darkenNearBlack,
         }, priority);
 
         if ("displayBlob" in result) {
@@ -124,7 +120,7 @@ export function useImageProcessing({
 
     inFlight.current[imageId] = p;
     return p;
-  }, [bleedEdgeWidth, unit, dpi, imageProcessor]);
+  }, [bleedEdgeWidth, unit, dpi, imageProcessor, darkenNearBlack, hydrated]);
 
   const reprocessSelectedImages = useCallback(
     async (cards: CardOption[], newBleedWidth: number
@@ -150,6 +146,7 @@ export function useImageProcessing({
             isUserUpload: card.isUserUpload,
             hasBakedBleed: card.hasBakedBleed,
             dpi,
+            darkenNearBlack,
           });
 
           if (src.startsWith("blob:")) URL.revokeObjectURL(src);
@@ -188,7 +185,7 @@ export function useImageProcessing({
 
       await Promise.allSettled(promises);
     },
-    [imageProcessor, unit, dpi]
+    [imageProcessor, unit, dpi, darkenNearBlack]
   );
 
   const cancelProcessing = useCallback(() => {

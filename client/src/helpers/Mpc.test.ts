@@ -1,13 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import {
   inferCardNameFromFilename,
   getMpcImageUrl,
   extractDriveId,
   tryParseMpcSchemaXml,
   parseMpcText,
+  processMpcImport,
 } from './Mpc';
 import * as constants from '../constants';
+import { addRemoteImage, addCards } from "./dbUtils";
+import { searchCards } from "./scryfallApi";
 
+// Mocks
+vi.mock("./dbUtils");
+vi.mock("./scryfallApi"); // Mock Scryfall API
 vi.mock('../constants', async () => {
   const originalConstants = await vi.importActual('../constants');
   return {
@@ -65,8 +71,6 @@ describe('Mpc', () => {
     });
 
     it('should extract ID from path ending', () => {
-      // Wait, this is query param.
-      // Path ending:
       const url2 = 'https://example.com/folder/1-ABCDEFGHIJKL';
       expect(extractDriveId(url2)).toBe('1-ABCDEFGHIJKL');
     });
@@ -185,16 +189,6 @@ describe('Mpc', () => {
         </order>
       `;
       const result = tryParseMpcSchemaXml(xml);
-      // Backs are not returned in the item structure directly?
-      // Wait, MpcItem definition:
-      // type MpcItem = { qty, name, filename?, frontId?, backId? };
-      // tryParseMpcSchemaXml implementation does NOT populate backId!
-      // It parses backs into a Map, but never uses it to set backId on items.
-      // Line 82: const items: MpcItem[] = [];
-      // Loop over fronts... items.push({...});
-      // The `backs` map is unused!
-      // This is a bug or incomplete implementation in Mpc.ts.
-      // I should verify this.
       expect(result).not.toBeNull();
       if (result) {
         expect(result[0].name).toBe('Sol Ring');
@@ -253,6 +247,125 @@ describe('Mpc', () => {
         expect(result[0].qty).toBe(2);
         expect(result[0].backId).toBe('back-id-123456789');
       }
+    });
+
+  });
+
+  describe("processMpcImport", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      // Default mock for searchCards
+      (searchCards as Mock).mockResolvedValue([]);
+    });
+
+    it("should return error if XML parsing fails", async () => {
+      // We rely on real tryParseMpcSchemaXml returning null for invalid XML
+      const result = await processMpcImport("invalid xml");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Failed to parse MPC XML");
+      expect(addRemoteImage).not.toHaveBeenCalled();
+      expect(addCards).not.toHaveBeenCalled();
+    });
+
+    it("should process valid MPC XML and add cards", async () => {
+      const validXml = `
+        <order>
+          <fronts>
+            <card>
+              <id>123456789012</id>
+              <name>MPC Import 1</name>
+              <slots>1</slots>
+            </card>
+            <card>
+              <id>123456789013</id>
+              <name>MPC Import 2</name>
+              <slots>2</slots>
+            </card>
+          </fronts>
+        </order>
+      `;
+
+      (addRemoteImage as Mock).mockResolvedValue("imgId");
+
+      const onProgress = vi.fn();
+      const result = await processMpcImport(validXml, onProgress);
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
+
+      // Should add images
+      expect(addRemoteImage).toHaveBeenCalledTimes(2); // 2 fronts
+      expect(addRemoteImage).toHaveBeenCalledWith([`${constants.API_BASE}/api/cards/images/front?id=123456789012`]);
+      expect(addRemoteImage).toHaveBeenCalledWith([`${constants.API_BASE}/api/cards/images/front?id=123456789013`]);
+
+      // Should add cards
+      expect(addCards).toHaveBeenCalledTimes(1);
+      expect(addCards).toHaveBeenCalledWith([
+        expect.objectContaining({ name: "MPC Import 1", imageId: "imgId", isUserUpload: true, hasBakedBleed: true }),
+        expect.objectContaining({ name: "MPC Import 2", imageId: "imgId", isUserUpload: true, hasBakedBleed: true }),
+      ]);
+
+      // Should call progress
+      expect(onProgress).toHaveBeenCalledTimes(2);
+    });
+
+    it("should handle empty MPC data", async () => {
+      const emptyXml = `
+        <order>
+          <fronts>
+          </fronts>
+        </order>
+      `;
+
+      const result = await processMpcImport(emptyXml);
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(0);
+      expect(addCards).not.toHaveBeenCalled();
+    });
+
+    it("should enrich cards with Scryfall data", async () => {
+      const xml = `
+        <order>
+          <fronts>
+            <card>
+              <id>front1</id>
+              <name>Sol Ring</name>
+              <slots>1</slots>
+            </card>
+          </fronts>
+        </order>
+      `;
+
+      (addRemoteImage as Mock).mockResolvedValue("imgId");
+
+      // Mock Scryfall response
+      (searchCards as Mock).mockResolvedValue([
+        {
+          name: "Sol Ring",
+          set: "cmd",
+          number: "1",
+          lang: "en",
+          colors: [],
+          mana_cost: "{1}",
+          cmc: 1,
+          type_line: "Artifact",
+          rarity: "uncommon",
+          imageUrls: []
+        }
+      ]);
+
+      const result = await processMpcImport(xml);
+
+      expect(result.success).toBe(true);
+      expect(addCards).toHaveBeenCalledWith([
+        expect.objectContaining({
+          name: "Sol Ring",
+          type_line: "Artifact",
+          mana_cost: "{1}"
+        }),
+      ]);
     });
   });
 });
