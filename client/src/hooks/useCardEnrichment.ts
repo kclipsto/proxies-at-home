@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "../db";
 import { API_BASE } from "../constants";
 import { importStats } from "../helpers/importStats";
+import { useToastStore } from "../store/toast";
 
 // Retry configuration with exponential backoff
 const ENRICHMENT_RETRY_CONFIG = {
@@ -91,6 +92,9 @@ export function useCardEnrichment() {
             console.log(`[Metadata] Starting fetch for ${unenrichedCards.length} cards`);
             const startTime = performance.now();
             setEnrichmentProgress({ current: 0, total: unenrichedCards.length });
+
+            // Show metadata toast
+            useToastStore.getState().showMetadataToast();
 
             // Track enrichment stats
             if (importStats.isTracking()) {
@@ -240,6 +244,8 @@ export function useCardEnrichment() {
             // THEN signal complete, which triggers the summary log
             importStats.markEnrichmentComplete();
 
+            // Hide metadata toast
+            useToastStore.getState().hideMetadataToast();
 
             setEnrichmentProgress(null);
         } finally {

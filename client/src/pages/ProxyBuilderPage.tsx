@@ -6,6 +6,7 @@ import type { CardOption } from "../../../shared/types";
 import { ResizeHandle } from "../components/ResizeHandle";
 import { PageSettingsControls } from "../components/PageSettingsControls";
 import { UploadSection } from "../components/UploadSection";
+import { ToastContainer } from "../components/ToastContainer";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useCardEnrichment } from "../hooks/useCardEnrichment";
 import { useSettingsStore } from "../store";
@@ -172,8 +173,8 @@ export default function ProxyBuilderPage() {
       imageProcessor,
     });
 
-  // Background enrichment for MPC imports
-  const { enrichmentProgress } = useCardEnrichment();
+  // Background enrichment for MPC imports (keep hook for enrichment logic)
+  useCardEnrichment();
 
   useEffect(() => {
     if (!allCards) return;
@@ -316,12 +317,7 @@ export default function ProxyBuilderPage() {
                 active={activeMobileView === "preview"}
               />
             </Suspense>
-            {enrichmentProgress && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-[100] flex items-center gap-2 pointer-events-none whitespace-nowrap">
-                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                <span>Fetching metadata for {enrichmentProgress.total} cards...</span>
-              </div>
-            )}
+            <ToastContainer />
           </div>
 
           <div className={activeMobileView === "settings" ? "block h-full" : "hidden"}>
@@ -376,13 +372,7 @@ export default function ProxyBuilderPage() {
             />
           </Suspense>
 
-          {/* Enrichment Progress Toast - Positioned relative to PageView */}
-          {enrichmentProgress && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-[100] flex items-center gap-2 pointer-events-none whitespace-nowrap">
-              <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-              Fetching metadata for {enrichmentProgress.total} cards...
-            </div>
-          )}
+          <ToastContainer />
         </div>
         <ResizeHandle
           isCollapsed={isSettingsPanelCollapsed}

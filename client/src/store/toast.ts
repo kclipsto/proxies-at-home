@@ -1,0 +1,85 @@
+import { create } from "zustand";
+import { useSettingsStore } from "./settings";
+
+export interface Toast {
+    id: string;
+    type: "processing" | "metadata";
+    message: string;
+    dismissible: boolean;
+}
+
+type ToastStore = {
+    toasts: Toast[];
+    addToast: (toast: Omit<Toast, "id">) => string;
+    removeToast: (id: string) => void;
+    clearToasts: () => void;
+    // Convenience methods for common toasts
+    showProcessingToast: () => void;
+    hideProcessingToast: () => void;
+    showMetadataToast: () => void;
+    hideMetadataToast: () => void;
+};
+
+export const useToastStore = create<ToastStore>((set, get) => ({
+    toasts: [],
+
+    addToast: (toast) => {
+        const id = `${toast.type}-${Date.now()}`;
+        set((state) => ({
+            toasts: [...state.toasts, { ...toast, id }],
+        }));
+        return id;
+    },
+
+    removeToast: (id) => {
+        set((state) => ({
+            toasts: state.toasts.filter((t) => t.id !== id),
+        }));
+    },
+
+    clearToasts: () => {
+        set({ toasts: [] });
+    },
+
+    showProcessingToast: () => {
+        // Check if toasts are enabled
+        if (!useSettingsStore.getState().showProcessingToasts) return;
+
+        const { toasts, addToast } = get();
+        // Only add if not already showing a processing toast
+        if (!toasts.some((t) => t.type === "processing")) {
+            addToast({
+                type: "processing",
+                message: "Processing images...",
+                dismissible: true,
+            });
+        }
+    },
+
+    hideProcessingToast: () => {
+        set((state) => ({
+            toasts: state.toasts.filter((t) => t.type !== "processing"),
+        }));
+    },
+
+    showMetadataToast: () => {
+        // Check if toasts are enabled
+        if (!useSettingsStore.getState().showProcessingToasts) return;
+
+        const { toasts, addToast } = get();
+        // Only add if not already showing a metadata toast
+        if (!toasts.some((t) => t.type === "metadata")) {
+            addToast({
+                type: "metadata",
+                message: "Fetching metadata...",
+                dismissible: true,
+            });
+        }
+    },
+
+    hideMetadataToast: () => {
+        set((state) => ({
+            toasts: state.toasts.filter((t) => t.type !== "metadata"),
+        }));
+    },
+}));

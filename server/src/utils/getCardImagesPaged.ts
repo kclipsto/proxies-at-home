@@ -56,6 +56,7 @@ interface ScryfallCardFace {
 }
 
 export interface ScryfallApiCard {
+  name?: string;
   image_uris?: {
     png?: string;
   };
@@ -68,6 +69,7 @@ export interface ScryfallApiCard {
   rarity?: string;
   set?: string;
   collector_number?: string;
+  lang?: string;
 }
 
 interface ScryfallResponse {
@@ -137,6 +139,109 @@ async function fetchPngsByQuery(query: string): Promise<string[]> {
 
 async function fetchCardsByQuery(query: string): Promise<ScryfallApiCard[]> {
   return fetchAllPages(query, (card) => [card]);
+}
+
+/** Split array into chunks of given size */
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+interface CollectionResponse {
+  data: ScryfallApiCard[];
+  not_found: Array<{ name?: string; set?: string; collector_number?: string }>;
+}
+
+/**
+ * Batch fetch cards using Scryfall's /cards/collection endpoint.
+ * Much faster than individual searches - up to 75 cards per request.
+ * Returns a Map keyed by a normalized identifier for easy lookup.
+ */
+export async function batchFetchCards(
+  cardInfos: CardInfo[]
+): Promise<Map<string, ScryfallApiCard>> {
+  const results = new Map<string, ScryfallApiCard>();
+  if (!cardInfos || cardInfos.length === 0) return results;
+
+  const batches = chunkArray(cardInfos, 75);
+  console.log(`[Scryfall Batch] Fetching ${cardInfos.length} cards in ${batches.length} batch(es)`);
+
+  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+    const batch = batches[batchIdx];
+    await delayScryfallRequest();
+
+    const identifiers = batch.map(ci => {
+      // Build identifier based on available info
+      // Priority: set+number > name+set > name only
+      if (ci.set && ci.number) {
+        return { set: ci.set.toLowerCase(), collector_number: String(ci.number) };
+      } else if (ci.set) {
+        return { name: ci.name, set: ci.set.toLowerCase() };
+      } else {
+        return { name: ci.name };
+      }
+    });
+
+    try {
+      const startTime = Date.now();
+      const response = await AX.post<CollectionResponse>(
+        'https://api.scryfall.com/cards/collection',
+        { identifiers }
+      );
+
+      console.log(`[Scryfall Batch] Batch ${batchIdx + 1}/${batches.length}: ${response.data.data?.length ?? 0} found, ${response.data.not_found?.length ?? 0} not found (${Date.now() - startTime}ms)`);
+
+      if (response.data?.data) {
+        for (let i = 0; i < response.data.data.length; i++) {
+          const card = response.data.data[i];
+          if (!card.name) continue; // Skip cards without name
+
+          // Store by lowercase name for lookup
+          const key = card.name.toLowerCase();
+          results.set(key, card);
+
+          // Also store by set+number if available for precise lookups
+          if (card.set && card.collector_number) {
+            const setNumKey = `${card.set.toLowerCase()}:${card.collector_number}`;
+            results.set(setNumKey, card);
+          }
+        }
+      }
+
+      // Log not_found cards for debugging
+      if (response.data?.not_found?.length > 0) {
+        console.log(`[Scryfall Batch] Not found: ${response.data.not_found.map(nf => nf.name || `${nf.set}#${nf.collector_number}`).join(', ')}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Scryfall Batch] Batch ${batchIdx + 1} failed:`, msg);
+    }
+  }
+
+  console.log(`[Scryfall Batch] Total: ${results.size} unique cards fetched`);
+  return results;
+}
+
+/**
+ * Look up a card from the batch results map.
+ * Tries set+number first, then name+set, then name only.
+ */
+export function lookupCardFromBatch(
+  batchResults: Map<string, ScryfallApiCard>,
+  cardInfo: CardInfo
+): ScryfallApiCard | undefined {
+  // Try set+number first (most specific)
+  if (cardInfo.set && cardInfo.number) {
+    const setNumKey = `${cardInfo.set.toLowerCase()}:${cardInfo.number}`;
+    const exact = batchResults.get(setNumKey);
+    if (exact) return exact;
+  }
+
+  // Fall back to name lookup
+  return batchResults.get(cardInfo.name.toLowerCase());
 }
 
 /**

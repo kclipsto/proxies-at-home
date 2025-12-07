@@ -72,6 +72,7 @@ export function useImageProcessing({
         currentImage.exportBleedWidth === bleedEdgeWidth
       ) {
         importStats.markCacheHit(card.uuid);
+        importStats.markCardProcessed(card.uuid);
         return;
       }
       importStats.markCacheMiss(card.uuid);

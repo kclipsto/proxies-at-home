@@ -4,6 +4,8 @@
  * Call start() at the beginning of an import, track events, and finish() for summary.
  */
 
+import { useToastStore } from '../store/toast';
+
 export interface ImportStats {
     // Timing (all in ms from performance.now())
     startTime: number;
@@ -29,6 +31,8 @@ export interface ImportStats {
     cacheMisses: number;
 }
 
+export type ImportType = 'scryfall' | 'mpc' | 'upload' | 'unknown';
+
 class ImportStatsTracker {
     private stats: ImportStats = this.getDefaultStats();
     private isActive = false;
@@ -38,6 +42,7 @@ class ImportStatsTracker {
     private validUuids: Set<string> = new Set();
     private hasLoggedSummary = false;
     private expectingEnrichment = false;
+    private importType: ImportType = 'unknown';
 
     private getDefaultStats(): ImportStats {
         return {
@@ -54,7 +59,7 @@ class ImportStatsTracker {
         };
     }
 
-    start(totalCards: number, cardUuids?: string[], opts?: { awaitEnrichment?: boolean }) {
+    start(totalCards: number, cardUuids?: string[], opts?: { awaitEnrichment?: boolean; importType?: ImportType }) {
         this.stats = {
             ...this.getDefaultStats(),
             startTime: performance.now(),
@@ -65,9 +70,13 @@ class ImportStatsTracker {
         this.pendingCardUuids = new Set(cardUuids || []);
         this.validUuids = new Set(cardUuids || []);
         this.expectingEnrichment = !!opts?.awaitEnrichment;
+        this.importType = opts?.importType || 'unknown';
         this.cacheHitUuids.clear();
         this.cacheMissUuids.clear();
-        console.log(`[Import Stats] Started import of ${totalCards} cards`);
+        console.log(`[Import Stats] Started ${this.importType} import of ${totalCards} cards`);
+
+        // Show processing toast
+        useToastStore.getState().showProcessingToast();
     }
 
     /**
@@ -209,6 +218,9 @@ class ImportStatsTracker {
         this.hasLoggedSummary = true;
         this.logSummary();
         this.isActive = false;
+
+        // Hide processing toast
+        useToastStore.getState().hideProcessingToast();
     }
 
     private logSummary() {
@@ -219,33 +231,55 @@ class ImportStatsTracker {
         let processTime = s.processingEndTime && s.processingStartTime
             ? (s.processingEndTime - s.processingStartTime) / 1000 : 0;
 
-        // If processing time is 0 (not explicitly tracked), infer it as Total - ImageLoad - Enrichment (approx)
-        // Or simpler: Total - ImageLoad
+        // If processing time is 0 (not explicitly tracked), infer it as Total - ImageLoad
         if (processTime === 0 && totalTime > 0) {
             processTime = Math.max(0, totalTime - loadTime);
-            // Verify log logic: "Enrichment" runs in parallel often, so subtracting it might be wrong.
-            // But usually Processing is the main blocker.
         }
         const enrichTime = s.enrichmentEndTime && s.enrichmentStartTime
             ? (s.enrichmentEndTime - s.enrichmentStartTime) / 1000 : 0;
 
-        console.log(`
+        // Helper to pad content to box width (62 chars inside borders)
+        const pad = (content: string) => content.padEnd(62);
+
+        // Customize labels based on import type
+        const isScryfall = this.importType === 'scryfall';
+        const loadLabel = isScryfall ? 'Scryfall Fetch:' : 'Image Load:   ';
+        const titleText = isScryfall ? 'DECK TEXT IMPORT SUMMARY' : 'IMPORT SUMMARY';
+        // Box inner width is 62 chars, center the title
+        const title = titleText.padStart(Math.floor((62 + titleText.length) / 2)).padEnd(62);
+
+        // Build summary lines
+        let summary = `
 ╔══════════════════════════════════════════════════════════════╗
-║                    IMPORT SUMMARY                            ║
+║${title}║
 ╠══════════════════════════════════════════════════════════════╣
-║  Total Time:        ${totalTime.toFixed(2).padStart(8)}s
-║  ├── Image Load:    ${loadTime.toFixed(2).padStart(8)}s
-║  ├── Processing:    ${processTime.toFixed(2).padStart(8)}s
-║  └── Metadata:      ${enrichTime.toFixed(2).padStart(8)}s (parallel)
+║${pad(`  Total Time:        ${totalTime.toFixed(2).padStart(8)}s`)}║
+║${pad(`  ├── ${loadLabel}${loadTime.toFixed(2).padStart(8)}s`)}║
+║${pad(`  └── Processing:    ${processTime.toFixed(2).padStart(8)}s`)}║`;
+
+        // Only show metadata line for imports that use enrichment
+        if (!isScryfall) {
+            summary += `
+║${pad(`      Metadata:      ${enrichTime.toFixed(2).padStart(8)}s (parallel)`)}║`;
+        }
+
+        summary += `
 ╠══════════════════════════════════════════════════════════════╣
-║  Cards:             ${String(s.totalCards).padStart(8)}
-║  Images Processed:  ${String(s.imagesProcessed).padStart(8)} (${s.imagesFailed} failed)
-║  Metadata Fetched:  ${String(s.cardsEnriched).padStart(8)} (${s.enrichmentsFailed} failed)
+║${pad(`  Cards:             ${String(s.totalCards).padStart(8)}`)}║
+║${pad(`  Images Processed:  ${String(s.imagesProcessed).padStart(8)} (${s.imagesFailed} failed)`)}║`;
+
+        // Only show metadata fetched for imports that use enrichment
+        if (!isScryfall) {
+            summary += `
+║${pad(`  Metadata Fetched:  ${String(s.cardsEnriched).padStart(8)} (${s.enrichmentsFailed} failed)`)}║`;
+        }
+
+        summary += `
 ╠══════════════════════════════════════════════════════════════╣
-║  DB Cache Hits:     ${String(s.cacheHits).padStart(8)}
-║  DB Cache Misses:   ${String(s.cacheMisses).padStart(8)}
-╚══════════════════════════════════════════════════════════════╝
-    `);
+║${pad(`  DB Cache Hits:     ${String(s.cacheHits).padStart(8)}`)}║
+║${pad(`  DB Cache Misses:   ${String(s.cacheMisses).padStart(8)}`)}║
+╚══════════════════════════════════════════════════════════════╝`;
+        console.log(summary);
     }
 
     getStats(): ImportStats {
@@ -258,3 +292,4 @@ class ImportStatsTracker {
 }
 
 export const importStats = new ImportStatsTracker();
+

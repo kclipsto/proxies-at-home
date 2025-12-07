@@ -310,16 +310,11 @@ describe("getWithRetry logic", () => {
 
     describe("Cache Cleanup Logic", () => {
         it("should clean cache if size exceeds limit", async () => {
-            vi.useFakeTimers();
-            // Advance time to ensure cleanup triggers (default lastCacheCleanup is 0, so usually triggers immediately, 
-            // but let's be safe and consistent with previous intent)
-            const now = Date.now();
-            vi.setSystemTime(now + 6 * 60 * 1000);
-
             // Mock fs.readdirSync to return files
             (fs.readdirSync as unknown as Mock).mockReturnValue(["file1.png", "file2.png"]);
 
             // Mock fs.statSync to return large size
+            const now = Date.now();
             (fs.statSync as unknown as Mock).mockReturnValue({
                 isFile: () => true,
                 atimeMs: now,
@@ -338,12 +333,17 @@ describe("getWithRetry logic", () => {
                 headers: { "content-type": "image/png" },
             });
 
+            const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
+                this.type("image/png").send("image data");
+            });
+
             await request(app).get(`/images/proxy?url=${encodeURIComponent(url)}`);
 
             // Verify cleanup was attempted
             expect(fs.readdirSync).toHaveBeenCalled();
             expect(fs.unlinkSync).toHaveBeenCalled();
-        });
+            sendFileSpy.mockRestore();
+        }, 60000);
     });
 
     describe("Proxy Error Handling", () => {

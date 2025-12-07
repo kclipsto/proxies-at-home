@@ -199,7 +199,7 @@ export async function processMpcImport(
   const totalItems = mpcData.length;
 
   // Start import tracking
-  importStats.start(totalItems);
+  importStats.start(totalItems, undefined, { importType: 'mpc' });
   importStats.markImageLoadStart();
 
   // First pass: Collect all images to batch add
@@ -258,7 +258,7 @@ export async function processMpcImport(
     const addedCards = await addCards(cardsToAdd);
     const cardUuids = addedCards.map(c => c.uuid);
     // Start tracking stats, expecting enrichment to follow
-    importStats.start(cardsToAdd.length, cardUuids, { awaitEnrichment: true });
+    importStats.start(cardsToAdd.length, cardUuids, { awaitEnrichment: true, importType: 'mpc' });
 
     // Register pending cards (now that we have UUIDs)
     importStats.registerPendingCards(cardUuids);

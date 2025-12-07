@@ -1,5 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
-import { Button } from "flowbite-react";
+import { Button, Checkbox, Label } from "flowbite-react";
 import { ExportActions } from "../../LayoutSettings/ExportActions";
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -13,6 +13,8 @@ type Props = {
 
 export function ApplicationSection({ cards }: Props) {
     const resetSettings = useSettingsStore((state) => state.resetSettings);
+    const showProcessingToasts = useSettingsStore((state) => state.showProcessingToasts);
+    const setShowProcessingToasts = useSettingsStore((state) => state.setShowProcessingToasts);
 
     const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
 
@@ -54,6 +56,17 @@ export function ApplicationSection({ cards }: Props) {
     return (
         <div className="space-y-4">
             <ExportActions cards={cards} />
+
+            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 -ml-2">
+                <Checkbox
+                    id="show-processing-toasts"
+                    checked={showProcessingToasts}
+                    onChange={(e) => setShowProcessingToasts(e.target.checked)}
+                />
+                <Label htmlFor="show-processing-toasts" className="flex-1 cursor-pointer">
+                    Show Processing Notifications
+                </Label>
+            </div>
 
             <div className="w-full flex justify-center">
                 <Button color="gray" fullSized onClick={resetSettings}>
