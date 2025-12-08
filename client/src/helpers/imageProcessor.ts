@@ -224,8 +224,16 @@ export class ImageProcessor {
     this.highPriorityQueue = [];
     this.lowPriorityQueue = [];
 
-    // Do not terminate workers. Let them finish current tasks and return to pool.
-    // They will eventually timeout if not used.
+    // Terminate all workers immediately
+    this.idleWorkers.forEach(({ worker, timeoutId }) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      worker.terminate();
+    });
+    this.idleWorkers = [];
+    this.allWorkers.forEach((worker) => {
+      worker.terminate();
+    });
+    this.allWorkers.clear();
   }
 
   static destroyAll() {

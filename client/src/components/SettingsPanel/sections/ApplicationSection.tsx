@@ -4,6 +4,7 @@ import { ExportActions } from "../../LayoutSettings/ExportActions";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { db } from "@/db";
+import { cancelAllProcessing } from "@/helpers/cancellationService";
 
 import type { CardOption } from "../../../../../shared/types";
 
@@ -24,6 +25,10 @@ export function ApplicationSection({ cards }: Props) {
 
     const confirmReset = async () => {
         setShowResetConfirmModal(false);
+
+        // Cancel all processing before reset
+        cancelAllProcessing();
+
         try {
             // Unregister service workers first
             if ("serviceWorker" in navigator) {
