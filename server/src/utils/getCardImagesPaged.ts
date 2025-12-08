@@ -48,6 +48,7 @@ function escapeColon(s: string | number): string {
 }
 
 interface ScryfallCardFace {
+  name?: string;
   image_uris?: {
     png?: string;
   };
@@ -211,6 +212,21 @@ export async function batchFetchCards(
           if (card.set && card.collector_number) {
             const setNumKey = `${card.set.toLowerCase()}:${card.collector_number}`;
             results.set(setNumKey, card);
+          }
+
+          // Store by individual face names for DFCs (double-faced cards)
+          // This allows lookups by front face name (e.g., "Bala Ged Recovery")
+          // to find the full card ("Bala Ged Recovery // Bala Ged Sanctuary")
+          if (card.card_faces && Array.isArray(card.card_faces)) {
+            for (const face of card.card_faces) {
+              if (face.name) {
+                const faceKey = face.name.toLowerCase();
+                // Only set if not already present (prefer full name match)
+                if (!results.has(faceKey)) {
+                  results.set(faceKey, card);
+                }
+              }
+            }
           }
         }
       }
