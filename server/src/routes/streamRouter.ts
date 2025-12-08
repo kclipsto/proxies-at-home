@@ -123,7 +123,7 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
     // 5. BATCH FETCH: Get all cards in a single API call (or batches of 75)
     const startTime = Date.now();
-    const batchResults = await batchFetchCards(cardQueries);
+    const batchResults = await batchFetchCards(cardQueries, language);
     console.log(`[STREAM] Batch fetch completed in ${Date.now() - startTime}ms`);
 
     // 6. Stream results to client

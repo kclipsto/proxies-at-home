@@ -5,7 +5,7 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import multer from "multer";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { getImagesForCardInfo, getCardDataForCardInfo, getCardsWithImagesForCardInfo } from "../utils/getCardImagesPaged.js";
+import { getImagesForCardInfo, getCardDataForCardInfo, getCardsWithImagesForCardInfo, batchFetchCards } from "../utils/getCardImagesPaged.js";
 import { normalizeCardInfos } from "../utils/cardUtils.js";
 import type { CardInfo } from "../../../shared/types.js";
 
@@ -285,6 +285,35 @@ interface EnrichedCard {
   lang?: string;
 }
 
+/**
+ * Extract enriched metadata from a Scryfall API card
+ */
+function extractEnrichedCard(
+  card: { name: string; set?: string; number?: string },
+  data: import("../utils/getCardImagesPaged.js").ScryfallApiCard
+): EnrichedCard {
+  // Extract colors from card_faces for DFCs
+  let colors = data.colors;
+  let mana_cost = data.mana_cost;
+
+  if ((!colors || !mana_cost) && data.card_faces && data.card_faces.length > 0) {
+    if (!colors) colors = data.card_faces[0].colors;
+    if (!mana_cost) mana_cost = data.card_faces[0].mana_cost;
+  }
+
+  return {
+    name: card.name,
+    set: data.set || card.set,
+    number: data.collector_number || card.number,
+    colors,
+    mana_cost,
+    cmc: data.cmc,
+    type_line: data.type_line,
+    rarity: data.rarity,
+    lang: data.lang,
+  };
+}
+
 imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestBody>, res: Response) => {
   const cards = Array.isArray(req.body.cards) ? req.body.cards : [];
 
@@ -297,57 +326,88 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
   }
 
   const started = Date.now();
-  console.log(`[Enrich] Starting batch enrichment for ${cards.length} cards`);
+  console.log(`[Enrich] Starting batch enrichment for ${cards.length} cards using Collection API`);
 
   try {
-    const results = await Promise.all(
-      cards.map((card) =>
-        limit(async () => {
-          const timeout = new Promise<null>((_, rej) =>
-            setTimeout(() => rej(new Error("scryfall-timeout")), 20000)
-          );
-          const task = (async (): Promise<EnrichedCard | null> => {
-            const data = await getCardDataForCardInfo({
-              name: card.name,
-              set: card.set,
-              number: card.number,
-            });
+    // Step 1: Use Collection API for fast batch lookup
+    const cardInfos = cards.map(c => ({
+      name: c.name,
+      set: c.set,
+      number: c.number,
+    }));
 
-            if (data) {
-              // Extract colors from card_faces for DFCs
-              let colors = data.colors;
-              let mana_cost = data.mana_cost;
+    const batchResults = await batchFetchCards(cardInfos, "en");
 
-              if ((!colors || !mana_cost) && data.card_faces && data.card_faces.length > 0) {
-                if (!colors) colors = data.card_faces[0].colors;
-                if (!mana_cost) mana_cost = data.card_faces[0].mana_cost;
-              }
+    // Step 2: Map results back to original cards
+    const results: (EnrichedCard | null)[] = [];
+    const notFoundCards: Array<{ index: number; card: { name: string; set?: string; number?: string } }> = [];
 
-              return {
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+
+      // Try to find in batch results
+      let found: import("../utils/getCardImagesPaged.js").ScryfallApiCard | undefined;
+
+      // Try set+number first
+      if (card.set && card.number) {
+        const setNumKey = `${card.set.toLowerCase()}:${card.number}`;
+        found = batchResults.get(setNumKey);
+      }
+
+      // Fall back to name lookup
+      if (!found) {
+        found = batchResults.get(card.name.toLowerCase());
+      }
+
+      if (found) {
+        results[i] = extractEnrichedCard(card, found);
+      } else {
+        results[i] = null; // Placeholder
+        notFoundCards.push({ index: i, card });
+      }
+    }
+
+    console.log(`[Enrich] Collection API: ${cards.length - notFoundCards.length} found, ${notFoundCards.length} not found (${Date.now() - started}ms)`);
+
+    // Step 3: Fallback to search API for not_found cards
+    if (notFoundCards.length > 0) {
+      console.log(`[Enrich] Falling back to search API for ${notFoundCards.length} cards...`);
+      const fallbackStartTime = Date.now();
+
+      await Promise.all(
+        notFoundCards.map(({ index, card }) =>
+          limit(async () => {
+            const timeout = new Promise<null>((_, rej) =>
+              setTimeout(() => rej(new Error("scryfall-timeout")), 20000)
+            );
+            const task = (async (): Promise<EnrichedCard | null> => {
+              const data = await getCardDataForCardInfo({
                 name: card.name,
-                set: data.set || card.set,
-                number: data.collector_number || card.number,
-                colors,
-                mana_cost,
-                cmc: data.cmc,
-                type_line: data.type_line,
-                rarity: data.rarity,
-              };
+                set: card.set,
+                number: card.number,
+              });
+              if (data) {
+                return extractEnrichedCard(card, data);
+              }
+              return null;
+            })();
+
+            try {
+              const result = await Promise.race([task, timeout]);
+              results[index] = result;
+            } catch {
+              console.warn(`[Enrich] Timeout for card: ${card.name}`);
+              results[index] = null;
             }
-            return null;
-          })();
+          })
+        )
+      );
 
-          try {
-            return await Promise.race([task, timeout]);
-          } catch {
-            console.warn(`[Enrich] Timeout for card: ${card.name}`);
-            return null;
-          }
-        })
-      )
-    );
+      console.log(`[Enrich] Fallback complete in ${Date.now() - fallbackStartTime}ms`);
+    }
 
-    console.log(`[Enrich] Completed batch in ${Date.now() - started}ms. Success: ${results.filter(r => r !== null).length}/${cards.length}`);
+    const successCount = results.filter(r => r !== null).length;
+    console.log(`[Enrich] Completed batch in ${Date.now() - started}ms. Success: ${successCount}/${cards.length}`);
 
     return res.json(results);
   } catch (err: unknown) {
