@@ -1,37 +1,43 @@
-import { vi, describe, beforeEach, it, expect, type Mock } from 'vitest';
+import { vi, describe, beforeEach, it, expect } from 'vitest';
 import request from "supertest";
 import express, { type Express, json } from "express";
 import { streamRouter } from "./streamRouter";
-import { getCardsWithImagesForCardInfo } from "../utils/getCardImagesPaged";
-import type { CardInfo, ScryfallCard } from "../../../shared/types";
+import * as getCardImagesPaged from "../utils/getCardImagesPaged";
+import type { CardInfo } from "../../../shared/types";
 
-vi.mock("../utils/getCardImagesPaged");
+// Partial mock - only mock batchFetchCards, keep lookupCardFromBatch real
+vi.mock("../utils/getCardImagesPaged", async (importOriginal) => {
+    const actual = await importOriginal<typeof getCardImagesPaged>();
+    return {
+        ...actual,
+        batchFetchCards: vi.fn(),
+    };
+});
 
 describe("Stream Router", () => {
     let app: Express;
 
     beforeEach(() => {
-        (getCardsWithImagesForCardInfo as Mock).mockClear();
+        vi.mocked(getCardImagesPaged.batchFetchCards).mockClear();
         app = express();
         app.use(json());
         app.use("/stream", streamRouter);
     });
 
     it("should stream card data correctly on happy path", async () => {
-        const mockCard: ScryfallCard = {
+        // Mock batch returns a Map with the card data
+        const mockBatchResults = new Map();
+        mockBatchResults.set("sol ring", {
             name: "Sol Ring",
-            imageUrls: ["some_url"],
+            image_uris: { png: "some_url" },
             colors: [],
             cmc: 1,
             type_line: "Artifact",
-            rarity: "uncommon"
-        };
-        // The function returns ScryfallCard[] (local interface in getCardImagesPaged, but compatible)
-        // We need to match the structure expected by streamRouter
-        (getCardsWithImagesForCardInfo as Mock).mockResolvedValue([{
-            ...mockCard,
-            image_uris: { png: "some_url" }
-        }]);
+            rarity: "uncommon",
+            set: "cmd",
+            collector_number: "123"
+        });
+        vi.mocked(getCardImagesPaged.batchFetchCards).mockResolvedValue(mockBatchResults);
 
         const cardQueries: CardInfo[] = [{ name: "Sol Ring" }];
 
@@ -60,7 +66,8 @@ describe("Stream Router", () => {
 
     it("should handle card-error events gracefully", async () => {
         const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
-        (getCardsWithImagesForCardInfo as Mock).mockRejectedValue(new Error("Scryfall error"));
+        // Return empty map = card not found
+        vi.mocked(getCardImagesPaged.batchFetchCards).mockResolvedValue(new Map());
 
         const cardQueries: CardInfo[] = [{ name: "Unknown Card" }];
 
@@ -78,7 +85,7 @@ describe("Stream Router", () => {
         const cardErrorData = JSON.parse(events[1].match(/data: (.*)/)![1]);
         expect(events[1].startsWith("event: card-error")).toBe(true);
         expect(cardErrorData.query.name).toBe("Unknown Card");
-        expect(cardErrorData.error).toBe("Scryfall error");
+        expect(cardErrorData.error).toBe("Card not found on Scryfall.");
 
         // progress
         expect(events[2]).toBe("event: progress\ndata: {\"processed\":1,\"total\":1}");
@@ -102,7 +109,8 @@ describe("Stream Router", () => {
     });
 
     it("should correctly stream cards with multiple faces", async () => {
-        (getCardsWithImagesForCardInfo as Mock).mockResolvedValue([{
+        const mockBatchResults = new Map();
+        mockBatchResults.set("valki, god of lies // tibalt, cosmic impostor", {
             name: "Valki, God of Lies // Tibalt, Cosmic Impostor",
             card_faces: [
                 { image_uris: { png: "valki_url" } },
@@ -111,8 +119,11 @@ describe("Stream Router", () => {
             colors: ["B", "R"],
             cmc: 7,
             type_line: "Creature // Planeswalker",
-            rarity: "mythic"
-        }]);
+            rarity: "mythic",
+            set: "khm",
+            collector_number: "114"
+        });
+        vi.mocked(getCardImagesPaged.batchFetchCards).mockResolvedValue(mockBatchResults);
 
         const cardQueries: CardInfo[] = [{ name: "Valki, God of Lies // Tibalt, Cosmic Impostor" }];
 
@@ -131,16 +142,20 @@ describe("Stream Router", () => {
 
     it("should handle a mix of found and not-found cards", async () => {
         const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
-        (getCardsWithImagesForCardInfo as Mock)
-            .mockResolvedValueOnce([{
-                name: "Sol Ring",
-                image_uris: { png: "sol_ring_url" },
-                colors: [],
-                cmc: 1,
-                type_line: "Artifact",
-                rarity: "uncommon"
-            }])
-            .mockRejectedValueOnce(new Error("Card not found"));
+
+        // Only "Sol Ring" is in the batch results
+        const mockBatchResults = new Map();
+        mockBatchResults.set("sol ring", {
+            name: "Sol Ring",
+            image_uris: { png: "sol_ring_url" },
+            colors: [],
+            cmc: 1,
+            type_line: "Artifact",
+            rarity: "uncommon",
+            set: "cmd",
+            collector_number: "123"
+        });
+        vi.mocked(getCardImagesPaged.batchFetchCards).mockResolvedValue(mockBatchResults);
 
         const cardQueries: CardInfo[] = [{ name: "Sol Ring" }, { name: "Unknown" }];
 
@@ -204,8 +219,20 @@ describe("Stream Router", () => {
 
         consoleErrorSpy.mockRestore();
     });
+
     it("should handle empty image array as card not found", async () => {
-        (getCardsWithImagesForCardInfo as Mock).mockResolvedValue([]);
+        // Card exists but has no images
+        const mockBatchResults = new Map();
+        mockBatchResults.set("empty card", {
+            name: "Empty Card",
+            // No image_uris or card_faces
+            colors: [],
+            cmc: 0,
+            type_line: "Unknown",
+            rarity: "common"
+        });
+        vi.mocked(getCardImagesPaged.batchFetchCards).mockResolvedValue(mockBatchResults);
+
         const cardQueries: CardInfo[] = [{ name: "Empty Card" }];
 
         const res = await request(app)
@@ -218,6 +245,6 @@ describe("Stream Router", () => {
         const cardErrorData = JSON.parse(cardError!.match(/data: (.*)/)![1]);
 
         expect(cardErrorData.query.name).toBe("Empty Card");
-        expect(cardErrorData.error).toBe("Card not found on Scryfall.");
+        expect(cardErrorData.error).toBe("No images found for card on Scryfall.");
     });
 });

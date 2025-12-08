@@ -17,6 +17,7 @@ import { useSettingsStore } from "@/store/settings";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
 import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
+import { importStats } from "@/helpers/importStats";
 import {
   Button,
   HR,
@@ -80,6 +81,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
         imageId: imageId,
         isUserUpload: true,
         hasBakedBleed: opts.hasBakedBleed,
+        needsEnrichment: true, // Try to fetch metadata based on inferred card name
       });
     }
 
@@ -93,9 +95,15 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     if (e.target.files && e.target.files.length > 0) {
+      const fileCount = e.target.files.length;
+      const startTime = performance.now();
+      console.log(`[Image Upload] Starting upload of ${fileCount} images`);
+
       setLoadingTask("Processing Images");
       try {
         await addUploadedFiles(e.target.files, { hasBakedBleed });
+        const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`[Image Upload] Completed ${fileCount} images in ${elapsed}s`);
       } finally {
         setLoadingTask(null);
       }
@@ -109,6 +117,9 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const startTime = performance.now();
+    console.log(`[MPC XML Import] Starting import of ${file.name}`);
+
     setLoadingTask("Processing Images");
     try {
       const text = await readText(file);
@@ -118,16 +129,26 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
         setLoadingMessage(message);
       });
 
+      if (result.success) {
+        onUploadComplete?.();
+      }
+
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
       if (result.success && result.count > 0) {
+        console.log(`[MPC XML Import] Completed ${result.count} cards in ${elapsed}s`);
         useSettingsStore.getState().setSortBy("manual");
         onUploadComplete?.();
       } else if (result.error) {
+        console.log(`[MPC XML Import] Failed after ${elapsed}s: ${result.error}`);
         alert(result.error);
       } else {
+        console.log(`[MPC XML Import] No cards found after ${elapsed}s`);
         alert("No cards found in the file.");
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+      console.error(`[MPC XML Import] Error after ${elapsed}s:`, err);
       alert("Failed to parse file.");
     } finally {
       setLoadingTask(null);
@@ -136,8 +157,13 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
   };
 
   const processCardFetch = async (infos: CardInfo[]) => {
-    setLoadingTask("Fetching cards"); // Fix case
+    console.log(`[Deck Text Import] Starting fetch for ${infos.length} cards`);
+
+    setLoadingTask("Fetching cards");
     setLoadingMessage("Connecting to Scryfall...");
+
+    // Switch to preview immediately on mobile if requested
+    onUploadComplete?.();
 
     // Abort previous fetch if any
     if (fetchController.current) {
@@ -146,12 +172,32 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     fetchController.current = new AbortController();
     const signal = fetchController.current.signal;
 
-    try {
-      const uniqueMap = new Map<string, CardInfo>();
-      for (const info of infos) uniqueMap.set(cardKey(info), info);
-      const uniqueInfos = Array.from(uniqueMap.values());
+    // Calculate total cards including quantities
+    let totalCards = 0;
+    for (const info of infos) {
+      totalCards += info.quantity ?? 1;
+    }
 
-      const optionByKey: Record<string, ScryfallCard> = {};
+    // Start import stats tracking
+    importStats.start(totalCards, undefined, { importType: 'scryfall' });
+    importStats.markImageLoadStart();
+
+    try {
+      // Build a map of card queries to their quantities
+      const quantityByKey = new Map<string, { info: CardInfo; quantity: number }>();
+      for (const info of infos) {
+        const k = cardKey(info);
+        const existing = quantityByKey.get(k);
+        if (existing) {
+          existing.quantity += info.quantity ?? 1;
+        } else {
+          quantityByKey.set(k, { info, quantity: info.quantity ?? 1 });
+        }
+      }
+
+      const uniqueInfos = Array.from(quantityByKey.values()).map(v => v.info);
+      let cardsAdded = 0;
+      const addedCardUuids: string[] = [];
 
       await fetchEventSource(`${API_BASE}/api/stream/cards`, {
         method: "POST",
@@ -174,65 +220,68 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
             const progress = JSON.parse(ev.data);
             setLoadingMessage(`(${progress.processed} / ${progress.total})`);
           } else if (ev.event === "card-error") {
-            // no-op
+            // Track failed cards
+            importStats.incrementImagesFailed();
           } else if (ev.event === "card-found") {
             const card = JSON.parse(ev.data) as ScryfallCard;
             if (!card?.name) return;
 
-            const k = cardKey({
-              name: card.name,
-              set: card.set,
-              number: card.number,
-            });
-            optionByKey[k] = card;
+            // Find matching query entry to get quantity
+            // Try exact match first, then fallbacks
+            const exactKey = cardKey({ name: card.name, set: card.set, number: card.number });
+            const setOnlyKey = card.set ? cardKey({ name: card.name, set: card.set }) : null;
             const nameOnlyKey = cardKey({ name: card.name });
-            if (!optionByKey[nameOnlyKey]) optionByKey[nameOnlyKey] = card;
-          } else if (ev.event === "done") {
-            const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & {
-              imageId?: string;
-            })[] = [];
 
-            for (const info of infos) {
-              // Build lookup key from the original query
-              const fullKey = cardKey(info);
+            const entry = quantityByKey.get(exactKey)
+              || (setOnlyKey && quantityByKey.get(setOnlyKey))
+              || quantityByKey.get(nameOnlyKey);
 
-              // Only use name-only fallback if user didn't specify a set
-              // If they specified a set but not a number, try set-only key
-              let card = optionByKey[fullKey];
-              if (!card && info.set) {
-                // User specified set - try set-only key, but no name-only fallback
-                const setOnlyKey = cardKey({ name: info.name, set: info.set });
-                card = optionByKey[setOnlyKey];
-              } else if (!card && !info.set) {
-                // User didn't specify set - allow name-only fallback
-                const nameOnlyKey = cardKey({ name: info.name });
-                card = optionByKey[nameOnlyKey];
-              }
+            const quantity = entry?.quantity ?? 1;
 
-              const quantity = info.quantity ?? 1;
-              const imageId = await addRemoteImage(card?.imageUrls ?? [], quantity);
+            // Add image to DB
+            const imageId = await addRemoteImage(card.imageUrls ?? [], quantity, card.prints);
 
-              for (let i = 0; i < quantity; i++) {
-                cardsToAdd.push({
-                  name: card?.name || info.name,
-                  set: card?.set,
-                  number: card?.number,
-                  lang: card?.lang,
-                  isUserUpload: false,
-                  imageId: imageId,
-                  colors: card?.colors,
-                  cmc: card?.cmc,
-                  type_line: card?.type_line,
-                  rarity: card?.rarity,
-                  mana_cost: card?.mana_cost,
-                });
-              }
+            // Build card entries
+            const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
+            for (let i = 0; i < quantity; i++) {
+              cardsToAdd.push({
+                name: card.name,
+                set: card.set,
+                number: card.number,
+                lang: card.lang,
+                isUserUpload: false,
+                imageId,
+                colors: card.colors,
+                cmc: card.cmc,
+                type_line: card.type_line,
+                rarity: card.rarity,
+                mana_cost: card.mana_cost,
+              });
             }
 
+            // Add cards immediately
             if (cardsToAdd.length > 0) {
-              await addCards(cardsToAdd);
+              const added = await addCards(cardsToAdd);
+              cardsAdded += added.length;
+              const newUuids = added.map(c => c.uuid);
+              addedCardUuids.push(...newUuids);
+              // Register immediately so importStats can track processing
+              importStats.registerPendingCards(newUuids);
+
+              // Dismiss loading popup on first card so users see cards appearing
+              if (cardsAdded === added.length) {
+                setLoadingTask(null);
+              }
+            }
+          } else if (ev.event === "done") {
+            // Mark image load phase complete
+            importStats.markImageLoadEnd();
+
+            if (cardsAdded > 0) {
               useSettingsStore.getState().setSortBy("manual");
             }
+
+            console.log(`[Deck Text Import] Added ${cardsAdded} cards, awaiting image processing...`);
 
             setDeckText("");
             onUploadComplete?.();

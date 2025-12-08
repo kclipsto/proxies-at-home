@@ -1,12 +1,14 @@
 import { useSettingsStore } from "@/store/settings";
 import { useLayoutEffect, useRef } from "react";
 import {
+  MouseSensor,
+  TouchSensor,
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
   useSensor,
   useSensors,
+  type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
@@ -49,6 +51,7 @@ type PageSettingsControlsProps = {
 };
 
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useState } from "react";
 
 // ...
 
@@ -81,7 +84,12 @@ export function PageSettingsControls({
   }, [isCollapsed]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
       activationConstraint: {
         delay: 200,
         tolerance: 5,
@@ -92,8 +100,15 @@ export function PageSettingsControls({
     })
   );
 
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveId(null);
 
     if (over && active.id !== over.id) {
       const oldIndex = settingsPanelState.order.indexOf(active.id as string);
@@ -267,7 +282,9 @@ export function PageSettingsControls({
       onScroll={(e) => {
         scrollPosRef.current = e.currentTarget.scrollTop;
       }}
-      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600"
+      disabled={!!activeId}
+      hideScrollbars={true}
+      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden"
     >
       <div className={`sticky top-0 z-20 bg-gray-100 dark:bg-gray-700 flex items-center justify-between p-4 shrink-0 border-b border-gray-300 dark:border-gray-600 ${mobile ? 'landscape:p-2 landscape:min-h-[50px]' : ''}`}>
         <h2 className={`text-2xl font-semibold dark:text-white ${mobile ? 'landscape:text-lg landscape:hidden' : ''}`}>
@@ -296,6 +313,7 @@ export function PageSettingsControls({
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
           <SortableContext

@@ -58,7 +58,7 @@ describe("ImageProcessor", () => {
         const instance = ImageProcessor.getInstance();
         // Access private maxWorkers
         // @ts-expect-error: Accessing private member for testing
-        expect(instance.maxWorkers).toBe(8);
+        expect(instance.baseMaxWorkers).toBe(8);
     });
 
     it("should process one task", async () => {
@@ -113,7 +113,7 @@ describe("ImageProcessor", () => {
 
         const instance = ImageProcessor.getInstance();
         // @ts-expect-error: Accessing private member for testing
-        expect(instance.maxWorkers).toBe(7);
+        expect(instance.baseMaxWorkers).toBe(7);
     });
 
     it("should have at least 1 worker", () => {
@@ -124,7 +124,7 @@ describe("ImageProcessor", () => {
 
         const instance = ImageProcessor.getInstance();
         // @ts-expect-error: Accessing private member for testing
-        expect(instance.maxWorkers).toBe(1);
+        expect(instance.baseMaxWorkers).toBe(1);
     });
     it("should prioritize HIGH priority tasks", async () => {
         const instance = ImageProcessor.getInstance();

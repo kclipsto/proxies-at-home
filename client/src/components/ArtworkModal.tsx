@@ -61,24 +61,52 @@ export function ArtworkModal() {
   const displayData = {
     name: previewCardData?.name || modalCard?.name,
     imageUrls: previewCardData?.imageUrls || imageObject?.imageUrls,
+    prints: previewCardData?.prints || imageObject?.prints,
     id: previewCardData?.imageUrls?.[0] || imageObject?.id,
     processedDisplayUrl: !previewCardData ? processedDisplayUrl : null,
   };
 
+  // Fallback: Auto-fetch prints for legacy images that don't have prints data yet
+  // New imports will already have prints stored during the initial fetch
+  const shouldAutoFetchPrints = isModalOpen &&
+    displayData.name &&
+    displayData.id &&
+    displayData.imageUrls &&
+    displayData.imageUrls.length > 0 &&
+    !displayData.prints;
+
+  useEffect(() => {
+    if (shouldAutoFetchPrints && !isGettingMore) {
+      console.log("[ArtworkModal] Auto-fetching prints (legacy fallback) for:", displayData.name);
+      void getMorePrints();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoFetchPrints]);
+
   async function getMorePrints() {
     if (!displayData.name || !displayData.id) return;
     setIsGettingMore(true);
+    console.log("[ArtworkModal] getMorePrints called for:", displayData.name);
     try {
       const res = await axios.post<ScryfallCard[]>(
         `${API_BASE}/api/cards/images`,
         { cardNames: [displayData.name], cardArt: "prints" }
       );
 
+      console.log("[ArtworkModal] getMorePrints response:", {
+        hasData: !!res.data?.[0],
+        imageUrlsCount: res.data?.[0]?.imageUrls?.length ?? 0,
+        printsCount: res.data?.[0]?.prints?.length ?? 0,
+        samplePrint: res.data?.[0]?.prints?.[0],
+      });
+
       const urls = res.data?.[0]?.imageUrls ?? [];
+      const prints = res.data?.[0]?.prints;
       if (previewCardData) {
-        setPreviewCardData({ ...previewCardData, imageUrls: urls });
+        setPreviewCardData({ ...previewCardData, imageUrls: urls, prints });
       } else {
-        await db.images.update(displayData.id, { imageUrls: urls });
+        console.log("[ArtworkModal] Storing prints in DB:", { id: displayData.id, printsCount: prints?.length ?? 0 });
+        await db.images.update(displayData.id, { imageUrls: urls, prints });
       }
     } finally {
       setIsGettingMore(false);
@@ -91,13 +119,61 @@ export function ArtworkModal() {
     const isReplacing = !!previewCardData;
     const newImageId = newImageUrl.includes("scryfall") ? newImageUrl.split("?")[0] : newImageUrl.split("id=")[1];
 
+    // Look up per-print metadata from the selected URL
+    const selectedPrint = displayData.prints?.find(p => p.imageUrl === newImageUrl);
+
+    console.log("[ArtworkModal] handleSelectArtwork:", {
+      newImageUrl,
+      newImageId,
+      isReplacing,
+      hasPrints: !!displayData.prints,
+      printsCount: displayData.prints?.length ?? 0,
+      selectedPrint,
+    });
+
+    // Build metadata from print info or from previewCardData (if replacing card entirely)
+    let cardMetadata: Parameters<typeof changeCardArtwork>[6];
+    if (selectedPrint) {
+      // We have per-print metadata - use it for set/number/rarity
+      cardMetadata = {
+        set: selectedPrint.set,
+        number: selectedPrint.number,
+        rarity: selectedPrint.rarity,
+        lang: selectedPrint.lang,
+        // Colors, cmc, type_line, mana_cost are the same across all prints, so use from previewCardData if available
+        ...(previewCardData ? {
+          colors: previewCardData.colors,
+          cmc: previewCardData.cmc,
+          type_line: previewCardData.type_line,
+          mana_cost: previewCardData.mana_cost,
+        } : {}),
+      };
+      console.log("[ArtworkModal] Using selectedPrint metadata:", cardMetadata);
+    } else if (isReplacing && previewCardData) {
+      // Fallback to previewCardData (searched card without per-print data)
+      cardMetadata = {
+        set: previewCardData.set,
+        number: previewCardData.number,
+        colors: previewCardData.colors,
+        cmc: previewCardData.cmc,
+        type_line: previewCardData.type_line,
+        rarity: previewCardData.rarity,
+        mana_cost: previewCardData.mana_cost,
+        lang: previewCardData.lang,
+      };
+      console.log("[ArtworkModal] Using previewCardData metadata:", cardMetadata);
+    } else {
+      console.log("[ArtworkModal] No metadata available - selectedPrint:", selectedPrint, "isReplacing:", isReplacing);
+    }
+
     await changeCardArtwork(
       modalCard.imageId,
       newImageId,
       modalCard,
       applyToAll,
-      isReplacing ? previewCardData.name : undefined,
-      isReplacing ? previewCardData.imageUrls : undefined
+      isReplacing ? previewCardData?.name : undefined,
+      isReplacing ? previewCardData?.imageUrls : undefined,
+      cardMetadata
     );
 
     closeModal();

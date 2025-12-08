@@ -1,7 +1,7 @@
 import { API_BASE } from "../constants";
-import { addRemoteImage, addCards } from "./dbUtils";
+import { addCards, addRemoteImages } from "./dbUtils";
 import { extractCardInfo } from "./CardInfoHelper";
-import { searchCards } from "./scryfallApi";
+import { importStats } from "./importStats";
 import type { CardOption } from "../../../shared/types";
 
 export type MpcItem = {
@@ -198,59 +198,48 @@ export async function processMpcImport(
   const cardsToAdd: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }> = [];
   const totalItems = mpcData.length;
 
-  // First pass: Add all images to DB and collect IDs
+  // Start import tracking
+  importStats.start(totalItems, undefined, { importType: 'mpc' });
+  importStats.markImageLoadStart();
+
+  // First pass: Collect all images to batch add
+  const imagesToBatch: Array<{ imageUrls: string[]; count: number }> = [];
+  const itemsWithUrls: Array<{ item: MpcItem; frontUrl?: string; backUrl?: string }> = [];
+
   for (let i = 0; i < totalItems; i++) {
     const item = mpcData[i];
-
-    if (onProgress) {
-      onProgress(i + 1, totalItems, `Processing image ${i + 1} of ${totalItems}...`);
-    }
-
     const frontUrl = getMpcImageUrl(item.frontId);
     const backUrl = getMpcImageUrl(item.backId);
 
-    // Add front image
-    let frontImageId: string | undefined;
     if (frontUrl) {
-      frontImageId = await addRemoteImage([frontUrl as string]);
+      imagesToBatch.push({ imageUrls: [frontUrl], count: 1 });
+    }
+    if (backUrl) {
+      imagesToBatch.push({ imageUrls: [backUrl], count: 1 });
     }
 
-    // Add back image if it exists (though we don't link it to the card currently)
-    if (backUrl) {
-      await addRemoteImage([backUrl]);
+    itemsWithUrls.push({ item, frontUrl: frontUrl || undefined, backUrl: backUrl || undefined });
+  }
+
+  // Batch add logic
+  const urlToIdMap = await addRemoteImages(imagesToBatch);
+
+  // Second pass: Create card entries
+  itemsWithUrls.forEach(({ item, frontUrl }, i) => {
+    if (onProgress) {
+      onProgress(i + 1, totalItems, `Processing card ${i + 1} of ${totalItems}...`);
     }
+
+    let frontImageId: string | undefined;
+    if (frontUrl) {
+      frontImageId = urlToIdMap.get(frontUrl);
+    }
+    // Back URL handling logic omitted for brevity as it's not linked to card yet
 
     const rawName = item.name || `MPC Import ${i + 1}`;
     const cardInfo = extractCardInfo(rawName);
 
-    // Enrich with Scryfall data if possible
-    let enrichedData: Partial<CardOption> = {};
-    try {
-      // We use the cleaned name for search
-      const searchResults = await searchCards(cardInfo.name);
-      const match = searchResults.find(
-        (c) =>
-          c.name === cardInfo.name &&
-          (!cardInfo.set || (c.set && c.set.toLowerCase() === cardInfo.set.toLowerCase())) &&
-          (!cardInfo.number || c.number === cardInfo.number)
-      ) || searchResults[0];
-
-      if (match) {
-        enrichedData = {
-          lang: match.lang,
-          colors: match.colors,
-          mana_cost: match.mana_cost,
-          cmc: match.cmc,
-          type_line: match.type_line,
-          rarity: match.rarity,
-          set: match.set,
-          number: match.number,
-        };
-      }
-    } catch (e) {
-      console.warn(`Failed to enrich card ${cardInfo.name}:`, e);
-    }
-
+    // Skip Scryfall enrichment during import - will be done in background
     cardsToAdd.push({
       name: cardInfo.name,
       set: cardInfo.set,
@@ -258,13 +247,26 @@ export async function processMpcImport(
       imageId: frontImageId || "",
       isUserUpload: true,
       hasBakedBleed: true,
-      ...enrichedData,
+      needsEnrichment: true,
     });
-  }
+  });
+
+  importStats.markImageLoadEnd();
 
   if (cardsToAdd.length > 0) {
-    await addCards(cardsToAdd);
+    console.log("[MPC Import] Sample card with needsEnrichment:", cardsToAdd[0]);
+    const addedCards = await addCards(cardsToAdd);
+    const cardUuids = addedCards.map(c => c.uuid);
+    // Start tracking stats, expecting enrichment to follow
+    importStats.start(cardsToAdd.length, cardUuids, { awaitEnrichment: true, importType: 'mpc' });
+
+    // Register pending cards (now that we have UUIDs)
+    importStats.registerPendingCards(cardUuids);
+    console.log(`[MPC Import] Added ${cardsToAdd.length} cards with needsEnrichment: true`);
   }
+
+  // Note: importStats.finish() will be automatically called when all registered cards are processed
+  console.log(`[MPC Import] Added ${cardsToAdd.length} cards to DB, enrichment will run in background`);
 
   return { success: true, count: cardsToAdd.length };
 }

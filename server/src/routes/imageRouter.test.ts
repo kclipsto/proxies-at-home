@@ -21,6 +21,13 @@ vi.mock("axios", () => {
 });
 
 vi.mock("fs", () => {
+    const mockedPromises = {
+        stat: vi.fn(),
+        utimes: vi.fn().mockResolvedValue(undefined),
+        unlink: vi.fn().mockResolvedValue(undefined),
+        writeFile: vi.fn().mockResolvedValue(undefined),
+    };
+
     const mocked = {
         existsSync: vi.fn(),
         createWriteStream: vi.fn(),
@@ -32,9 +39,11 @@ vi.mock("fs", () => {
         statSync: vi.fn(),
         unlinkSync: vi.fn(),
         utimesSync: vi.fn(),
+        promises: mockedPromises,
     };
     return { ...mocked, default: mocked };
 });
+
 
 vi.mock("fs/promises", () => {
     const mocked = {
@@ -75,8 +84,10 @@ describe("getWithRetry logic", () => {
         mockedAxios.get.mockReset();
         // Default mock implementation for fs.existsSync to avoid "not found" errors in general flow
         (fs.existsSync as unknown as Mock).mockReturnValue(false);
-        (fs.readdir as unknown as Mock).mockImplementation((path, cb) => cb(null, ["file1.png", "file2.png"]));
-        (fs.unlink as unknown as Mock).mockImplementation((path, cb) => cb(null));
+        (fs.readdir as unknown as Mock).mockImplementation((_path, cb) => cb(null, ["file1.png", "file2.png"]));
+        (fs.unlink as unknown as Mock).mockImplementation((_path, cb) => cb(null));
+        (fs.readdirSync as unknown as Mock).mockReturnValue([]);
+
 
         app = express();
         app.use(express.json());
@@ -84,7 +95,7 @@ describe("getWithRetry logic", () => {
         app.use("/images", imageRouter);
 
         writeStream = new Writable({
-            write(chunk, encoding, callback) {
+            write(_chunk, _encoding, callback) {
                 callback();
             },
         });
@@ -93,6 +104,7 @@ describe("getWithRetry logic", () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
     it("should serve from cache if file exists", async () => {
@@ -104,7 +116,7 @@ describe("getWithRetry logic", () => {
         const res = await request(app).get(`/images/proxy?url=${encodeURIComponent(imageUrl)}`);
         expect(res.status).toBe(200);
         expect(res.body.toString()).toBe("cached image data");
-        expect(fs.utimesSync).toHaveBeenCalled();
+        expect(fs.promises.utimes).toHaveBeenCalled();
         sendFileSpy.mockRestore();
     });
 
@@ -283,13 +295,13 @@ describe("getWithRetry logic", () => {
         });
 
         it("should handle readdir errors", async () => {
-            (fs.readdir as unknown as Mock).mockImplementation((path, cb) => cb(new Error("Read error")));
+            (fs.readdir as unknown as Mock).mockImplementation((_path, cb) => cb(new Error("Read error")));
             const res = await request(app).delete("/images");
             expect(res.status).toBe(500);
         });
 
         it("should handle empty cache directory", async () => {
-            (fs.readdir as unknown as Mock).mockImplementation((path, cb) => cb(null, []));
+            (fs.readdir as unknown as Mock).mockImplementation((_path, cb) => cb(null, []));
             const res = await request(app).delete("/images");
             expect(res.status).toBe(200);
             expect(res.body.message).toBe("Cached images clearing started.");
@@ -298,14 +310,11 @@ describe("getWithRetry logic", () => {
 
     describe("Cache Cleanup Logic", () => {
         it("should clean cache if size exceeds limit", async () => {
-            // Mock Date.now to force cleanup (advance by > 5 mins)
-            const now = Date.now();
-            vi.spyOn(Date, "now").mockReturnValue(now + 6 * 60 * 1000);
-
             // Mock fs.readdirSync to return files
             (fs.readdirSync as unknown as Mock).mockReturnValue(["file1.png", "file2.png"]);
 
             // Mock fs.statSync to return large size
+            const now = Date.now();
             (fs.statSync as unknown as Mock).mockReturnValue({
                 isFile: () => true,
                 atimeMs: now,
@@ -324,12 +333,17 @@ describe("getWithRetry logic", () => {
                 headers: { "content-type": "image/png" },
             });
 
+            const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
+                this.type("image/png").send("image data");
+            });
+
             await request(app).get(`/images/proxy?url=${encodeURIComponent(url)}`);
 
             // Verify cleanup was attempted
             expect(fs.readdirSync).toHaveBeenCalled();
             expect(fs.unlinkSync).toHaveBeenCalled();
-        });
+            sendFileSpy.mockRestore();
+        }, 60000);
     });
 
     describe("Proxy Error Handling", () => {

@@ -190,6 +190,17 @@ export class ImageProcessor {
     });
   }
 
+  promoteToHighPriority(uuid: string) {
+    const lowIndex = this.lowPriorityQueue.findIndex(t => t.message.uuid === uuid);
+    if (lowIndex > -1) {
+      const [task] = this.lowPriorityQueue.splice(lowIndex, 1);
+      task.priority = Priority.HIGH;
+      this.highPriorityQueue.push(task);
+      // Trigger processing in case a worker is free and was waiting for high priority?
+      // Actually processNextTask handles queue checking order.
+    }
+  }
+
   destroy() {
     this.highPriorityQueue = [];
     this.lowPriorityQueue = [];

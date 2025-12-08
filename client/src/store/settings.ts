@@ -79,6 +79,8 @@ type Store = {
   setFilterColors: (value: string[]) => void;
   filterMatchType: "partial" | "exact";
   setFilterMatchType: (value: "partial" | "exact") => void;
+  showProcessingToasts: boolean;
+  setShowProcessingToasts: (value: boolean) => void;
   hasHydrated: boolean;
   setHasHydrated: (value: boolean) => void;
 };
@@ -121,6 +123,7 @@ const defaultPageSettings = {
   filterManaCost: [] as number[],
   filterColors: [] as string[],
   filterMatchType: "partial" as "partial" | "exact",
+  showProcessingToasts: true,
 };
 
 const layoutPresetsSizes: Record<
@@ -293,6 +296,8 @@ export const useSettingsStore = create<Store>()(
       setFilterColors: (value) => set({ filterColors: value }),
       filterMatchType: "partial",
       setFilterMatchType: (value) => set({ filterMatchType: value }),
+      showProcessingToasts: true,
+      setShowProcessingToasts: (value) => set({ showProcessingToasts: value }),
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
 

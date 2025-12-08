@@ -21,7 +21,8 @@ export function toProxied(url: string, apiBase: string) {
     return `${prefix}${encodeURIComponent(url)}`;
 }
 
-export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250, init?: RequestInit): Promise<Response> {
+// Retry with exponential backoff: 1s → 2s → 4s (gentler on servers)
+export async function fetchWithRetry(url: string, retries = 3, baseDelay = 1000, init?: RequestInit): Promise<Response> {
     for (let i = 0; i < retries; i++) {
         try {
             const response = await fetch(url, init);
@@ -36,7 +37,7 @@ export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250, 
         }
 
         const exponentialDelay = baseDelay * (2 ** i);
-        const jitter = Math.random() * baseDelay;
+        const jitter = Math.random() * (baseDelay / 4); // Reduced jitter to 25% of base
         const totalDelay = exponentialDelay + jitter;
 
         await new Promise(res => setTimeout(res, totalDelay));
@@ -45,7 +46,7 @@ export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250, 
 }
 
 export async function loadImage(src: string, init?: RequestInit): Promise<ImageBitmap> {
-    const response = await fetchWithRetry(src, 3, 250, init);
+    const response = await fetchWithRetry(src, 3, 1000, init);
     const blob = await response.blob();
     return await createImageBitmap(blob);
 }

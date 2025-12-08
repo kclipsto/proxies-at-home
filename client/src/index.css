@@ -90,7 +90,8 @@ button:active {
     height: 12px;
   }
 
-  .mobile-scrollbar-hide::-webkit-scrollbar {
+  .mobile-scrollbar-hide::-webkit-scrollbar,
+  .mobile-scrollbar-hide *::-webkit-scrollbar {
     display: none;
   }
 
@@ -134,6 +135,22 @@ button:active {
       transparent 90%);
   background-size: 50% 100%;
   animation: sheen-flow 1.5s linear infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
 }
 
 /* Zoom Slider Thumb Styling */

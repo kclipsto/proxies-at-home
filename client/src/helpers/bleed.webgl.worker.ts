@@ -6,9 +6,8 @@ declare const self: DedicatedWorkerGlobalScope;
 
 let API_BASE = "";
 
-const imageCache = new Map<string, Promise<Blob>>();
-
 self.onmessage = async (e: MessageEvent) => {
+    const startTime = performance.now();
     const {
         uuid,
         url,
@@ -29,28 +28,16 @@ self.onmessage = async (e: MessageEvent) => {
     try {
         const proxiedUrl = url.startsWith("http") ? toProxied(url, API_BASE) : url;
 
-        let blob: Blob;
-
-        if (imageCache.has(proxiedUrl)) {
-            blob = await imageCache.get(proxiedUrl)!;
-        } else {
-            const loadPromise = (async () => {
-                const response = await fetchWithRetry(proxiedUrl, 3, 250);
-                return await response.blob();
-            })();
-            imageCache.set(proxiedUrl, loadPromise);
-            try {
-                blob = await loadPromise;
-            } catch (e) {
-                imageCache.delete(proxiedUrl);
-                throw e;
-            }
-        }
+        // Fetch image blob directly (no caching - DB and server handle deduplication)
+        const fetchStart = performance.now();
+        const response = await fetchWithRetry(proxiedUrl, 3, 250);
+        const blob = await response.blob();
+        const fetchTime = performance.now();
 
         // Helper function to trim MPC bleed from Blob
-        async function createTrimmedBitmap(blob: Blob): Promise<ImageBitmap> {
+        async function createTrimmedBitmap(inputBlob: Blob): Promise<ImageBitmap> {
             // Get dimensions to calculate trim amount
-            const tempBitmap = await createImageBitmap(blob);
+            const tempBitmap = await createImageBitmap(inputBlob);
             const trim = calibratedBleedTrimPxForHeight(tempBitmap.height);
             const w = tempBitmap.width - trim * 2;
             const h = tempBitmap.height - trim * 2;
@@ -59,21 +46,29 @@ self.onmessage = async (e: MessageEvent) => {
             // Create cropped bitmap from Blob for Firefox compatibility
             // (Firefox handles createImageBitmap(Blob, ...) correctly but not createImageBitmap(ImageBitmap, ...))
             return w > 0 && h > 0
-                ? await createImageBitmap(blob, trim, trim, w, h)
-                : await createImageBitmap(blob);
+                ? await createImageBitmap(inputBlob, trim, trim, w, h)
+                : await createImageBitmap(inputBlob);
         }
 
+        const decodeStart = performance.now();
         const imageBitmap = isUserUpload && hasBakedBleed
             ? await createTrimmedBitmap(blob)
             : await createImageBitmap(blob);
+        const decodeTime = performance.now();
 
+        const processStart = performance.now();
         const result = await processCardImageWebGL(imageBitmap, bleedEdgeWidth, {
             unit,
             exportDpi: dpi,
             displayDpi: 300,
         });
+        const processTime = performance.now();
 
         imageBitmap.close();
+
+        const totalTime = performance.now();
+        console.log(`[Worker] Image processing: fetch=${(fetchTime - fetchStart).toFixed(1)}ms, decode=${(decodeTime - decodeStart).toFixed(1)}ms, process=${(processTime - processStart).toFixed(1)}ms, total=${(totalTime - startTime).toFixed(1)}ms`);
+
         self.postMessage({ uuid, ...result });
     } catch (error: unknown) {
         if (error instanceof Error) {

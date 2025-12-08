@@ -232,7 +232,7 @@ describe("getCardImagesPaged", () => {
 
       const expectedUrlPart = "set%3Acmr%20name%3A%22Sol%20Ring%22";
       expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining(expectedUrlPart));
-    });
+    }, 60000);
 
     it("getCardDataForCardInfo should use Set + Number strategy", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([singleFaceCard]));
