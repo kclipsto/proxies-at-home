@@ -223,6 +223,19 @@ class ImportStatsTracker {
         useToastStore.getState().hideProcessingToast();
     }
 
+    forceFinish() {
+        //force finish when we can not find a card art
+        if (!this.isActive || this.hasLoggedSummary) return;
+
+        this.stats.endTime = performance.now();
+        this.hasLoggedSummary = true;
+        this.logSummary();
+        this.isActive = false;
+        this.pendingCardUuids.clear();
+
+        useToastStore.getState().hideProcessingToast();
+    }
+
     private logSummary() {
         const s = this.stats;
         const totalTime = (s.endTime! - s.startTime) / 1000;

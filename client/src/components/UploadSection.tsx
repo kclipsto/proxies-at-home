@@ -221,6 +221,21 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
             setLoadingMessage(`(${progress.processed} / ${progress.total})`);
           } else if (ev.event === "card-error") {
             // Track failed cards
+            const { query } = JSON.parse(ev.data) as { query: CardInfo };
+            const quantity = quantityByKey.get(cardKey(query))?.quantity ?? 1;
+
+            const placeholderCards = Array.from({ length: quantity }, () => ({
+              name: query.name,
+              set: query.set,
+              number: query.number,
+              isUserUpload: false,
+              imageId: undefined,
+            }));
+
+            const added = await addCards(placeholderCards);
+            cardsAdded += added.length;
+            if (cardsAdded === added.length) setLoadingTask(null);
+
             importStats.incrementImagesFailed();
           } else if (ev.event === "card-found") {
             const card = JSON.parse(ev.data) as ScryfallCard;
@@ -282,6 +297,11 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
             }
 
             console.log(`[Deck Text Import] Added ${cardsAdded} cards, awaiting image processing...`);
+
+
+            if (importStats.getPendingCount() === 0) {
+              importStats.forceFinish();
+            }
 
             setDeckText("");
             onUploadComplete?.();

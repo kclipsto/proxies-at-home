@@ -40,6 +40,13 @@ export function ArtworkModal() {
     }
   }, [isModalOpen]);
 
+  // Auto-search for placeholder cards (no imageId)
+  useEffect(() => {
+    if (isModalOpen && modalCard && !modalCard.imageId && !previewCardData && !isGettingMore) {
+      void handleSearch(modalCard.name, false);
+    }
+  }, [isModalOpen, modalCard?.imageId]);
+
   const imageObject =
     useLiveQuery(
       () => (modalCard?.imageId ? db.images.get(modalCard.imageId) : undefined),
@@ -114,7 +121,7 @@ export function ArtworkModal() {
   }
 
   async function handleSelectArtwork(newImageUrl: string) {
-    if (!modalCard?.imageId) return;
+    if (!modalCard) return;
 
     const isReplacing = !!previewCardData;
     const newImageId = newImageUrl.includes("scryfall") ? newImageUrl.split("?")[0] : newImageUrl.split("id=")[1];
