@@ -15,7 +15,8 @@ import { useCardsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
-import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
+import { addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
+import { undoableAddCards } from "@/helpers/undoableActions";
 import { importStats } from "@/helpers/importStats";
 import {
   Button,
@@ -85,7 +86,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     }
 
     if (cardsToAdd.length > 0) {
-      await addCards(cardsToAdd);
+      await undoableAddCards(cardsToAdd);
       onUploadComplete?.();
     }
   }
@@ -275,7 +276,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
             // Add cards immediately
             if (cardsToAdd.length > 0) {
-              const added = await addCards(cardsToAdd);
+              const added = await undoableAddCards(cardsToAdd);
               cardsAdded += added.length;
               const newUuids = added.map(c => c.uuid);
               addedCardUuids.push(...newUuids);

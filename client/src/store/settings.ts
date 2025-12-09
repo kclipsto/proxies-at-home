@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { indexedDbStorage } from "./indexedDbStorage";
+import { recordSettingChange } from "@/helpers/undoableSettings";
+import { useUndoRedoStore } from "./undoRedo";
 
 export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid" | "Legal" | "ArchA" | "ArchB" | "SuperB" | "A2" | "A1" | "Custom";
 export type PageOrientation = "portrait" | "landscape";
@@ -223,22 +225,68 @@ export const useSettingsStore = create<Store>()(
           };
         }),
 
-      setColumns: (columns) => set({ columns }),
-      setRows: (rows) => set({ rows }),
-      setBleedEdgeWidth: (value) => set({ bleedEdgeWidth: value }),
-      setBleedEdge: (value) => set({ bleedEdge: value }),
-      setDarkenNearBlack: (value) => set({ darkenNearBlack: value }),
-      setGuideColor: (value) => set({ guideColor: value }),
-      setGuideWidth: (value) => set({ guideWidth: value }),
-      setZoom: (value) => set({ zoom: value }),
-      setCardSpacingMm: (mm) => set({ cardSpacingMm: Math.max(0, mm) }),
-      setCardPositionX: (mm) => set({ cardPositionX: mm }),
-      setCardPositionY: (mm) => set({ cardPositionY: mm }),
-      setDpi: (dpi) => set({ dpi }),
-      setCutLineStyle: (value) => set({ cutLineStyle: value }),
-      setPerCardGuideStyle: (value) => set({ perCardGuideStyle: value }),
-      setGuidePlacement: (value) => set({ guidePlacement: value }),
-      setGlobalLanguage: (lang) => set({ globalLanguage: lang }),
+      setColumns: (columns) => set((state) => {
+        recordSettingChange("columns", state.columns);
+        return { columns };
+      }),
+      setRows: (rows) => set((state) => {
+        recordSettingChange("rows", state.rows);
+        return { rows };
+      }),
+      setBleedEdgeWidth: (value) => set((state) => {
+        recordSettingChange("bleedEdgeWidth", state.bleedEdgeWidth);
+        return { bleedEdgeWidth: value };
+      }),
+      setBleedEdge: (value) => set((state) => {
+        recordSettingChange("bleedEdge", state.bleedEdge);
+        return { bleedEdge: value };
+      }),
+      setDarkenNearBlack: (value) => set((state) => {
+        recordSettingChange("darkenNearBlack", state.darkenNearBlack);
+        return { darkenNearBlack: value };
+      }),
+      setGuideColor: (value) => set((state) => {
+        recordSettingChange("guideColor", state.guideColor);
+        return { guideColor: value };
+      }),
+      setGuideWidth: (value) => set((state) => {
+        recordSettingChange("guideWidth", state.guideWidth);
+        return { guideWidth: value };
+      }),
+      setZoom: (value) => set({ zoom: value }), // Zoom is NOT tracked (too frequent)
+      setCardSpacingMm: (mm) => set((state) => {
+        const value = Math.max(0, mm);
+        recordSettingChange("cardSpacingMm", state.cardSpacingMm);
+        return { cardSpacingMm: value };
+      }),
+      setCardPositionX: (mm) => set((state) => {
+        recordSettingChange("cardPositionX", state.cardPositionX);
+        return { cardPositionX: mm };
+      }),
+      setCardPositionY: (mm) => set((state) => {
+        recordSettingChange("cardPositionY", state.cardPositionY);
+        return { cardPositionY: mm };
+      }),
+      setDpi: (dpi) => set((state) => {
+        recordSettingChange("dpi", state.dpi);
+        return { dpi };
+      }),
+      setCutLineStyle: (value) => set((state) => {
+        recordSettingChange("cutLineStyle", state.cutLineStyle);
+        return { cutLineStyle: value };
+      }),
+      setPerCardGuideStyle: (value) => set((state) => {
+        recordSettingChange("perCardGuideStyle", state.perCardGuideStyle);
+        return { perCardGuideStyle: value };
+      }),
+      setGuidePlacement: (value) => set((state) => {
+        recordSettingChange("guidePlacement", state.guidePlacement);
+        return { guidePlacement: value };
+      }),
+      setGlobalLanguage: (lang) => set((state) => {
+        recordSettingChange("globalLanguage", state.globalLanguage);
+        return { globalLanguage: lang };
+      }),
       setPanelOrder: (order) =>
         set((state) => ({
           settingsPanelState: { ...state.settingsPanelState, order },
@@ -287,21 +335,80 @@ export const useSettingsStore = create<Store>()(
 
       // Sort & Filter
       sortBy: "manual",
-      setSortBy: (value) => set({ sortBy: value }),
+      setSortBy: (value) => set((state) => {
+        recordSettingChange("sortBy", state.sortBy);
+        return { sortBy: value };
+      }),
       sortOrder: "asc",
-      setSortOrder: (value) => set({ sortOrder: value }),
+      setSortOrder: (value) => set((state) => {
+        recordSettingChange("sortOrder", state.sortOrder);
+        return { sortOrder: value };
+      }),
       filterManaCost: [],
-      setFilterManaCost: (value) => set({ filterManaCost: value }),
+      setFilterManaCost: (value) => set((state) => {
+        recordSettingChange("filterManaCost", state.filterManaCost);
+        return { filterManaCost: value };
+      }),
       filterColors: [],
-      setFilterColors: (value) => set({ filterColors: value }),
+      setFilterColors: (value) => set((state) => {
+        recordSettingChange("filterColors", state.filterColors);
+        return { filterColors: value };
+      }),
       filterMatchType: "partial",
-      setFilterMatchType: (value) => set({ filterMatchType: value }),
+      setFilterMatchType: (value) => set((state) => {
+        recordSettingChange("filterMatchType", state.filterMatchType);
+        return { filterMatchType: value };
+      }),
       showProcessingToasts: true,
       setShowProcessingToasts: (value) => set({ showProcessingToasts: value }),
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
-      resetSettings: () => set({ ...defaultPageSettings }),
+      resetSettings: () => {
+        // Capture current state for undo
+        const currentState = useSettingsStore.getState();
+        const oldSettings = {
+          pageSizePreset: currentState.pageSizePreset,
+          pageOrientation: currentState.pageOrientation,
+          pageWidth: currentState.pageWidth,
+          pageHeight: currentState.pageHeight,
+          columns: currentState.columns,
+          rows: currentState.rows,
+          bleedEdge: currentState.bleedEdge,
+          bleedEdgeWidth: currentState.bleedEdgeWidth,
+          darkenNearBlack: currentState.darkenNearBlack,
+          guideColor: currentState.guideColor,
+          guideWidth: currentState.guideWidth,
+          cardSpacingMm: currentState.cardSpacingMm,
+          cardPositionX: currentState.cardPositionX,
+          cardPositionY: currentState.cardPositionY,
+          dpi: currentState.dpi,
+          cutLineStyle: currentState.cutLineStyle,
+          perCardGuideStyle: currentState.perCardGuideStyle,
+          guidePlacement: currentState.guidePlacement,
+          globalLanguage: currentState.globalLanguage,
+          sortBy: currentState.sortBy,
+          sortOrder: currentState.sortOrder,
+          filterManaCost: currentState.filterManaCost,
+          filterColors: currentState.filterColors,
+          filterMatchType: currentState.filterMatchType,
+        };
+
+        // Reset to defaults
+        set({ ...defaultPageSettings });
+
+        // Record undo action
+        useUndoRedoStore.getState().pushAction({
+          type: "CHANGE_SETTING",
+          description: "Reset settings",
+          undo: async () => {
+            useSettingsStore.setState(oldSettings);
+          },
+          redo: async () => {
+            useSettingsStore.setState({ ...defaultPageSettings });
+          },
+        });
+      },
     }),
     {
       name: "proxxied:layout-settings:v1",

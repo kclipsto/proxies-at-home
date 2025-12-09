@@ -23,15 +23,18 @@ import fullLogo from "../assets/fullLogo.png";
 import CardCellLazy from "../components/CardCellLazy";
 import EdgeCutLines from "../components/FullPageGuides";
 import SortableCard, { CardView } from "../components/SortableCard";
-import { db, type Image } from "../db"; // Import the Dexie database instance
+import { db, type Image } from "../db";
 import type { CardOption } from "../../../shared/types";
-import { deleteCard, duplicateCard, rebalanceCardOrders } from "@/helpers/dbUtils";
+import { rebalanceCardOrders } from "@/helpers/dbUtils";
+import { undoableDeleteCard, undoableDuplicateCard, undoableReorderCards } from "@/helpers/undoableActions";
 import type { useImageProcessing } from "../hooks/useImageProcessing";
 import { useArtworkModalStore } from "../store";
 import { useSettingsStore } from "../store/settings";
+import { useUndoRedoStore } from "../store/undoRedo";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 import { ArtworkModal } from "./ArtworkModal";
 import { ZoomControls } from "./ZoomControls";
+import { UndoRedoControls } from "./UndoRedoControls";
 import { useShallow } from "zustand/react/shallow";
 import { useOnClickOutside } from "../hooks/useOnClickOutside";
 import { PullToRefresh } from "./PullToRefresh";
@@ -62,6 +65,8 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     setZoom,
     settingsPanelWidth,
     isSettingsPanelCollapsed,
+    uploadPanelWidth,
+    isUploadPanelCollapsed,
     darkenNearBlack,
     sortBy,
     filterManaCost,
@@ -81,6 +86,8 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       setZoom: state.setZoom,
       settingsPanelWidth: state.settingsPanelWidth,
       isSettingsPanelCollapsed: state.isSettingsPanelCollapsed,
+      uploadPanelWidth: state.uploadPanelWidth,
+      isUploadPanelCollapsed: state.isUploadPanelCollapsed,
       darkenNearBlack: state.darkenNearBlack,
       sortBy: state.sortBy,
       filterManaCost: state.filterManaCost,
@@ -311,12 +318,18 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   }, [cards, isOptimistic, blockDbUpdates]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
+  const dragStartOrderRef = useRef<{ cardUuid: string; oldOrder: number } | null>(null);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+    const cardUuid = event.active.id as string;
+    const card = localCards.find(c => c.uuid === cardUuid);
+    if (card) {
+      dragStartOrderRef.current = { cardUuid, oldOrder: card.order };
+    }
+    setActiveId(cardUuid);
     setIsOptimistic(true);
     setBlockDbUpdates(true);
-  }, []);
+  }, [localCards]);
 
   // Ref to track the latest localCards for the debounced handler
   const localCardsRef = useRef(localCards);
@@ -393,6 +406,13 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       await rebalanceCardOrders(localCards);
       return;
     }
+
+    // Record undo action before updating DB
+    const dragInfo = dragStartOrderRef.current;
+    if (dragInfo && dragInfo.cardUuid === active.id) {
+      await undoableReorderCards(dragInfo.cardUuid, dragInfo.oldOrder, newOrder);
+    }
+    dragStartOrderRef.current = null;
 
     await db.cards.update(active.id as string, { order: newOrder });
   }, [localCards]);
@@ -478,6 +498,39 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
 
     return () => {
       document.removeEventListener("wheel", handleWheel);
+    };
+  }, [setZoom]);
+
+  // Handle Ctrl+Z and Ctrl+Shift+Z for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if focused on input or textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
+
+      // Use Cmd on macOS, Ctrl on Windows/Linux
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const modifierActive = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modifierActive && e.key.toLowerCase() === "z") {
+        if (e.shiftKey) {
+          // Ctrl+Shift+Z (or Cmd+Shift+Z on Mac) = Redo
+          e.preventDefault();
+          void useUndoRedoStore.getState().redo();
+        } else {
+          // Ctrl+Z (or Cmd+Z on Mac) = Undo
+          e.preventDefault();
+          void useUndoRedoStore.getState().undo();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [setZoom]);
 
@@ -775,7 +828,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
           <Button
             size="xs"
             onClick={async () => {
-              await duplicateCard(contextMenu.cardUuid!);
+              await undoableDuplicateCard(contextMenu.cardUuid!);
               setContextMenu({ ...contextMenu, visible: false });
             }}
           >
@@ -786,7 +839,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
             size="xs"
             color="red"
             onClick={async () => {
-              await deleteCard(contextMenu.cardUuid!);
+              await undoableDeleteCard(contextMenu.cardUuid!);
               setContextMenu({ ...contextMenu, visible: false });
             }}
           >
@@ -818,6 +871,20 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
         )
       }
 
+      {/* Floating Undo/Redo Controls - Desktop Only */}
+      {
+        !mobile && cards && cards.length > 0 && (
+          <div
+            className="fixed bottom-6 z-40"
+            style={{
+              left: `${(isUploadPanelCollapsed ? 60 : uploadPanelWidth) + 20}px`
+            }}
+          >
+            <UndoRedoControls />
+          </div>
+        )
+      }
+
       {/* Mobile Zoom Controls */}
       {
         mobile && cards && cards.length > 0 && (
@@ -836,6 +903,15 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
             >
               {showMobileZoomControls ? <ZoomOut className="size-5" /> : <ZoomIn className="size-5" />}
             </button>
+          </div>
+        )
+      }
+
+      {/* Mobile Undo/Redo Controls */}
+      {
+        mobile && cards && cards.length > 0 && (
+          <div className="fixed bottom-20 left-4 landscape:bottom-4 landscape:left-4 z-[9999]">
+            <UndoRedoControls />
           </div>
         )
       }
