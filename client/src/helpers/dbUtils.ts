@@ -316,7 +316,7 @@ export async function duplicateCard(uuid: string): Promise<void> {
  * @param cardMetadata Optional metadata to update (set, number, colors, etc.)
  */
 export async function changeCardArtwork(
-  oldImageId: string,
+  oldImageId: string | undefined,
   newImageId: string,
   cardToUpdate: CardOption,
   applyToAll: boolean,
@@ -394,7 +394,7 @@ export async function changeCardArtwork(
       await db.images.update(newImageId, updates);
     } else {
       // This case handles a new remote image
-      const oldImage = await db.images.get(oldImageId);
+      const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
       // Use provided newImageUrls if available.
       // If not provided, and we are NOT renaming, fallback to oldImage.imageUrls.
       // If renaming, we assume it's a different card, so we default to just the newImageId.

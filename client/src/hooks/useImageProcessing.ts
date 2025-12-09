@@ -78,7 +78,11 @@ export function useImageProcessing({
       importStats.markCacheMiss(card.uuid);
 
       const src = await getOriginalSrcForCard(card);
-      if (!src) return;
+      if (!src) {
+        setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+        importStats.markCardFailed(card.uuid);
+        return;
+      }
       setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
       try {
         const processStart = performance.now();
