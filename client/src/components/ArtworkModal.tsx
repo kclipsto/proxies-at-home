@@ -1,6 +1,5 @@
 import { changeCardArtwork } from "@/helpers/dbUtils";
 import { useLiveQuery } from "dexie-react-hooks";
-import axios from "axios";
 import {
   Button,
   Checkbox,
@@ -9,7 +8,7 @@ import {
   ModalBody,
   ModalHeader,
 } from "flowbite-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { API_BASE } from "../constants";
 import { useArtworkModalStore } from "@/store/artworkModal";
 import type { ScryfallCard } from "../../../shared/types";
@@ -26,6 +25,7 @@ export function ArtworkModal() {
     null
   );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [selectedFace, setSelectedFace] = useState<string | null>(null); // For DFC tabs
 
   const isModalOpen = useArtworkModalStore((state) => state.open);
   const modalCard = useArtworkModalStore((state) => state.card);
@@ -37,6 +37,7 @@ export function ArtworkModal() {
       setPreviewCardData(null);
       setApplyToAll(false);
       setIsSearchOpen(false);
+      setSelectedFace(null);
     }
   }, [isModalOpen]);
 
@@ -73,6 +74,62 @@ export function ArtworkModal() {
     processedDisplayUrl: !previewCardData ? processedDisplayUrl : null,
   };
 
+  // Detect DFC: check if prints have multiple unique face names
+  const faceNames = useMemo(() => {
+    const names = new Set<string>();
+    displayData.prints?.forEach(p => {
+      if (p.faceName) names.add(p.faceName);
+    });
+    return Array.from(names);
+  }, [displayData.prints]);
+
+  const isDFC = faceNames.length > 1;
+
+  // Track if we've already auto-selected a face (to avoid resetting on "Get All Prints")
+  const hasAutoSelectedFace = useRef(false);
+
+  // Determine which face the current card belongs to based on card name
+  const currentCardFace = useMemo(() => {
+    if (!isDFC || !modalCard?.name) return null;
+    // Check if the card's name matches any face name
+    const matchedFace = faceNames.find(
+      faceName => faceName.toLowerCase() === modalCard.name.toLowerCase()
+    );
+    return matchedFace || faceNames[0]; // Default to first face if no match
+  }, [isDFC, faceNames, modalCard?.name]);
+
+  // Auto-select the correct face tab when DFC is detected (only once per modal open)
+  useEffect(() => {
+    if (isDFC && faceNames.length > 0 && !hasAutoSelectedFace.current) {
+      // Set to the current card's face, or first face if not determined
+      setSelectedFace(currentCardFace || faceNames[0]);
+      hasAutoSelectedFace.current = true;
+    } else if (!isDFC) {
+      setSelectedFace(null);
+      hasAutoSelectedFace.current = false;
+    }
+  }, [isDFC, faceNames, currentCardFace]);
+
+  // Reset hasAutoSelectedFace when modal closes
+  useEffect(() => {
+    if (!isModalOpen) {
+      hasAutoSelectedFace.current = false;
+    }
+  }, [isModalOpen]);
+
+  // Filter prints/imageUrls by selected face for DFCs
+  const filteredPrints = useMemo(() => {
+    if (!isDFC || !selectedFace) return displayData.prints;
+    return displayData.prints?.filter(p => p.faceName === selectedFace);
+  }, [isDFC, selectedFace, displayData.prints]);
+
+  const filteredImageUrls = useMemo(() => {
+    if (!isDFC || !selectedFace) return displayData.imageUrls;
+    // Get imageUrls that match the filtered prints
+    const printUrls = new Set(filteredPrints?.map(p => p.imageUrl));
+    return displayData.imageUrls?.filter(url => printUrls.has(url));
+  }, [isDFC, selectedFace, displayData.imageUrls, filteredPrints]);
+
   // Fallback: Auto-fetch prints for legacy images that don't have prints data yet
   // New imports will already have prints stored during the initial fetch
   const shouldAutoFetchPrints = isModalOpen &&
@@ -94,27 +151,82 @@ export function ArtworkModal() {
     if (!displayData.name || !displayData.id) return;
     setIsGettingMore(true);
     console.log("[ArtworkModal] getMorePrints called for:", displayData.name);
-    try {
-      const res = await axios.post<ScryfallCard[]>(
-        `${API_BASE}/api/cards/images`,
-        { cardNames: [displayData.name], cardArt: "prints" }
-      );
 
-      console.log("[ArtworkModal] getMorePrints response:", {
-        hasData: !!res.data?.[0],
-        imageUrlsCount: res.data?.[0]?.imageUrls?.length ?? 0,
-        printsCount: res.data?.[0]?.prints?.length ?? 0,
-        samplePrint: res.data?.[0]?.prints?.[0],
+    const collectedUrls: string[] = [];
+    const collectedPrints: Array<{ imageUrl: string; set: string; number: string; rarity?: string }> = [];
+
+    try {
+      const response = await fetch(`${API_BASE}/api/stream/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardQueries: [{ name: displayData.name }],
+          cardArt: "prints",
+        }),
       });
 
-      const urls = res.data?.[0]?.imageUrls ?? [];
-      const prints = res.data?.[0]?.prints;
-      if (previewCardData) {
-        setPreviewCardData({ ...previewCardData, imageUrls: urls, prints });
-      } else {
-        console.log("[ArtworkModal] Storing prints in DB:", { id: displayData.id, printsCount: prints?.length ?? 0 });
-        await db.images.update(displayData.id, { imageUrls: urls, prints });
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to fetch prints");
       }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: print-found")) {
+            // Next line should be data
+            continue;
+          }
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6)) as ScryfallCard;
+              if (data.imageUrls?.[0]) {
+                collectedUrls.push(data.imageUrls[0]);
+                collectedPrints.push({
+                  imageUrl: data.imageUrls[0],
+                  set: data.set || "",
+                  number: data.number || "",
+                  rarity: data.rarity,
+                });
+
+                // Update UI progressively
+                if (previewCardData) {
+                  setPreviewCardData(prev => prev ? {
+                    ...prev,
+                    imageUrls: [...collectedUrls],
+                    prints: [...collectedPrints],
+                  } : null);
+                }
+              }
+            } catch {
+              // Skip non-JSON lines
+            }
+          }
+        }
+      }
+
+      console.log("[ArtworkModal] getMorePrints complete:", {
+        urlsCount: collectedUrls.length,
+        printsCount: collectedPrints.length,
+      });
+
+      // Final update
+      if (previewCardData) {
+        setPreviewCardData({ ...previewCardData, imageUrls: collectedUrls, prints: collectedPrints });
+      } else {
+        await db.images.update(displayData.id, { imageUrls: collectedUrls, prints: collectedPrints });
+      }
+    } catch (err) {
+      console.error("[ArtworkModal] getMorePrints error:", err);
     } finally {
       setIsGettingMore(false);
     }
@@ -129,6 +241,10 @@ export function ArtworkModal() {
     // Look up per-print metadata from the selected URL
     const selectedPrint = displayData.prints?.find(p => p.imageUrl === newImageUrl);
 
+    // For DFCs, use the face name if selecting a different face
+    const newFaceName = selectedPrint?.faceName;
+    const shouldUpdateName = isDFC && newFaceName && newFaceName !== modalCard.name;
+
     console.log("[ArtworkModal] handleSelectArtwork:", {
       newImageUrl,
       newImageId,
@@ -136,6 +252,8 @@ export function ArtworkModal() {
       hasPrints: !!displayData.prints,
       printsCount: displayData.prints?.length ?? 0,
       selectedPrint,
+      newFaceName,
+      shouldUpdateName,
     });
 
     // Build metadata from print info or from previewCardData (if replacing card entirely)
@@ -173,12 +291,15 @@ export function ArtworkModal() {
       console.log("[ArtworkModal] No metadata available - selectedPrint:", selectedPrint, "isReplacing:", isReplacing);
     }
 
+    // Determine new name: prioritize face name for DFCs, then previewCardData name for replacements
+    const newName = shouldUpdateName ? newFaceName : (isReplacing ? previewCardData?.name : undefined);
+
     await changeCardArtwork(
       modalCard.imageId,
       newImageId,
       modalCard,
       applyToAll,
-      isReplacing ? previewCardData?.name : undefined,
+      newName,
       isReplacing ? previewCardData?.imageUrls : undefined,
       cardMetadata
     );
@@ -327,6 +448,24 @@ export function ArtworkModal() {
                     </Label>
                   </div>
                 )}
+
+                {/* DFC Face Tabs */}
+                {isDFC && faceNames.length > 1 && (
+                  <div className="flex gap-2 mb-4">
+                    {faceNames.map((faceName) => (
+                      <button
+                        key={faceName}
+                        onClick={() => setSelectedFace(faceName)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedFace === faceName
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500"
+                          }`}
+                      >
+                        {faceName}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {modalCard && (
@@ -339,7 +478,7 @@ export function ArtworkModal() {
                     className="grid grid-cols-2 md:grid-cols-3 gap-4"
                     style={{ zoom: zoomLevel }}
                   >
-                    {(displayData.imageUrls ?? []).map((pngUrl, i) => {
+                    {(filteredImageUrls ?? displayData.imageUrls ?? []).map((pngUrl, i) => {
                       const isSelected = displayData.id === pngUrl;
                       // Use processed blob for selected artwork to show bleed/darkening
                       const imageSrc = isSelected && displayData.processedDisplayUrl

@@ -1,9 +1,9 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Select, TextInput, Tooltip, ToggleSwitch } from "flowbite-react";
+import { Label, Radio, Select, TextInput, Tooltip } from "flowbite-react";
 import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { HelpCircle } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 
 export function GuidesSection() {
     const guideColor = useSettingsStore((state) => state.guideColor);
@@ -20,6 +20,18 @@ export function GuidesSection() {
     const bleedEdge = useSettingsStore((state) => state.bleedEdge);
     const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
     const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
+
+    // Local state for color picker - updates live preview without undo spam
+    const [localColor, setLocalColor] = useState(guideColor);
+    const colorBeforeDrag = useRef(guideColor);
+    const isDragging = useRef(false);
+
+    // Sync local state when store changes externally (e.g., undo/redo)
+    useEffect(() => {
+        if (!isDragging.current) {
+            setLocalColor(guideColor);
+        }
+    }, [guideColor]);
 
     // Max guide width is limited by the space between cards so they don't overlap
     // Space between cut lines = Spacing + 2 * Bleed (if bleed enabled)
@@ -44,6 +56,27 @@ export function GuidesSection() {
         { min: 0, max: maxGuideWidth }
     );
 
+    const handleColorInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        // Track that we're dragging
+        if (!isDragging.current) {
+            isDragging.current = true;
+            colorBeforeDrag.current = guideColor;
+        }
+        setLocalColor(e.target.value);
+        // Update store directly without undo tracking for live preview
+        useSettingsStore.setState({ guideColor: e.target.value });
+    };
+
+    const handleColorInputComplete = () => {
+        if (isDragging.current && colorBeforeDrag.current !== localColor) {
+            // Now record a single undo action for the entire drag
+            // Temporarily restore old value then set new value to trigger undo recording
+            useSettingsStore.setState({ guideColor: colorBeforeDrag.current });
+            setGuideColor(localColor);
+        }
+        isDragging.current = false;
+    };
+
     return (
         <div className="space-y-4">
             <div>
@@ -56,15 +89,20 @@ export function GuidesSection() {
                             id="guideColor"
                             type="color"
                             className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] p-0 border-none cursor-pointer bg-transparent"
-                            value={guideColor}
-                            onChange={(e) => setGuideColor(e.target.value)}
+                            value={localColor}
+                            onChange={handleColorInputChange}
+                            onBlur={handleColorInputComplete}
+                            onMouseUp={handleColorInputComplete}
                         />
                     </div>
                     <TextInput
                         type="text"
                         className="w-24"
-                        value={guideColor}
-                        onChange={(e) => setGuideColor(e.target.value)}
+                        value={localColor}
+                        onChange={(e) => {
+                            setLocalColor(e.target.value);
+                            setGuideColor(e.target.value);
+                        }}
                     />
                 </div>
             </div>
@@ -90,16 +128,26 @@ export function GuidesSection() {
                         <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
                     </Tooltip>
                 </div>
-                <div className="flex items-center gap-3">
-                    <span className={`text-sm text-gray-700 dark:text-gray-300 ${guidePlacement === 'inside' ? 'font-semibold' : 'font-normal'}`}>Inside</span>
-                    <div style={{ ['--tw-translate-y' as string]: '0' }} className="[&_button]:!translate-y-0 [&_*]:!translate-y-0">
-                        <ToggleSwitch
+                <div className="flex items-center gap-4">
+                    <label className={`flex items-center gap-2 ${canUseOutside ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                        <Radio
+                            name="guidePlacement"
+                            value="outside"
                             checked={guidePlacement === 'outside'}
                             disabled={!canUseOutside}
-                            onChange={(checked) => setGuidePlacement(checked ? 'outside' : 'inside')}
+                            onChange={() => setGuidePlacement('outside')}
                         />
-                    </div>
-                    <span className={`text-sm ${canUseOutside ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'} ${guidePlacement === 'outside' ? 'font-semibold' : 'font-normal'}`}>Outside</span>
+                        <span className={`text-sm ${guidePlacement === 'outside' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Outside</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Radio
+                            name="guidePlacement"
+                            value="inside"
+                            checked={guidePlacement === 'inside'}
+                            onChange={() => setGuidePlacement('inside')}
+                        />
+                        <span className={`text-sm ${guidePlacement === 'inside' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Inside</span>
+                    </label>
                 </div>
             </div>
 

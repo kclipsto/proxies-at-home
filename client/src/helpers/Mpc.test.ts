@@ -45,7 +45,7 @@ describe('Mpc', () => {
 
     it('should construct the correct image URL', () => {
       const frontId = 'some-front-id';
-      expect(getMpcImageUrl(frontId)).toBe(`${constants.API_BASE}/api/cards/images/front?id=${frontId}`);
+      expect(getMpcImageUrl(frontId)).toBe(`${constants.API_BASE}/api/cards/images/mpc?id=${frontId}`);
     });
   });
 
@@ -287,8 +287,8 @@ describe('Mpc', () => {
       `;
 
       const mockUrlMap = new Map();
-      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/front?id=123456789012`, "imgId1");
-      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/front?id=123456789013`, "imgId2");
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=123456789012`, "imgId1");
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=123456789013`, "imgId2");
       (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
 
       (addCards as Mock).mockResolvedValue([
@@ -308,8 +308,8 @@ describe('Mpc', () => {
       const calledArgs = (addRemoteImages as Mock).mock.calls[0][0];
       expect(calledArgs).toHaveLength(2);
       expect(calledArgs).toEqual(expect.arrayContaining([
-        expect.objectContaining({ imageUrls: [`${constants.API_BASE}/api/cards/images/front?id=123456789012`] }),
-        expect.objectContaining({ imageUrls: [`${constants.API_BASE}/api/cards/images/front?id=123456789013`] })
+        expect.objectContaining({ imageUrls: [`${constants.API_BASE}/api/cards/images/mpc?id=123456789012`] }),
+        expect.objectContaining({ imageUrls: [`${constants.API_BASE}/api/cards/images/mpc?id=123456789013`] })
       ]));
 
       // Should add cards
@@ -352,7 +352,7 @@ describe('Mpc', () => {
       `;
 
       const mockUrlMap = new Map();
-      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/front?id=front1`, "imgId");
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=front1`, "imgId");
       (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
 
       (addCards as Mock).mockResolvedValue([

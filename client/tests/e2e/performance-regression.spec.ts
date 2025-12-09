@@ -9,7 +9,7 @@ test.describe('Performance Regression Tests', () => {
     test.beforeEach(async ({ page }) => {
         // Mock the image fetch endpoint to return a placeholder image
         // This prevents server errors when fetching fake IDs and speeds up the test
-        await page.route('**/api/cards/images/front*', async route => {
+        await page.route('**/api/cards/images/mpc*', async route => {
             // Create a simple 1x1 pixel red PNG
             const buffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
             await route.fulfill({
@@ -30,7 +30,7 @@ test.describe('Performance Regression Tests', () => {
 
         page.on('request', request => {
             const url = request.url();
-            if (url.includes('/api/') && !url.includes('/api/cards/images/front')) {
+            if (url.includes('/api/') && !url.includes('/api/cards/images/mpc')) {
                 // Only track non-image-fetch API requests (like stream/cards or other logic)
                 // We exclude the mocked image fetch because we expect those to happen initially
                 apiRequests.push(url);
@@ -170,7 +170,7 @@ test.describe('Performance Regression Tests', () => {
 
         const apiRequests: string[] = [];
         page.on('request', request => {
-            if (request.url().includes('/api/') && !request.url().includes('/api/cards/images/front')) {
+            if (request.url().includes('/api/') && !request.url().includes('/api/cards/images/mpc')) {
                 apiRequests.push(request.url());
             }
         });

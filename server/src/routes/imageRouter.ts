@@ -2,25 +2,21 @@ import express, { type Request, type Response } from "express";
 import path from "path";
 import fs from "fs";
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
-import multer from "multer";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { getImagesForCardInfo, getCardDataForCardInfo, getCardsWithImagesForCardInfo, batchFetchCards } from "../utils/getCardImagesPaged.js";
-import { normalizeCardInfos } from "../utils/cardUtils.js";
-import type { CardInfo } from "../../../shared/types.js";
+import { getCardDataForCardInfo, batchFetchCards } from "../utils/getCardImagesPaged.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- add under your existing requires ---
 const AX = axios.create({
-  timeout: 12000, // 12s per outbound request
+  timeout: 6000, // 6s per outbound request (reduced from 12s)
   headers: { "User-Agent": "Proxxied/1.0 (+contact@example.com)" },
   validateStatus: (s) => s >= 200 && s < 500, // surface 4xx/429 to logic
 });
 
-// Improved retry with exponential backoff
-async function getWithRetry(url: string, opts: AxiosRequestConfig = {}, tries = 5): Promise<AxiosResponse> {
+// Improved retry with exponential backoff (reduced retries for faster failure)
+async function getWithRetry(url: string, opts: AxiosRequestConfig = {}, tries = 2): Promise<AxiosResponse> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
     try {
@@ -35,9 +31,9 @@ async function getWithRetry(url: string, opts: AxiosRequestConfig = {}, tries = 
       throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       lastErr = e;
-      // Exponential backoff: 1s, 2s, 4s, 8s, 16s
-      const backoffMs = Math.min(1000 * Math.pow(2, i), 16000);
-      const jitter = Math.random() * 500;
+      // Exponential backoff: 500ms, 1s (reduced from 1s, 2s, 4s...)
+      const backoffMs = Math.min(500 * Math.pow(2, i), 2000);
+      const jitter = Math.random() * 250;
       await new Promise(r => setTimeout(r, backoffMs + jitter));
     }
   }
@@ -81,7 +77,11 @@ function pLimit(concurrency: number) {
     else q.push([fn, wrappedResolve, wrappedReject]);
   });
 }
-const limit = pLimit(6); // Re-upped for multi-user load
+// Concurrency limiters:
+// - scryfallApiLimit: For Scryfall JSON API calls (card search, collection lookups)
+// - imageFetchLimit: For outbound image fetches (Scryfall CDN, Google Drive)
+const scryfallApiLimit = pLimit(6);
+const imageFetchLimit = pLimit(10);
 
 // -------------------- cache helpers --------------------
 
@@ -151,12 +151,6 @@ async function checkAndCleanCache() {
   }
 }
 
-const uploadDir = path.join(__dirname, "..", "uploaded-images");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-const upload = multer({ dest: uploadDir });
-
 // Make a stable cache filename from the FULL raw URL (path + query)
 function cachePathFromUrl(originalUrl: string) {
   const hash = crypto.createHash("sha1").update(originalUrl).digest("hex");
@@ -173,102 +167,7 @@ function cachePathFromUrl(originalUrl: string) {
   return path.join(cacheDir, `${hash}${ext}`);
 }
 
-// -------------------- API: fetch images for cards --------------------
-
-interface ImageRequestBody {
-  cardQueries?: CardInfo[];
-  cardNames?: string[];
-  cardArt?: string;
-  language?: string;
-  fallbackToEnglish?: boolean;
-}
-
-imageRouter.post("/", async (req: Request<unknown, unknown, ImageRequestBody>, res: Response) => {
-  const cardQueries = Array.isArray(req.body.cardQueries) ? req.body.cardQueries : null;
-  const cardNames = Array.isArray(req.body.cardNames) ? req.body.cardNames : null;
-
-  const unique = req.body.cardArt || "art";
-  const language = (req.body.language || "en").toLowerCase();
-  const fallbackToEnglish =
-    typeof req.body.fallbackToEnglish === "boolean" ? req.body.fallbackToEnglish : true;
-
-  if (!cardQueries && !cardNames) {
-    return res.status(400).json({ error: "Provide cardQueries (preferred) or cardNames." });
-  }
-
-  const infos = normalizeCardInfos(cardQueries, cardNames, language);
-
-  const started = Date.now();
-
-  try {
-    const results = await Promise.all(
-      infos.map((ci) =>
-        limit(async () => {
-          // 20s safety timeout per card so one slow POP can't hang everything
-          const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("scryfall-timeout")), 20000));
-          const task = (async () => {
-            // When fetching prints, get full card data for per-print metadata
-            if (unique === "prints") {
-              const cards = await getCardsWithImagesForCardInfo(ci, unique, ci.language, fallbackToEnglish);
-              const imageUrls: string[] = [];
-              const prints: Array<{ imageUrl: string; set: string; number: string; lang?: string; rarity?: string }> = [];
-
-              for (const card of cards) {
-                const pngUrl = card.image_uris?.png ||
-                  (card.card_faces && card.card_faces[0]?.image_uris?.png);
-                if (pngUrl) {
-                  imageUrls.push(pngUrl);
-                  prints.push({
-                    imageUrl: pngUrl,
-                    set: card.set ?? "",
-                    number: card.collector_number ?? "",
-                    rarity: card.rarity,
-                  });
-                }
-              }
-
-              return {
-                name: ci.name,
-                set: ci.set,
-                number: ci.number,
-                imageUrls,
-                prints,
-                language: ci.language,
-              };
-            } else {
-              // For "art" unique, just get image URLs (faster, no per-print metadata needed)
-              const imageUrls = await getImagesForCardInfo(ci, unique, ci.language, fallbackToEnglish);
-              return {
-                name: ci.name,
-                set: ci.set,
-                number: ci.number,
-                imageUrls,
-                language: ci.language,
-              };
-            }
-          })();
-          try {
-            return await Promise.race([task, timeout]);
-          } catch {
-            // On timeout/error, return empty list (UI won't spin forever)
-            return { name: ci.name, set: ci.set, number: ci.number, imageUrls: [], language: ci.language };
-          }
-        })
-      )
-    );
-
-    return res.json(results);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("Fetch error:", msg);
-    return res.status(500).json({ error: "Failed to fetch images from Scryfall." });
-  } finally {
-    console.log(`[POST /images] ${infos.length} cards in ${Date.now() - started}ms`);
-  }
-});
-
 // -------------------- API: batch enrich cards --------------------
-
 interface EnrichRequestBody {
   cards: Array<{ name: string; set?: string; number?: string }>;
 }
@@ -325,9 +224,6 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
     return res.status(400).json({ error: "Maximum 100 cards per batch" });
   }
 
-  const started = Date.now();
-  console.log(`[Enrich] Starting batch enrichment for ${cards.length} cards using Collection API`);
-
   try {
     // Step 1: Use Collection API for fast batch lookup
     const cardInfos = cards.map(c => ({
@@ -367,16 +263,11 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
       }
     }
 
-    console.log(`[Enrich] Collection API: ${cards.length - notFoundCards.length} found, ${notFoundCards.length} not found (${Date.now() - started}ms)`);
-
     // Step 3: Fallback to search API for not_found cards
     if (notFoundCards.length > 0) {
-      console.log(`[Enrich] Falling back to search API for ${notFoundCards.length} cards...`);
-      const fallbackStartTime = Date.now();
-
       await Promise.all(
         notFoundCards.map(({ index, card }) =>
-          limit(async () => {
+          scryfallApiLimit(async () => {
             const timeout = new Promise<null>((_, rej) =>
               setTimeout(() => rej(new Error("scryfall-timeout")), 20000)
             );
@@ -402,12 +293,7 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
           })
         )
       );
-
-      console.log(`[Enrich] Fallback complete in ${Date.now() - fallbackStartTime}ms`);
     }
-
-    const successCount = results.filter(r => r !== null).length;
-    console.log(`[Enrich] Completed batch in ${Date.now() - started}ms. Success: ${successCount}/${cards.length}`);
 
     return res.json(results);
   } catch (err: unknown) {
@@ -417,66 +303,8 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
   }
 });
 
-imageRouter.post("/images-stream", async (req: Request, res: Response) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-
-  const cardQueries: CardInfo[] = Array.isArray(req.body.cardQueries)
-    ? req.body.cardQueries
-    : [];
-
-  const unique = req.body.cardArt || "art";
-  const language = (req.body.language || "en").toLowerCase();
-  const fallbackToEnglish =
-    typeof req.body.fallbackToEnglish === "boolean"
-      ? req.body.fallbackToEnglish
-      : true;
-
-  const infos = normalizeCardInfos(cardQueries, null, language);
-
-  const total = infos.length;
-  let count = 0;
-
-  for (const ci of infos) {
-    try {
-      const imageUrls = await getImagesForCardInfo(
-        ci,
-        unique,
-        ci.language,
-        fallbackToEnglish
-      );
-      const card = {
-        name: ci.name,
-        set: ci.set,
-        number: ci.number,
-        imageUrls,
-        language: ci.language,
-      };
-      res.write(`event: card\ndata: ${JSON.stringify(card)}\n\n`);
-    } catch (e: unknown) {
-      console.error(`[SSE] failed to fetch ${ci.name}:`, e);
-      // Send an error event for this card
-      res.write(
-        `event: card-error\ndata: ${JSON.stringify({ name: ci.name })}\n\n`
-      );
-    } finally {
-      count++;
-      res.write(
-        `event: progress\ndata: ${JSON.stringify({ progress: count, total })}\n\n`
-      );
-    }
-  }
-
-  res.write("event: end\ndata: Stream ended\n\n");
-  res.end();
-});
-
 // -------------------- proxy (cached) --------------------
-
 imageRouter.get("/proxy", async (req: Request, res: Response) => {
-  const startTime = Date.now();
   const url = req.query.url;
   if (!url || typeof url !== "string") {
     return res.status(400).json({ error: "Missing or invalid ?url" });
@@ -497,7 +325,6 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
       const now = new Date();
       fs.promises.utimes(localPath, now, now).catch(() => { /* ignore */ });
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      console.log(`[Proxy] CACHE HIT: ${Date.now() - startTime}ms`);
       return res.sendFile(localPath);
     }
 
@@ -506,9 +333,8 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
       ? `http://127.0.0.1:${process.env.PORT || 3001}${originalUrl}`
       : originalUrl;
 
-    const fetchStart = Date.now();
-    const response = await getWithRetry(fetchUrl, { responseType: "arraybuffer", timeout: 12000 }, 3);
-    const fetchTime = Date.now() - fetchStart;
+    // Use imageFetchLimit to prevent overwhelming server with concurrent fetches
+    const response = await imageFetchLimit(() => getWithRetry(fetchUrl, { responseType: "arraybuffer" }));
 
     if (response.status >= 400 || !response.data) {
       return res.status(502).json({ error: "Upstream error", status: response.status });
@@ -527,7 +353,6 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
 
     res.setHeader("Content-Type", ct);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    console.log(`[Proxy] CACHE MISS: fetch=${fetchTime}ms, total=${Date.now() - startTime}ms`);
     return res.sendFile(localPath);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -536,91 +361,68 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
   }
 });
 
-// -------------------- maintenance & uploads --------------------
+// -------------------- MPC Google Drive proxy (cached) --------------------
 
-imageRouter.delete("/", (_req: Request, res: Response) => {
-  const started = Date.now();
-  fs.readdir(cacheDir, (err, files) => {
-    if (err) {
-      console.error("Error reading cache directory:", err.message);
-      return res.status(500).json({ error: "Failed to read cache directory" });
-    }
-
-    // Respond right away so the client UI never looks stuck
-    res.json({ message: "Cached images clearing started.", count: files.length });
-
-    if (!files.length) {
-      console.log("[DELETE /images] no files (0ms)");
-      return;
-    }
-
-    let remaining = files.length;
-    for (const file of files) {
-      const filePath = path.join(cacheDir, file);
-      fs.unlink(filePath, (unlinkErr) => {
-        if (unlinkErr) console.warn(`Failed to delete ${filePath}:`, unlinkErr.message);
-        if (--remaining === 0) {
-          console.log(`[DELETE /images] removed ${files.length} in ${Date.now() - started}ms`);
-        }
-      });
-    }
-  });
-});
-
-imageRouter.post("/upload", upload.array("images"), (req: Request, res: Response) => {
-  return res.json({
-    uploaded: (req.files as Express.Multer.File[]).map((file) => ({
-      name: file.originalname,
-      path: file.filename,
-    })),
-  });
-});
-
-imageRouter.get("/diag", (req: Request, res: Response) => {
-  res.json({
-    ok: true,
-    now: new Date().toISOString(),
-    ua: req.headers["user-agent"],
-    origin: req.headers.origin || null,
-    ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
-  });
-});
-
-// -------------------- Google Drive helper --------------------
-
-imageRouter.get("/front", async (req: Request, res: Response) => {
+imageRouter.get("/mpc", async (req: Request, res: Response) => {
   const id = String(req.query.id || "").trim();
   if (!id) return res.status(400).send("Missing id");
 
-  // Try a couple of GDrive URL shapes; only accept image/* responses
+  // Use same cache infrastructure as /proxy
+  const cacheKey = `gdrive_${id}`;
+  const localPath = path.join(cacheDir, cacheKey);
+
+  // Check cache first
+  try {
+    if (fs.existsSync(localPath)) {
+      const now = new Date();
+      fs.promises.utimes(localPath, now, now).catch(() => { /* ignore */ });
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.sendFile(localPath);
+    }
+  } catch {
+    // Cache check failed, proceed to fetch
+  }
+
+  // Google Drive URL candidates (try in order)
   const candidates = [
     `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`,
     `https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`,
-    `https://drive.google.com/open?id=${encodeURIComponent(id)}`,
   ];
 
-  for (const url of candidates) {
-    try {
-      const r = await axios.get(url, {
-        responseType: "stream",
-        maxRedirects: 5,
-        headers: { "User-Agent": "Mozilla/5.0" },
-        validateStatus: () => true,
-      });
+  // Use imageFetchLimit to prevent overwhelming server with concurrent fetches
+  try {
+    const result = await imageFetchLimit(async () => {
+      for (const url of candidates) {
+        try {
+          // Use getWithRetry for consistent retry/backoff logic
+          const r = await getWithRetry(url, {
+            responseType: "arraybuffer",
+            maxRedirects: 5,
+          });
 
-      const ct = (r.headers["content-type"] || "").toLowerCase();
-      // Only pipe if GDrive actually gave us an image
-      if (!ct.startsWith("image/")) {
-        // Not an image (likely HTML interstitial); try next candidate
-        continue;
+          const ct = (r.headers["content-type"] || "").toLowerCase();
+          if (!ct.startsWith("image/")) {
+            continue; // Not an image (HTML interstitial), try next candidate
+          }
+
+          // Cache the image
+          await fs.promises.writeFile(localPath, Buffer.from(r.data));
+          return { contentType: ct };
+        } catch {
+          // Candidate failed after retries, try next
+        }
       }
+      return null;
+    });
 
-      res.setHeader("Content-Type", ct);
+    if (result) {
+      res.setHeader("Content-Type", result.contentType);
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      return r.data.pipe(res);
-    } catch {
-      // try next candidate
+      return res.sendFile(localPath);
     }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Google Drive fetch error:", { message: msg, id });
   }
 
   return res.status(502).send("Could not fetch Google Drive image");

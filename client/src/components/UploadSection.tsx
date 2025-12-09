@@ -15,8 +15,8 @@ import { useCardsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
-import axios from "axios";
-import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
+import { addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
+import { undoableAddCards } from "@/helpers/undoableActions";
 import { importStats } from "@/helpers/importStats";
 import {
   Button,
@@ -86,7 +86,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
     }
 
     if (cardsToAdd.length > 0) {
-      await addCards(cardsToAdd);
+      await undoableAddCards(cardsToAdd);
       onUploadComplete?.();
     }
   }
@@ -276,7 +276,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
             // Add cards immediately
             if (cardsToAdd.length > 0) {
-              const added = await addCards(cardsToAdd);
+              const added = await undoableAddCards(cardsToAdd);
               cardsAdded += added.length;
               const newUuids = added.map(c => c.uuid);
               addedCardUuids.push(...newUuids);
@@ -369,16 +369,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
     try {
       await clearAllCardsAndImages();
-      try {
-        await axios.delete(`${API_BASE}/api/cards/images`, {
-          timeout: 15000,
-        });
-      } catch (e) {
-        console.warn(
-          "[Clear] Server cache clear failed (UI already cleared):",
-          e
-        );
-      }
+      // Server cache is managed by LRU eviction - no need to clear on user action
     } catch (err: unknown) {
       if (err instanceof Error) {
         alert(err.message || "Failed to clear images.");

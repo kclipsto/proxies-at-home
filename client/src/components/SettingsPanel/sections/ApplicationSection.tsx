@@ -1,5 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
-import { Button, Checkbox, Label } from "flowbite-react";
+import { Button, Checkbox, Label, Radio } from "flowbite-react";
 import { ExportActions } from "../../LayoutSettings/ExportActions";
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -16,6 +16,8 @@ export function ApplicationSection({ cards }: Props) {
     const resetSettings = useSettingsStore((state) => state.resetSettings);
     const showProcessingToasts = useSettingsStore((state) => state.showProcessingToasts);
     const setShowProcessingToasts = useSettingsStore((state) => state.setShowProcessingToasts);
+    const decklistSortAlpha = useSettingsStore((state) => state.decklistSortAlpha);
+    const setDecklistSortAlpha = useSettingsStore((state) => state.setDecklistSortAlpha);
 
     const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
 
@@ -61,6 +63,32 @@ export function ApplicationSection({ cards }: Props) {
     return (
         <div className="space-y-4">
             <ExportActions cards={cards} />
+
+            <div>
+                <div className="mb-2 block">
+                    <Label>Copy Decklist Order</Label>
+                </div>
+                <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Radio
+                            name="decklistOrder"
+                            value="displayed"
+                            checked={!decklistSortAlpha}
+                            onChange={() => setDecklistSortAlpha(false)}
+                        />
+                        <span className={`text-sm ${!decklistSortAlpha ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>As Displayed</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Radio
+                            name="decklistOrder"
+                            value="alpha"
+                            checked={decklistSortAlpha}
+                            onChange={() => setDecklistSortAlpha(true)}
+                        />
+                        <span className={`text-sm ${decklistSortAlpha ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Alphabetical</span>
+                    </label>
+                </div>
+            </div>
 
             <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 -ml-2">
                 <Checkbox

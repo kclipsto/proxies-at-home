@@ -1,5 +1,6 @@
 import { API_BASE } from "../constants";
-import { addCards, addRemoteImages } from "./dbUtils";
+import { addRemoteImages } from "./dbUtils";
+import { undoableAddCards } from "./undoableActions";
 import { extractCardInfo } from "./CardInfoHelper";
 import { importStats } from "./importStats";
 import type { CardOption } from "../../../shared/types";
@@ -32,7 +33,7 @@ export function inferCardNameFromFilename(filename: string): string {
 
 export function getMpcImageUrl(frontId?: string | null): string | null {
   if (!frontId) return null;
-  return `${API_BASE}/api/cards/images/front?id=${encodeURIComponent(frontId)}`;
+  return `${API_BASE}/api/cards/images/mpc?id=${encodeURIComponent(frontId)}`;
 }
 
 export function extractDriveId(
@@ -255,7 +256,7 @@ export async function processMpcImport(
 
   if (cardsToAdd.length > 0) {
     console.log("[MPC Import] Sample card with needsEnrichment:", cardsToAdd[0]);
-    const addedCards = await addCards(cardsToAdd);
+    const addedCards = await undoableAddCards(cardsToAdd);
     const cardUuids = addedCards.map(c => c.uuid);
     // Start tracking stats, expecting enrichment to follow
     importStats.start(cardsToAdd.length, cardUuids, { awaitEnrichment: true, importType: 'mpc' });

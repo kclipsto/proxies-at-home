@@ -45,14 +45,15 @@ export function ExportActions({ cards }: Props) {
   // Error Modal State
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const decklistSortAlpha = useSettingsStore((state) => state.decklistSortAlpha);
 
   const handleCopyDecklist = async () => {
-    const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: "alpha" });
+    const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: decklistSortAlpha ? "alpha" : "none" });
     await navigator.clipboard.writeText(text);
   };
 
   const handleDownloadDecklist = () => {
-    const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: "alpha" });
+    const text = buildDecklist(filteredAndSortedCards, { style: "withSetNum", sort: decklistSortAlpha ? "alpha" : "none" });
     const date = new Date().toISOString().slice(0, 10);
     downloadDecklist(`decklist_${date}.txt`, text);
   };

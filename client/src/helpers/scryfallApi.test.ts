@@ -66,6 +66,11 @@ describe('scryfallApi', () => {
     });
 
     describe('fetchCardWithPrints', () => {
+        beforeEach(() => {
+            // Mock global fetch for this suite
+            global.fetch = vi.fn();
+        });
+
         it('should return null if search returns no cards', async () => {
             mockGet.mockResolvedValue({ data: { data: [] } }); // Search returns empty
             const result = await fetchCardWithPrints('Unknown Card');
@@ -88,24 +93,42 @@ describe('scryfallApi', () => {
             };
             mockGet.mockResolvedValue(mockSearchResponse);
 
-            // 2. Mock Print Fetch Response
-            const mockPrintResponse = {
-                data: [
-                    {
-                        imageUrls: ['http://example.com/print1.jpg', 'http://example.com/print2.jpg'],
-                    },
-                ],
-            };
-            (axios.post as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockPrintResponse);
+            // 2. Mock Print Fetch Stream (SSE)
+            const streamData = [
+                'event: print-found\n',
+                'data: {"imageUrls":["http://example.com/print1.jpg"]}\n\n',
+                'event: print-found\n',
+                'data: {"imageUrls":["http://example.com/print2.jpg"]}\n\n'
+            ].join("");
+
+            const mockRead = vi.fn()
+                .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode(streamData) })
+                .mockResolvedValueOnce({ done: true });
+
+            (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+                ok: true,
+                body: {
+                    getReader: () => ({
+                        read: mockRead,
+                        releaseLock: vi.fn(),
+                    }),
+                },
+            });
 
             const result = await fetchCardWithPrints('Sol Ring');
 
             expect(result).not.toBeNull();
             expect(result?.name).toBe('Sol Ring');
-            expect(result?.imageUrls).toEqual(['http://example.com/print1.jpg', 'http://example.com/print2.jpg']);
-            expect(axios.post).toHaveBeenCalledWith(
-                `${API_BASE}/api/cards/images`,
-                { cardNames: ['Sol Ring'], cardArt: 'prints' }
+            // The implementation collects all print URLs
+            expect(result?.imageUrls).toContain('http://example.com/print1.jpg');
+            expect(result?.imageUrls).toContain('http://example.com/print2.jpg');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                `${API_BASE}/api/stream/cards`,
+                expect.objectContaining({
+                    method: "POST",
+                    body: expect.stringContaining('"cardArt":"prints"')
+                })
             );
         });
 
@@ -124,7 +147,7 @@ describe('scryfallApi', () => {
             mockGet.mockResolvedValue(mockSearchResponse);
 
             // 2. Mock Print Fetch Failure
-            (axios.post as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Print fetch failed'));
+            (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Print fetch failed'));
 
             const result = await fetchCardWithPrints('Sol Ring');
 
