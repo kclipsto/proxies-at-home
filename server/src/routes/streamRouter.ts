@@ -6,16 +6,18 @@ import { type ScryfallCard } from "../../../shared/types.js";
 const streamRouter = express.Router();
 
 /**
- * Extract image URLs and prints from a Scryfall API card
+ * Extract image URLs and prints from a Scryfall API card.
+ * If requestedFaceName is provided, prioritize that face's image first.
  */
-function extractCardImages(card: ScryfallApiCard): {
+function extractCardImages(card: ScryfallApiCard, requestedFaceName?: string): {
   imageUrls: string[];
-  prints: Array<{ imageUrl: string; set: string; number: string; rarity?: string }>;
+  prints: Array<{ imageUrl: string; set: string; number: string; rarity?: string; faceName?: string }>;
 } {
   const imageUrls: string[] = [];
-  const prints: Array<{ imageUrl: string; set: string; number: string; rarity?: string }> = [];
+  const prints: Array<{ imageUrl: string; set: string; number: string; rarity?: string; faceName?: string }> = [];
 
   if (card.image_uris?.png) {
+    // Non-DFC card
     imageUrls.push(card.image_uris.png);
     prints.push({
       imageUrl: card.image_uris.png,
@@ -24,14 +26,34 @@ function extractCardImages(card: ScryfallApiCard): {
       rarity: card.rarity,
     });
   } else if (card.card_faces) {
-    for (const face of card.card_faces) {
+    // DFC - check if a specific face was requested
+    const faces = card.card_faces;
+
+    // 1. Generate Image URLs (prioritize requested face)
+    let orderedFaces = faces;
+    if (requestedFaceName) {
+      const requestedLower = requestedFaceName.toLowerCase();
+      const requestedFace = faces.find(f => f.name?.toLowerCase() === requestedLower);
+      if (requestedFace) {
+        orderedFaces = [requestedFace, ...faces.filter(f => f.name?.toLowerCase() !== requestedLower)];
+      }
+    }
+
+    for (const face of orderedFaces) {
       if (face.image_uris?.png) {
         imageUrls.push(face.image_uris.png);
+      }
+    }
+
+    // 2. Generate prints in CANONICAL order (faces order from API)
+    for (const face of faces) {
+      if (face.image_uris?.png) {
         prints.push({
           imageUrl: face.image_uris.png,
           set: card.set ?? "",
           number: card.collector_number ?? "",
           rarity: card.rarity,
+          faceName: face.name,
         });
       }
     }
@@ -50,7 +72,8 @@ function buildCardResponse(
   card: ScryfallApiCard,
   language: string
 ): ScryfallCard {
-  const { imageUrls, prints } = extractCardImages(card);
+  // Pass queryName to prioritize the requested face for DFCs
+  const { imageUrls, prints } = extractCardImages(card, queryName);
 
   // Extract colors and mana_cost from top-level or first face (for DFCs)
   let colors = card.colors;
@@ -167,7 +190,7 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
           }
 
           if (card) {
-            const { imageUrls } = extractCardImages(card);
+            const { imageUrls } = extractCardImages(card, ci.name);
 
             if (imageUrls.length > 0) {
               const cardToSend = buildCardResponse(ci.name, ci.set, ci.number, card, language);

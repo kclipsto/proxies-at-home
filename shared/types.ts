@@ -26,6 +26,7 @@ export interface PrintInfo {
   number: string;
   lang?: string;
   rarity?: string;
+  faceName?: string; // For DFCs: the specific face name this image belongs to
 }
 
 export interface ScryfallCard {

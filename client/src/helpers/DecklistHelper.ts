@@ -1,43 +1,51 @@
 import type { CardOption } from "../../../shared/types";
 
-export function groupCardsForDecklist(cards: CardOption[]) {
-  type Key = string;
-  const map = new Map<
-    Key,
-    {
-      name: string;
-      set?: string;
-      number?: string;
-      isUpload: boolean;
-      count: number;
-    }
-  >();
+type DecklistEntry = {
+  name: string;
+  set?: string;
+  number?: string;
+  isUpload: boolean;
+  count: number;
+};
+
+/**
+ * Groups cards for decklist export.
+ * Only adjacent identical cards are grouped together to preserve display order.
+ */
+export function groupCardsForDecklist(cards: CardOption[]): DecklistEntry[] {
+  const result: DecklistEntry[] = [];
 
   for (const c of cards) {
     if (!c?.name || c.name.toLowerCase().includes("card back")) continue;
 
-    const keyParts = [
-      c.name.trim().toLowerCase(),
-      c.set?.toLowerCase() ?? "",
-      c.number ?? "",
-    ];
-    const key = keyParts.join("|");
+    const name = c.name.trim();
+    const set = c.set;
+    const number = c.number;
+    const isUpload = !!c.isUserUpload;
 
-    const existing = map.get(key);
-    if (existing) {
-      existing.count += 1;
+    // Check if this card matches the previous entry (for adjacent grouping)
+    const prev = result[result.length - 1];
+    if (
+      prev &&
+      prev.name.toLowerCase() === name.toLowerCase() &&
+      (prev.set?.toLowerCase() ?? "") === (set?.toLowerCase() ?? "") &&
+      (prev.number ?? "") === (number ?? "")
+    ) {
+      // Same card as previous - increment count
+      prev.count += 1;
     } else {
-      map.set(key, {
-        name: c.name.trim(),
-        set: c.set,
-        number: c.number,
-        isUpload: !!c.isUserUpload,
+      // Different card - add new entry
+      result.push({
+        name,
+        set,
+        number,
+        isUpload,
         count: 1,
       });
     }
   }
 
-  return Array.from(map.values());
+  return result;
 }
 
 export function formatDecklistLine(

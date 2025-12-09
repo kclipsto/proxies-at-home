@@ -60,7 +60,7 @@ export async function addCustomImage(
 export async function addRemoteImage(
   imageUrls: string[],
   count: number = 1,
-  prints?: Array<{ imageUrl: string; set: string; number: string; rarity?: string }>
+  prints?: Array<{ imageUrl: string; set: string; number: string; rarity?: string; faceName?: string }>
 ): Promise<string | undefined> {
   if (!imageUrls || imageUrls.length === 0) return undefined;
 
@@ -102,7 +102,7 @@ export async function addRemoteImages(
   images: Array<{
     imageUrls: string[];
     count?: number;
-    prints?: Array<{ imageUrl: string; set: string; number: string; rarity?: string }>;
+    prints?: Array<{ imageUrl: string; set: string; number: string; rarity?: string; faceName?: string }>;
   }>
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>();

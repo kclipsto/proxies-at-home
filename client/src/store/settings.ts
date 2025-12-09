@@ -81,6 +81,8 @@ type Store = {
   setFilterColors: (value: string[]) => void;
   filterMatchType: "partial" | "exact";
   setFilterMatchType: (value: "partial" | "exact") => void;
+  decklistSortAlpha: boolean;
+  setDecklistSortAlpha: (value: boolean) => void;
   showProcessingToasts: boolean;
   setShowProcessingToasts: (value: boolean) => void;
   hasHydrated: boolean;
@@ -125,6 +127,7 @@ const defaultPageSettings = {
   filterManaCost: [] as number[],
   filterColors: [] as string[],
   filterMatchType: "partial" as "partial" | "exact",
+  decklistSortAlpha: false,
   showProcessingToasts: true,
 };
 
@@ -359,6 +362,8 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("filterMatchType", state.filterMatchType);
         return { filterMatchType: value };
       }),
+      decklistSortAlpha: false,
+      setDecklistSortAlpha: (value) => set({ decklistSortAlpha: value }),
       showProcessingToasts: true,
       setShowProcessingToasts: (value) => set({ showProcessingToasts: value }),
       hasHydrated: false,

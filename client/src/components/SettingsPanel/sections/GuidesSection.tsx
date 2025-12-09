@@ -1,5 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Select, TextInput, Tooltip, ToggleSwitch } from "flowbite-react";
+import { Label, Radio, Select, TextInput, Tooltip } from "flowbite-react";
 import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { HelpCircle } from "lucide-react";
@@ -128,16 +128,26 @@ export function GuidesSection() {
                         <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
                     </Tooltip>
                 </div>
-                <div className="flex items-center gap-3">
-                    <span className={`text-sm text-gray-700 dark:text-gray-300 ${guidePlacement === 'inside' ? 'font-semibold' : 'font-normal'}`}>Inside</span>
-                    <div style={{ ['--tw-translate-y' as string]: '0' }} className="[&_button]:!translate-y-0 [&_*]:!translate-y-0">
-                        <ToggleSwitch
+                <div className="flex items-center gap-4">
+                    <label className={`flex items-center gap-2 ${canUseOutside ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                        <Radio
+                            name="guidePlacement"
+                            value="outside"
                             checked={guidePlacement === 'outside'}
                             disabled={!canUseOutside}
-                            onChange={(checked) => setGuidePlacement(checked ? 'outside' : 'inside')}
+                            onChange={() => setGuidePlacement('outside')}
                         />
-                    </div>
-                    <span className={`text-sm ${canUseOutside ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'} ${guidePlacement === 'outside' ? 'font-semibold' : 'font-normal'}`}>Outside</span>
+                        <span className={`text-sm ${guidePlacement === 'outside' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Outside</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Radio
+                            name="guidePlacement"
+                            value="inside"
+                            checked={guidePlacement === 'inside'}
+                            onChange={() => setGuidePlacement('inside')}
+                        />
+                        <span className={`text-sm ${guidePlacement === 'inside' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Inside</span>
+                    </label>
                 </div>
             </div>
 
