@@ -3,6 +3,7 @@ import { db } from "../db";
 import { API_BASE } from "../constants";
 import { importStats } from "../helpers/importStats";
 import { useToastStore } from "../store/toast";
+import { getEnrichmentAbortController } from "../helpers/cancellationService";
 
 // Retry configuration with exponential backoff
 const ENRICHMENT_RETRY_CONFIG = {
@@ -48,7 +49,6 @@ interface EnrichedCardData {
 export function useCardEnrichment() {
     const [enrichmentProgress, setEnrichmentProgress] = useState<EnrichmentProgress | null>(null);
     const isEnrichingRef = useRef(false);
-    const abortControllerRef = useRef<AbortController | null>(null);
 
     const enrichCards = useCallback(async () => {
         if (isEnrichingRef.current) return;
@@ -101,7 +101,8 @@ export function useCardEnrichment() {
                 importStats.markEnrichmentStart();
             }
 
-            abortControllerRef.current = new AbortController();
+            // Get shared abort controller (can be cancelled by clearAllProcessing)
+            const abortController = getEnrichmentAbortController();
 
             // Batch enrich via server endpoint
             const batches = chunkArray(unenrichedCards, 50);
@@ -110,7 +111,7 @@ export function useCardEnrichment() {
             let retryingCount = 0;
 
             for (const batch of batches) {
-                if (abortControllerRef.current.signal.aborted) break;
+                if (abortController.signal.aborted) break;
 
                 const batchStart = performance.now();
 
@@ -125,7 +126,7 @@ export function useCardEnrichment() {
                                 number: c.number,
                             })),
                         }),
-                        signal: abortControllerRef.current.signal,
+                        signal: abortController.signal,
                     });
 
                     if (!response.ok) {
@@ -250,7 +251,6 @@ export function useCardEnrichment() {
             setEnrichmentProgress(null);
         } finally {
             isEnrichingRef.current = false;
-            abortControllerRef.current = null;
         }
     }, []);
 
@@ -273,7 +273,7 @@ export function useCardEnrichment() {
         return () => {
             clearTimeout(initialTimer);
             clearInterval(retryInterval);
-            abortControllerRef.current?.abort();
+            // Note: abort is handled by cancelAllProcessing from cancellationService
         };
     }, [enrichCards]);
 
@@ -298,7 +298,8 @@ export function useCardEnrichment() {
     }, [enrichCards]);
 
     const cancelEnrichment = useCallback(() => {
-        abortControllerRef.current?.abort();
+        // Use the shared cancellation service to abort
+        getEnrichmentAbortController().abort();
         setEnrichmentProgress(null);
     }, []);
 

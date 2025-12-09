@@ -48,6 +48,7 @@ function escapeColon(s: string | number): string {
 }
 
 interface ScryfallCardFace {
+  name?: string;
   image_uris?: {
     png?: string;
   };
@@ -159,15 +160,19 @@ interface CollectionResponse {
  * Batch fetch cards using Scryfall's /cards/collection endpoint.
  * Much faster than individual searches - up to 75 cards per request.
  * Returns a Map keyed by a normalized identifier for easy lookup.
+ * 
+ * For non-English languages, fetches localized versions after the initial batch.
  */
 export async function batchFetchCards(
-  cardInfos: CardInfo[]
+  cardInfos: CardInfo[],
+  language: string = "en"
 ): Promise<Map<string, ScryfallApiCard>> {
   const results = new Map<string, ScryfallApiCard>();
   if (!cardInfos || cardInfos.length === 0) return results;
 
+  const lang = language.toLowerCase();
   const batches = chunkArray(cardInfos, 75);
-  console.log(`[Scryfall Batch] Fetching ${cardInfos.length} cards in ${batches.length} batch(es)`);
+  console.log(`[Scryfall Batch] Fetching ${cardInfos.length} cards in ${batches.length} batch(es), lang=${lang}`);
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
     const batch = batches[batchIdx];
@@ -208,6 +213,21 @@ export async function batchFetchCards(
             const setNumKey = `${card.set.toLowerCase()}:${card.collector_number}`;
             results.set(setNumKey, card);
           }
+
+          // Store by individual face names for DFCs (double-faced cards)
+          // This allows lookups by front face name (e.g., "Bala Ged Recovery")
+          // to find the full card ("Bala Ged Recovery // Bala Ged Sanctuary")
+          if (card.card_faces && Array.isArray(card.card_faces)) {
+            for (const face of card.card_faces) {
+              if (face.name) {
+                const faceKey = face.name.toLowerCase();
+                // Only set if not already present (prefer full name match)
+                if (!results.has(faceKey)) {
+                  results.set(faceKey, card);
+                }
+              }
+            }
+          }
         }
       }
 
@@ -222,6 +242,56 @@ export async function batchFetchCards(
   }
 
   console.log(`[Scryfall Batch] Total: ${results.size} unique cards fetched`);
+
+  // For non-English, fetch localized versions in parallel
+  if (lang !== "en" && results.size > 0) {
+    console.log(`[Scryfall Batch] Fetching ${lang} localized versions...`);
+    const localizedStartTime = Date.now();
+    let localizedCount = 0;
+    let fallbackCount = 0;
+
+    // Get unique cards by set+number (to avoid duplicate fetches)
+    const uniqueCards = new Map<string, ScryfallApiCard>();
+    for (const card of results.values()) {
+      if (card.set && card.collector_number) {
+        const key = `${card.set}:${card.collector_number}`;
+        if (!uniqueCards.has(key)) {
+          uniqueCards.set(key, card);
+        }
+      }
+    }
+
+    // Use pLimit for parallel fetching (8 concurrent = ~80ms per card at 10req/sec limit)
+    const pLimit = (await import("p-limit")).default;
+    const limit = pLimit(8);
+
+    const localizedPromises = Array.from(uniqueCards.entries()).map(([key, card]) =>
+      limit(async () => {
+        // Small delay to stay under Scryfall's rate limit (10 req/sec)
+        await new Promise(r => setTimeout(r, 50));
+        try {
+          // GET /cards/:set/:number/:lang
+          const url = `https://api.scryfall.com/cards/${card.set}/${card.collector_number}/${lang}`;
+          const response = await AX.get<ScryfallApiCard>(url);
+
+          if (response.data && response.data.image_uris?.png) {
+            // Replace English card with localized version
+            const nameKey = response.data.name?.toLowerCase();
+            if (nameKey) results.set(nameKey, response.data);
+            results.set(key, response.data);
+            localizedCount++;
+          }
+        } catch {
+          // Localized version not available, keep English
+          fallbackCount++;
+        }
+      })
+    );
+
+    await Promise.all(localizedPromises);
+    console.log(`[Scryfall Batch] Localized: ${localizedCount} found, ${fallbackCount} fallback to EN (${Date.now() - localizedStartTime}ms)`);
+  }
+
   return results;
 }
 

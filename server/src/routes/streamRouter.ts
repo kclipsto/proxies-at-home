@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from "express";
-import { batchFetchCards, lookupCardFromBatch, type ScryfallApiCard } from "../utils/getCardImagesPaged.js";
+import { batchFetchCards, lookupCardFromBatch, getCardsWithImagesForCardInfo, type ScryfallApiCard } from "../utils/getCardImagesPaged.js";
 import { normalizeCardInfos } from "../utils/cardUtils.js";
 import { type ScryfallCard } from "../../../shared/types.js";
 
@@ -123,7 +123,7 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
     // 5. BATCH FETCH: Get all cards in a single API call (or batches of 75)
     const startTime = Date.now();
-    const batchResults = await batchFetchCards(cardQueries);
+    const batchResults = await batchFetchCards(cardQueries, language);
     console.log(`[STREAM] Batch fetch completed in ${Date.now() - startTime}ms`);
 
     // 6. Stream results to client
@@ -136,7 +136,18 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
       processed++;
 
       try {
-        const card = lookupCardFromBatch(batchResults, ci);
+        let card = lookupCardFromBatch(batchResults, ci);
+
+        // Fallback to search API if batch lookup failed
+        // This handles DFCs where the front face name doesn't match collection API
+        if (!card) {
+          console.log(`[STREAM] Batch lookup failed for ${ci.name}, trying search fallback...`);
+          const searchResults = await getCardsWithImagesForCardInfo(ci, "art", language, true);
+          if (searchResults.length > 0) {
+            card = searchResults[0];
+            console.log(`[STREAM] Search fallback found: ${card.name}`);
+          }
+        }
 
         if (card) {
           const { imageUrls } = extractCardImages(card);
