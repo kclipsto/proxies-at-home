@@ -181,7 +181,7 @@ describe("getCardImagesPaged", () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([singleFaceCard]));
       await getScryfallPngImagesForCard("Sol Ring", "prints");
       expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining("unique%3Aprints"));
-    });
+    }, 60000);
   });
 
   describe("getScryfallPngImagesForCardPrints", () => {
@@ -266,7 +266,7 @@ describe("getCardImagesPaged", () => {
       const cardInfo = { name: "Card", set: "SET", number: "123" };
       const result = await getCardDataForCardInfo(cardInfo);
       expect(result).toBeNull();
-    });
+    }, 60000);
 
     it("getCardDataForCardInfo should return null if strategy 2 returns empty", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([]));

@@ -32,7 +32,7 @@ export function inferCardNameFromFilename(filename: string): string {
 
 export function getMpcImageUrl(frontId?: string | null): string | null {
   if (!frontId) return null;
-  return `${API_BASE}/api/cards/images/front?id=${encodeURIComponent(frontId)}`;
+  return `${API_BASE}/api/cards/images/mpc?id=${encodeURIComponent(frontId)}`;
 }
 
 export function extractDriveId(

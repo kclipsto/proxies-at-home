@@ -1,6 +1,5 @@
 import { changeCardArtwork } from "@/helpers/dbUtils";
 import { useLiveQuery } from "dexie-react-hooks";
-import axios from "axios";
 import {
   Button,
   Checkbox,
@@ -94,27 +93,82 @@ export function ArtworkModal() {
     if (!displayData.name || !displayData.id) return;
     setIsGettingMore(true);
     console.log("[ArtworkModal] getMorePrints called for:", displayData.name);
-    try {
-      const res = await axios.post<ScryfallCard[]>(
-        `${API_BASE}/api/cards/images`,
-        { cardNames: [displayData.name], cardArt: "prints" }
-      );
 
-      console.log("[ArtworkModal] getMorePrints response:", {
-        hasData: !!res.data?.[0],
-        imageUrlsCount: res.data?.[0]?.imageUrls?.length ?? 0,
-        printsCount: res.data?.[0]?.prints?.length ?? 0,
-        samplePrint: res.data?.[0]?.prints?.[0],
+    const collectedUrls: string[] = [];
+    const collectedPrints: Array<{ imageUrl: string; set: string; number: string; rarity?: string }> = [];
+
+    try {
+      const response = await fetch(`${API_BASE}/api/stream/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardQueries: [{ name: displayData.name }],
+          cardArt: "prints",
+        }),
       });
 
-      const urls = res.data?.[0]?.imageUrls ?? [];
-      const prints = res.data?.[0]?.prints;
-      if (previewCardData) {
-        setPreviewCardData({ ...previewCardData, imageUrls: urls, prints });
-      } else {
-        console.log("[ArtworkModal] Storing prints in DB:", { id: displayData.id, printsCount: prints?.length ?? 0 });
-        await db.images.update(displayData.id, { imageUrls: urls, prints });
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to fetch prints");
       }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: print-found")) {
+            // Next line should be data
+            continue;
+          }
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6)) as ScryfallCard;
+              if (data.imageUrls?.[0]) {
+                collectedUrls.push(data.imageUrls[0]);
+                collectedPrints.push({
+                  imageUrl: data.imageUrls[0],
+                  set: data.set || "",
+                  number: data.number || "",
+                  rarity: data.rarity,
+                });
+
+                // Update UI progressively
+                if (previewCardData) {
+                  setPreviewCardData(prev => prev ? {
+                    ...prev,
+                    imageUrls: [...collectedUrls],
+                    prints: [...collectedPrints],
+                  } : null);
+                }
+              }
+            } catch {
+              // Skip non-JSON lines
+            }
+          }
+        }
+      }
+
+      console.log("[ArtworkModal] getMorePrints complete:", {
+        urlsCount: collectedUrls.length,
+        printsCount: collectedPrints.length,
+      });
+
+      // Final update
+      if (previewCardData) {
+        setPreviewCardData({ ...previewCardData, imageUrls: collectedUrls, prints: collectedPrints });
+      } else {
+        await db.images.update(displayData.id, { imageUrls: collectedUrls, prints: collectedPrints });
+      }
+    } catch (err) {
+      console.error("[ArtworkModal] getMorePrints error:", err);
     } finally {
       setIsGettingMore(false);
     }

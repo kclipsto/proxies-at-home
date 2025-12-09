@@ -86,7 +86,6 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
-  console.log("[STREAM] Connection opened.");
 
   // 2. Keep-alive pings to prevent timeouts
   const keepAliveInterval = setInterval(() => {
@@ -98,11 +97,11 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
   res.on("close", () => {
     isClosed = true;
     clearInterval(keepAliveInterval);
-    console.log("[STREAM] Connection closed by client.");
   });
 
   try {
     const language = (req.body.language || "en").toLowerCase();
+    const cardArt = req.body.cardArt || "art"; // "art" (default) or "prints"
     const cardQueries = normalizeCardInfos(
       Array.isArray(req.body.cardQueries) ? req.body.cardQueries : null,
       null,
@@ -111,8 +110,7 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
     const total = cardQueries.length;
 
     // 4. Handshake: Inform the client how many cards to expect
-    res.write(`event: handshake\ndata: ${JSON.stringify({ total })}\n\n`);
-    console.log(`[STREAM] Started fetching ${total} cards using batch API.`);
+    res.write(`event: handshake\ndata: ${JSON.stringify({ total, cardArt })}\n\n`);
 
     if (isClosed || total === 0) {
       res.write("event: done\ndata: {}\n\n");
@@ -121,59 +119,77 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
       return;
     }
 
-    // 5. BATCH FETCH: Get all cards in a single API call (or batches of 75)
-    const startTime = Date.now();
-    const batchResults = await batchFetchCards(cardQueries, language);
-    console.log(`[STREAM] Batch fetch completed in ${Date.now() - startTime}ms`);
+    // 5. For "prints" mode, fetch all prints per card (for ArtworkModal)
+    // For "art" mode, batch fetch for speed (for deck import)
+    if (cardArt === "prints") {
+      // Prints mode: Stream all prints for each card progressively
+      let processed = 0;
+      for (const ci of cardQueries) {
+        if (isClosed) break;
+        processed++;
 
-    // 6. Stream results to client
-    let processed = 0;
-    for (const ci of cardQueries) {
-      if (isClosed) {
-        console.log("[STREAM] Aborting stream due to client disconnect.");
-        break;
+        try {
+          const allPrints = await getCardsWithImagesForCardInfo(ci, "prints", language, true);
+
+          // Stream each print as it's found
+          for (const card of allPrints) {
+            if (isClosed) break;
+            const printData = buildCardResponse(ci.name, card.set, card.collector_number, card, language);
+            res.write(`event: print-found\ndata: ${JSON.stringify(printData)}\n\n`);
+          }
+
+          // Send progress after all prints for this card
+          res.write(`event: progress\ndata: ${JSON.stringify({ processed, total, printsFound: allPrints.length })}\n\n`);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[STREAM] Error for ${ci.name}:`, msg);
+          res.write(`event: card-error\ndata: ${JSON.stringify({ query: ci, error: msg })}\n\n`);
+        }
       }
-      processed++;
+    } else {
+      // Art mode: Batch fetch for speed (original behavior)
+      const batchResults = await batchFetchCards(cardQueries, language);
 
-      try {
-        let card = lookupCardFromBatch(batchResults, ci);
+      let processed = 0;
+      for (const ci of cardQueries) {
+        if (isClosed) break;
+        processed++;
 
-        // Fallback to search API if batch lookup failed
-        // This handles DFCs where the front face name doesn't match collection API
-        if (!card) {
-          console.log(`[STREAM] Batch lookup failed for ${ci.name}, trying search fallback...`);
-          const searchResults = await getCardsWithImagesForCardInfo(ci, "art", language, true);
-          if (searchResults.length > 0) {
-            card = searchResults[0];
-            console.log(`[STREAM] Search fallback found: ${card.name}`);
+        try {
+          let card = lookupCardFromBatch(batchResults, ci);
+
+          // Fallback to search API if batch lookup failed
+          if (!card) {
+            const searchResults = await getCardsWithImagesForCardInfo(ci, "art", language, true);
+            if (searchResults.length > 0) {
+              card = searchResults[0];
+            }
           }
-        }
 
-        if (card) {
-          const { imageUrls } = extractCardImages(card);
+          if (card) {
+            const { imageUrls } = extractCardImages(card);
 
-          if (imageUrls.length > 0) {
-            const cardToSend = buildCardResponse(ci.name, ci.set, ci.number, card, language);
-            res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
-            console.log(`[STREAM] Found: ${ci.name}${ci.set ? ` (${ci.set})` : ''}${ci.number ? ` ${ci.number}` : ''}`);
+            if (imageUrls.length > 0) {
+              const cardToSend = buildCardResponse(ci.name, ci.set, ci.number, card, language);
+              res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
+            } else {
+              throw new Error("No images found for card on Scryfall.");
+            }
           } else {
-            throw new Error("No images found for card on Scryfall.");
+            throw new Error("Card not found on Scryfall.");
           }
-        } else {
-          throw new Error("Card not found on Scryfall.");
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[STREAM] Error for ${ci.name}:`, msg);
+          res.write(`event: card-error\ndata: ${JSON.stringify({ query: ci, error: msg })}\n\n`);
+        } finally {
+          res.write(`event: progress\ndata: ${JSON.stringify({ processed, total })}\n\n`);
         }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[STREAM] Error for ${ci.name}:`, msg);
-        res.write(`event: card-error\ndata: ${JSON.stringify({ query: ci, error: msg })}\n\n`);
-      } finally {
-        res.write(`event: progress\ndata: ${JSON.stringify({ processed, total })}\n\n`);
       }
     }
 
     // 7. Signal completion and clean up
     res.write("event: done\ndata: {}\n\n");
-    console.log(`[STREAM] Completed successfully. Total time: ${Date.now() - startTime}ms`);
     clearInterval(keepAliveInterval);
     res.end();
 

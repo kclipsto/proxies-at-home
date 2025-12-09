@@ -49,7 +49,7 @@ describe("Stream Router", () => {
         const events = res.text.split("\n\n");
 
         // handshake
-        expect(events[0]).toBe("event: handshake\ndata: {\"total\":1}");
+        expect(events[0]).toBe('event: handshake\ndata: {"total":1,"cardArt":"art"}');
 
         // card-found
         const cardFoundData = JSON.parse(events[1].match(/data: (.*)/)![1]);
@@ -79,7 +79,7 @@ describe("Stream Router", () => {
         const events = res.text.split("\n\n");
 
         // handshake
-        expect(events[0]).toBe("event: handshake\ndata: {\"total\":1}");
+        expect(events[0]).toBe('event: handshake\ndata: {"total":1,"cardArt":"art"}');
 
         // card-error
         const cardErrorData = JSON.parse(events[1].match(/data: (.*)/)![1]);
@@ -104,7 +104,7 @@ describe("Stream Router", () => {
             .expect(200);
 
         const events = res.text.split("\n\n");
-        expect(events[0]).toBe("event: handshake\ndata: {\"total\":0}");
+        expect(events[0]).toBe('event: handshake\ndata: {"total":0,"cardArt":"art"}');
         expect(events[1]).toBe("event: done\ndata: {}");
     });
 
@@ -173,7 +173,7 @@ describe("Stream Router", () => {
         const progressEvents = events.filter((e: string) => e.startsWith("event: progress"));
         const doneEvent = events.find((e: string) => e.startsWith("event: done"));
 
-        expect(handshake).toBe("event: handshake\ndata: {\"total\":2}");
+        expect(handshake).toBe('event: handshake\ndata: {"total":2,"cardArt":"art"}');
 
         const cardFoundData = JSON.parse(cardFound!.match(/data: (.*)/s)![1]);
         expect(cardFoundData.name).toBe("Sol Ring");
@@ -197,7 +197,7 @@ describe("Stream Router", () => {
             .expect(200);
 
         const events = res.text.split("\n\n").filter(Boolean);
-        expect(events[0]).toBe("event: handshake\ndata: {\"total\":0}");
+        expect(events[0]).toBe('event: handshake\ndata: {"total":0,"cardArt":"art"}');
         expect(events[1]).toBe("event: done\ndata: {}");
     });
 

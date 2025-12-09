@@ -111,16 +111,52 @@ export async function fetchCardWithPrints(query: string, exact: boolean = false,
             return cardData;
         }
 
-        // Fetch all prints
+        // Fetch all prints using SSE stream endpoint
         try {
-            const res = await axios.post<ScryfallCard[]>(
-                `${API_BASE}/api/cards/images`,
-                { cardNames: [cardData.name], cardArt: "prints" }
-            );
-            const urls = res.data?.[0]?.imageUrls ?? [];
+            const collectedUrls: string[] = [];
+
+            const response = await fetch(`${API_BASE}/api/stream/cards`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    cardQueries: [{ name: cardData.name }],
+                    cardArt: "prints",
+                }),
+            });
+
+            if (!response.ok || !response.body) {
+                return cardData;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() || "";
+
+                for (const line of lines) {
+                    if (line.startsWith("data: ")) {
+                        try {
+                            const data = JSON.parse(line.slice(6)) as ScryfallCard;
+                            if (data.imageUrls?.[0]) {
+                                collectedUrls.push(data.imageUrls[0]);
+                            }
+                        } catch {
+                            // Skip non-JSON lines
+                        }
+                    }
+                }
+            }
+
             return {
                 ...cardData,
-                imageUrls: urls.length > 0 ? urls : cardData.imageUrls,
+                imageUrls: collectedUrls.length > 0 ? collectedUrls : cardData.imageUrls,
             };
         } catch (err) {
             console.error("Failed to fetch prints for card:", err);

@@ -15,7 +15,6 @@ import { useCardsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
-import axios from "axios";
 import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
 import { importStats } from "@/helpers/importStats";
 import {
@@ -369,16 +368,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
     try {
       await clearAllCardsAndImages();
-      try {
-        await axios.delete(`${API_BASE}/api/cards/images`, {
-          timeout: 15000,
-        });
-      } catch (e) {
-        console.warn(
-          "[Clear] Server cache clear failed (UI already cleared):",
-          e
-        );
-      }
+      // Server cache is managed by LRU eviction - no need to clear on user action
     } catch (err: unknown) {
       if (err instanceof Error) {
         alert(err.message || "Failed to clear images.");

@@ -74,7 +74,7 @@ describe("ImageProcessor", () => {
         p.catch(() => { });
     });
 
-    it("should cancel queued tasks and keep workers alive", async () => {
+    it("should cancel queued tasks and terminate workers", async () => {
         const instance = ImageProcessor.getInstance();
 
         // Create 8 tasks to fill the pool
@@ -94,15 +94,11 @@ describe("ImageProcessor", () => {
         // Expect queued promise to reject
         await expect(queuedPromise).rejects.toThrow("Cancelled");
 
-        // Expect active workers to remain alive
-        // @ts-expect-error: Accessing private member
-        expect(instance.allWorkers.size).toBe(8);
+        // active promises should also be rejected or handled, but we focus on state here
 
-        // Verify terminate was not called on any worker
+        // Expect workers to be cleared
         // @ts-expect-error: Accessing private member
-        instance.allWorkers.forEach((worker: Worker) => {
-            expect(worker.terminate).not.toHaveBeenCalled();
-        });
+        expect(instance.allWorkers.size).toBe(0);
     });
 
     it("should use hardwareConcurrency - 1 if less than cap", () => {

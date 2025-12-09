@@ -4,9 +4,9 @@ import axios from "axios";
 const API_BASE = "http://localhost:3001";
 
 async function testFrontEndpoint() {
-    console.log("Testing GET /api/cards/images/front...");
+    console.log("Testing GET /api/cards/images/mpc...");
     const id = "1CWXSzPqLMdLZn0AoEb8hWGY0WFuE-UUv"; // From cards.xml
-    const url = `${API_BASE}/api/cards/images/front?id=${encodeURIComponent(id)}`;
+    const url = `${API_BASE}/api/cards/images/mpc?id=${encodeURIComponent(id)}`;
 
     try {
         const r = await axios.get(url, {
@@ -18,11 +18,12 @@ async function testFrontEndpoint() {
         if (r.status >= 400) {
             console.log("Response data:", r.data);
         }
-    } catch (e) {
-        console.error("Front Endpoint Error:", e.message);
-        if (e.response) {
-            console.error("Response status:", e.response.status);
-            console.error("Response data:", e.response.data);
+    } catch (e: unknown) {
+        const err = e as { message?: string; response?: { status?: number; data?: unknown } };
+        console.error("Front Endpoint Error:", err.message);
+        if (err.response) {
+            console.error("Response status:", err.response.status);
+            console.error("Response data:", err.response.data);
         }
     }
 }
@@ -39,8 +40,9 @@ async function testProxyEndpoint() {
         });
         console.log(`Proxy Endpoint Status: ${r.status}`);
         console.log(`Proxy Endpoint Content-Type: ${r.headers["content-type"]}`);
-    } catch (e) {
-        console.error("Proxy Endpoint Error:", e.message);
+    } catch (e: unknown) {
+        const err = e as { message?: string };
+        console.error("Proxy Endpoint Error:", err.message);
     }
 }
 

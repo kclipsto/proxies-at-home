@@ -88,21 +88,16 @@ async function fetchAllPages<T>(
   query: string,
   extractor: (card: ScryfallApiCard) => T[]
 ): Promise<T[]> {
-  const startTime = Date.now();
   const encodedUrl = `${SCRYFALL_API}?q=${encodeURIComponent(query)}`;
   const results: T[] = [];
   let next: string | null = encodedUrl;
-  let pageCount = 0;
 
   try {
     while (next) {
       await delayScryfallRequest();
-      const pageStart = Date.now();
       // Explicitly cast the response to avoid circular inference issues with 'next'
       const resp: AxiosResponse<ScryfallResponse> = await AX.get<ScryfallResponse>(next);
       const { data, has_more, next_page } = resp.data;
-      pageCount++;
-      console.log(`[Scryfall] Page ${pageCount}: ${Date.now() - pageStart}ms`);
 
       if (data) {
         for (const card of data) {
@@ -117,7 +112,6 @@ async function fetchAllPages<T>(
     console.warn("[Scryfall] Query failed:", query, msg);
   }
 
-  console.log(`[Scryfall] Total: ${pageCount} pages, ${results.length} results, ${Date.now() - startTime}ms`);
   return results;
 }
 
@@ -172,7 +166,6 @@ export async function batchFetchCards(
 
   const lang = language.toLowerCase();
   const batches = chunkArray(cardInfos, 75);
-  console.log(`[Scryfall Batch] Fetching ${cardInfos.length} cards in ${batches.length} batch(es), lang=${lang}`);
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
     const batch = batches[batchIdx];
@@ -191,13 +184,10 @@ export async function batchFetchCards(
     });
 
     try {
-      const startTime = Date.now();
       const response = await AX.post<CollectionResponse>(
         'https://api.scryfall.com/cards/collection',
         { identifiers }
       );
-
-      console.log(`[Scryfall Batch] Batch ${batchIdx + 1}/${batches.length}: ${response.data.data?.length ?? 0} found, ${response.data.not_found?.length ?? 0} not found (${Date.now() - startTime}ms)`);
 
       if (response.data?.data) {
         for (let i = 0; i < response.data.data.length; i++) {
@@ -231,25 +221,17 @@ export async function batchFetchCards(
         }
       }
 
-      // Log not_found cards for debugging
-      if (response.data?.not_found?.length > 0) {
-        console.log(`[Scryfall Batch] Not found: ${response.data.not_found.map(nf => nf.name || `${nf.set}#${nf.collector_number}`).join(', ')}`);
-      }
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[Scryfall Batch] Batch ${batchIdx + 1} failed:`, msg);
     }
   }
 
-  console.log(`[Scryfall Batch] Total: ${results.size} unique cards fetched`);
+
 
   // For non-English, fetch localized versions in parallel
   if (lang !== "en" && results.size > 0) {
-    console.log(`[Scryfall Batch] Fetching ${lang} localized versions...`);
-    const localizedStartTime = Date.now();
-    let localizedCount = 0;
-    let fallbackCount = 0;
-
     // Get unique cards by set+number (to avoid duplicate fetches)
     const uniqueCards = new Map<string, ScryfallApiCard>();
     for (const card of results.values()) {
@@ -261,35 +243,25 @@ export async function batchFetchCards(
       }
     }
 
-    // Use pLimit for parallel fetching (8 concurrent = ~80ms per card at 10req/sec limit)
-    const pLimit = (await import("p-limit")).default;
-    const limit = pLimit(8);
+    // Fetch localized versions sequentially with proper rate limiting
+    for (const [key, card] of uniqueCards.entries()) {
+      await delayScryfallRequest();
+      try {
+        // GET /cards/:set/:number/:lang
+        const url = `https://api.scryfall.com/cards/${card.set}/${card.collector_number}/${lang}`;
+        const response = await AX.get<ScryfallApiCard>(url);
 
-    const localizedPromises = Array.from(uniqueCards.entries()).map(([key, card]) =>
-      limit(async () => {
-        // Small delay to stay under Scryfall's rate limit (10 req/sec)
-        await new Promise(r => setTimeout(r, 50));
-        try {
-          // GET /cards/:set/:number/:lang
-          const url = `https://api.scryfall.com/cards/${card.set}/${card.collector_number}/${lang}`;
-          const response = await AX.get<ScryfallApiCard>(url);
-
-          if (response.data && response.data.image_uris?.png) {
-            // Replace English card with localized version
-            const nameKey = response.data.name?.toLowerCase();
-            if (nameKey) results.set(nameKey, response.data);
-            results.set(key, response.data);
-            localizedCount++;
-          }
-        } catch {
-          // Localized version not available, keep English
-          fallbackCount++;
+        if (response.data && response.data.image_uris?.png) {
+          // Replace English card with localized version
+          const nameKey = response.data.name?.toLowerCase();
+          if (nameKey) results.set(nameKey, response.data);
+          results.set(key, response.data);
         }
-      })
-    );
+      } catch {
+        // Localized version not available, keep English
+      }
+    }
 
-    await Promise.all(localizedPromises);
-    console.log(`[Scryfall Batch] Localized: ${localizedCount} found, ${fallbackCount} fallback to EN (${Date.now() - localizedStartTime}ms)`);
   }
 
   return results;
