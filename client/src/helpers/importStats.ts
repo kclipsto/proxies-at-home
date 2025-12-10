@@ -27,8 +27,9 @@ export interface ImportStats {
     // Request stats
     proxyRequestCount: number;
     scryfallRequestCount: number;
-    cacheHits: number;
+    dbHits: number;           // Hits from existing processed blobs in DB
     cacheMisses: number;
+    persistentCacheHits: number; // Hits from 7-day raw image cache
 }
 
 export type ImportType = 'scryfall' | 'mpc' | 'upload' | 'unknown';
@@ -54,8 +55,9 @@ class ImportStatsTracker {
             enrichmentsFailed: 0,
             proxyRequestCount: 0,
             scryfallRequestCount: 0,
-            cacheHits: 0,
+            dbHits: 0,
             cacheMisses: 0,
+            persistentCacheHits: 0,
         };
     }
 
@@ -198,7 +200,7 @@ class ImportStatsTracker {
         // AND if this card is actually part of the current import batch
         if (!this.cacheMissUuids.has(uuid) && this.validUuids.has(uuid)) {
             this.cacheHitUuids.add(uuid);
-            this.stats.cacheHits = this.cacheHitUuids.size;
+            this.stats.dbHits = this.cacheHitUuids.size;
         }
     }
 
@@ -206,8 +208,13 @@ class ImportStatsTracker {
         if (!this.isActive) return;
         this.cacheMissUuids.add(uuid);
         this.cacheHitUuids.delete(uuid); // If it was counted as hit, remove it (unlikely sequence but safe)
-        this.stats.cacheHits = this.cacheHitUuids.size; // Update hits in case we removed one
+        this.stats.dbHits = this.cacheHitUuids.size; // Update hits in case we removed one
         this.stats.cacheMisses = this.cacheMissUuids.size;
+    }
+
+    incrementPersistentCacheHit() {
+        if (!this.isActive) return;
+        this.stats.persistentCacheHits++;
     }
 
     finish() {
@@ -256,7 +263,7 @@ class ImportStatsTracker {
 
         // Customize labels based on import type
         const isScryfall = this.importType === 'scryfall';
-        const loadLabel = isScryfall ? 'Scryfall Fetch:' : 'Image Load:   ';
+        const loadLabel = isScryfall ? 'Scryfall Fetch:' : 'Image Load:    ';
         const titleText = isScryfall ? 'DECK TEXT IMPORT SUMMARY' : 'IMPORT SUMMARY';
         // Box inner width is 62 chars, center the title
         const title = titleText.padStart(Math.floor((62 + titleText.length) / 2)).padEnd(62);
@@ -289,8 +296,9 @@ class ImportStatsTracker {
 
         summary += `
 ╠══════════════════════════════════════════════════════════════╣
-║${pad(`  DB Cache Hits:     ${String(s.cacheHits).padStart(8)}`)}║
-║${pad(`  DB Cache Misses:   ${String(s.cacheMisses).padStart(8)}`)}║
+║${pad(`  Image Cache Hits:  ${String(s.persistentCacheHits).padStart(8)}  (7-day raw image cache)`)}║
+║${pad(`  DB Hits:           ${String(s.dbHits).padStart(8)}  (processed blobs)`)}║
+║${pad(`  Network Fetches:   ${String(s.cacheMisses).padStart(8)}`)}║
 ╚══════════════════════════════════════════════════════════════╝`;
         console.log(summary);
     }

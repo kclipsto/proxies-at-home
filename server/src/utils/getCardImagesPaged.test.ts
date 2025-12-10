@@ -196,10 +196,12 @@ describe("getCardImagesPaged", () => {
     let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
+      vi.useFakeTimers();
       consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
     });
 
     afterEach(() => {
+      vi.useRealTimers();
       consoleWarnSpy.mockRestore();
     });
 
@@ -207,7 +209,12 @@ describe("getCardImagesPaged", () => {
       mockedAxios.get.mockClear();
       mockedAxios.get.mockRejectedValue(new Error("Scryfall API is down"));
       const cardInfo = { name: "Sol Ring" };
-      const urls = await getImagesForCardInfo(cardInfo);
+
+      // Run the function and advance timers to resolve the delay
+      const promise = getImagesForCardInfo(cardInfo);
+      await vi.runAllTimersAsync();
+      const urls = await promise;
+
       expect(urls).toEqual([]);
       expect(consoleWarnSpy).toHaveBeenCalled();
     });
@@ -217,11 +224,15 @@ describe("getCardImagesPaged", () => {
       mockedAxios.get.mockClear();
       mockedAxios.get.mockRejectedValue(new Error("Scryfall API is down"));
       const cardInfo = { name: "Sol Ring" };
-      const data = await getCardDataForCardInfo(cardInfo);
+
+      // Run the function and advance timers to resolve the delay
+      const promise = getCardDataForCardInfo(cardInfo);
+      await vi.runAllTimersAsync();
+      const data = await promise;
+
       expect(data).toBeNull();
-      console.log("Warn calls:", JSON.stringify(consoleWarnSpy.mock.calls));
       expect(consoleWarnSpy).toHaveBeenCalled();
-    }, 10000);
+    });
   });
 
   describe("Additional Strategies", () => {

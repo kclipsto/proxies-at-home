@@ -25,6 +25,7 @@ interface WorkerSuccessResponse {
   displayBleedWidth: number;
   exportBlobDarkened: Blob;
   displayBlobDarkened: Blob;
+  imageCacheHit?: boolean; // True if image was served from 7-day persistent cache
   error?: undefined;
 }
 

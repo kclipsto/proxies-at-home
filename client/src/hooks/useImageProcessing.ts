@@ -109,7 +109,13 @@ export function useImageProcessing({
             exportBleedWidth,
             displayBlobDarkened,
             exportBlobDarkened,
+            imageCacheHit,
           } = result;
+
+          // Track persistent image cache hits (7-day raw image cache)
+          if (imageCacheHit) {
+            importStats.incrementPersistentCacheHit();
+          }
 
           const dbStart = performance.now();
           await db.images.update(imageId, {

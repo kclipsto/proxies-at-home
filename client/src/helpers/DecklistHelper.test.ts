@@ -2,25 +2,34 @@ import { describe, it, expect } from 'vitest';
 import { groupCardsForDecklist, formatDecklistLine, buildDecklist } from './DecklistHelper';
 import type { CardOption } from '@/types';
 
+// Note: groupCardsForDecklist uses ADJACENT grouping to preserve display order
+// Only consecutive identical cards are grouped together
 const MOCK_CARDS: CardOption[] = [
   { uuid: '1', name: 'Sol Ring', order: 1, isUserUpload: false, set: 'CMM', number: '432' },
   { uuid: '2', name: 'Sol Ring', order: 2, isUserUpload: false, set: 'CMM', number: '432' },
   { uuid: '3', name: 'Brainstorm', order: 3, isUserUpload: false },
   { uuid: '4', name: 'Counterspell', order: 4, isUserUpload: false, set: 'A25' },
   { uuid: '5', name: 'Card Back', order: 5, isUserUpload: false }, // Should be ignored
-  { uuid: '6', name: '   Sol Ring ', order: 6, isUserUpload: false, set: 'cmm', number: '432' }, // Test trimming and case
+  { uuid: '6', name: '   Sol Ring ', order: 6, isUserUpload: false, set: 'cmm', number: '432' }, // Not adjacent to cards 1-2
 ];
 
 describe('DecklistHelper', () => {
   describe('groupCardsForDecklist', () => {
-    it('should group cards by name, set, and number, and count them', () => {
+    it('should group adjacent cards by name, set, and number, and count them', () => {
       const grouped = groupCardsForDecklist(MOCK_CARDS);
-      expect(grouped).toHaveLength(3);
+      // Cards 1-2 are adjacent Sol Rings = 1 group (count 2)
+      // Card 3 = Brainstorm (count 1)
+      // Card 4 = Counterspell (count 1)
+      // Card 5 = Card Back (ignored)
+      // Card 6 = Sol Ring but NOT adjacent to 1-2 = separate group (count 1)
+      expect(grouped).toHaveLength(4);
 
-      const solRing = grouped.find(c => c.name === 'Sol Ring');
-      expect(solRing?.count).toBe(3);
-      expect(solRing?.set).toBe('CMM');
-      expect(solRing?.number).toBe('432');
+      // First Sol Ring group (cards 1-2)
+      const firstSolRing = grouped[0];
+      expect(firstSolRing.name).toBe('Sol Ring');
+      expect(firstSolRing.count).toBe(2);
+      expect(firstSolRing.set).toBe('CMM');
+      expect(firstSolRing.number).toBe('432');
 
       const brainstorm = grouped.find(c => c.name === 'Brainstorm');
       expect(brainstorm?.count).toBe(1);
@@ -30,6 +39,12 @@ describe('DecklistHelper', () => {
       const counterspell = grouped.find(c => c.name === 'Counterspell');
       expect(counterspell?.count).toBe(1);
       expect(counterspell?.set).toBe('A25');
+
+      // Second Sol Ring group (card 6, trimmed name)
+      const secondSolRing = grouped[3];
+      expect(secondSolRing.name).toBe('Sol Ring');
+      expect(secondSolRing.count).toBe(1);
+      expect(secondSolRing.set).toBe('cmm'); // Original case preserved
     });
 
     it('should ignore cards named "Card Back"', () => {
@@ -54,10 +69,10 @@ describe('DecklistHelper', () => {
       const entry = { ...MOCK_ENTRY, number: undefined };
       expect(formatDecklistLine(entry, 'withSetNum')).toBe('2x Test Card (TST)');
     });
-    
+
     it('should format in "withSetNum" style with no set or number', () => {
-        const entry = { ...MOCK_ENTRY, set: undefined, number: undefined };
-        expect(formatDecklistLine(entry, 'withSetNum')).toBe('2x Test Card');
+      const entry = { ...MOCK_ENTRY, set: undefined, number: undefined };
+      expect(formatDecklistLine(entry, 'withSetNum')).toBe('2x Test Card');
     });
 
     it('should format in "scryfallish" style', () => {
@@ -66,12 +81,15 @@ describe('DecklistHelper', () => {
   });
 
   describe('buildDecklist', () => {
-    it('should build a decklist string', () => {
+    it('should build a decklist string with adjacent grouping', () => {
       const decklist = buildDecklist(MOCK_CARDS);
-      // Order is not guaranteed, so check for presence of lines
-      expect(decklist).toContain('3x Sol Ring');
+      // Adjacent grouping: 2x Sol Ring + 1x Brainstorm + 1x Counterspell + 1x Sol Ring
+      expect(decklist).toContain('2x Sol Ring');
       expect(decklist).toContain('1x Brainstorm');
       expect(decklist).toContain('1x Counterspell');
+      // The second Sol Ring group (card 6) should appear at the end
+      const lines = decklist.split('\n');
+      expect(lines[lines.length - 1]).toBe('1x Sol Ring');
     });
 
     it('should sort the decklist alphabetically if specified', () => {
@@ -79,12 +97,14 @@ describe('DecklistHelper', () => {
       const lines = decklist.split('\n');
       expect(lines[0]).toContain('Brainstorm');
       expect(lines[1]).toContain('Counterspell');
+      // Both Sol Ring entries come after alphabetically
       expect(lines[2]).toContain('Sol Ring');
+      expect(lines[3]).toContain('Sol Ring');
     });
 
     it('should use the specified style', () => {
       const decklist = buildDecklist(MOCK_CARDS, { style: 'withSetNum' });
-      expect(decklist).toContain('3x Sol Ring (CMM) 432');
+      expect(decklist).toContain('2x Sol Ring (CMM) 432');
       expect(decklist).toContain('1x Counterspell (A25)');
     });
   });

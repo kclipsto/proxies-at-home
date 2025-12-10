@@ -15,7 +15,7 @@ import { useCardsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
-import { addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
+import { addCards, addCustomImage, addRemoteImage } from "@/helpers/dbUtils";
 import { undoableAddCards } from "@/helpers/undoableActions";
 import { importStats } from "@/helpers/importStats";
 import {

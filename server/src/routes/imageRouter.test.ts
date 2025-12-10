@@ -236,45 +236,8 @@ describe("getWithRetry logic", () => {
         });
     });
 
-    describe("Cache Cleanup Logic", () => {
-        // Skipped: This test is flaky because cache cleanup runs asynchronously
-        // The cleanup is triggered by a timer after write, not synchronously during the request
-        it.skip("should clean cache if size exceeds limit", async () => {
-            // Mock fs.readdirSync to return files
-            (fs.readdirSync as unknown as Mock).mockReturnValue(["file1.png", "file2.png"]);
 
-            // Mock fs.statSync to return large size
-            const now = Date.now();
-            (fs.statSync as unknown as Mock).mockReturnValue({
-                isFile: () => true,
-                atimeMs: now,
-                size: 7 * 1024 * 1024 * 1024, // 7GB each, total 14GB > 12GB
-            });
-
-            // Mock fs.unlinkSync
-            (fs.unlinkSync as unknown as Mock).mockImplementation(() => { });
-
-            // Trigger cleanup via proxy endpoint
-            const url = "http://example.com/image.png";
-            (fs.existsSync as unknown as Mock).mockReturnValue(false); // Not in cache
-            mockedAxios.get.mockResolvedValue({
-                status: 200,
-                data: Buffer.from("image data"),
-                headers: { "content-type": "image/png" },
-            });
-
-            const sendFileSpy = vi.spyOn(express.response, "sendFile").mockImplementation(function (this: Response) {
-                this.type("image/png").send("image data");
-            });
-
-            await request(app).get(`/images/proxy?url=${encodeURIComponent(url)}`);
-
-            // Verify cleanup was attempted
-            expect(fs.readdirSync).toHaveBeenCalled();
-            expect(fs.unlinkSync).toHaveBeenCalled();
-            sendFileSpy.mockRestore();
-        }, 60000);
-    });
+    // Note: Cache cleanup test removed - async cleanup + 5-min throttle makes it unreliable
 
     describe("Proxy Error Handling", () => {
         it("should return 502 if upstream returns 404", async () => {
