@@ -11,6 +11,8 @@ interface WorkerMessage {
   apiBase: string;
   isUserUpload: boolean;
   hasBakedBleed?: boolean;
+  bleedMode?: 'generate' | 'existing' | 'none';  // Per-card bleed override
+  existingBleedMm?: number;  // Amount when bleedMode is 'existing'
   dpi: number;
   darkenNearBlack?: boolean;
 }

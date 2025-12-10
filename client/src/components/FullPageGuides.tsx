@@ -1,98 +1,105 @@
 import { memo } from "react";
 import { useSettingsStore } from "../store";
 
+type CardLayoutInfo = {
+  cardWidthMm: number;
+  cardHeightMm: number;
+  bleedMm: number;
+};
+
 type Props = {
-  totalCardWidthMm: number;
-  totalCardHeightMm: number;
+  cardLayouts: CardLayoutInfo[];
+  colWidths: number[];
+  rowHeights: number[];
   baseCardWidthMm: number;
   baseCardHeightMm: number;
-  bleedEdgeWidthMm: number;
-  cardCount: number;
 };
 
 const EdgeCutLines = memo(function EdgeCutLines({
-  totalCardWidthMm,
-  totalCardHeightMm,
+  cardLayouts,
+  colWidths,
+  rowHeights,
   baseCardWidthMm,
   baseCardHeightMm,
-  bleedEdgeWidthMm,
-  cardCount,
 }: Props) {
   const guideWidth = useSettingsStore((state) => state.guideWidth);
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
   const pageWidth = useSettingsStore((state) => state.pageWidth);
   const pageHeight = useSettingsStore((state) => state.pageHeight);
   const columns = useSettingsStore((state) => state.columns);
-  const rows = useSettingsStore((state) => state.rows);
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
   const cardPositionX = useSettingsStore((state) => state.cardPositionX);
   const cardPositionY = useSettingsStore((state) => state.cardPositionY);
   const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
 
-  if (cutLineStyle === "none" || guideWidth <= 0) return null;
+  if (cutLineStyle === "none" || guideWidth <= 0 || cardLayouts.length === 0) return null;
 
   const pageWidthMm = pageSizeUnit === "mm" ? pageWidth : pageWidth * 25.4;
   const pageHeightMm = pageSizeUnit === "mm" ? pageHeight : pageHeight * 25.4;
 
-  const gridWidthMm =
-    columns * totalCardWidthMm + Math.max(0, columns - 1) * cardSpacingMm;
-  const gridHeightMm =
-    rows * totalCardHeightMm + Math.max(0, rows - 1) * cardSpacingMm;
+  // Calculate grid dimensions from per-column/row sizes
+  const gridWidthMm = colWidths.reduce((sum, w) => sum + w, 0) + Math.max(0, colWidths.length - 1) * cardSpacingMm;
+  const gridHeightMm = rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, rowHeights.length - 1) * cardSpacingMm;
 
   const startXmm = (pageWidthMm - gridWidthMm) / 2 + cardPositionX;
   const startYmm = (pageHeightMm - gridHeightMm) / 2 + cardPositionY;
 
-  const cutInX = bleedEdgeWidthMm;
-  const cutOutX = bleedEdgeWidthMm + baseCardWidthMm;
-  const cutInY = bleedEdgeWidthMm;
-  const cutOutY = bleedEdgeWidthMm + baseCardHeightMm;
-
-  // Determine occupied rows and columns
-  const occupiedCols = new Set<number>();
-  const occupiedRows = new Set<number>();
-  for (let i = 0; i < cardCount; i++) {
-    occupiedCols.add(i % columns);
-    occupiedRows.add(Math.floor(i / columns));
-  }
-
-  // Collect all vertical/horizontal cut positions
-  const xCuts = new Set<number>();
-  for (let c = 0; c < columns; c++) {
-    if (occupiedCols.has(c)) {
-      const cellLeft = startXmm + c * (totalCardWidthMm + cardSpacingMm);
-      xCuts.add(cellLeft + cutInX);
-      xCuts.add(cellLeft + cutOutX);
-    }
-  }
-  const yCuts = new Set<number>();
-  for (let r = 0; r < rows; r++) {
-    if (occupiedRows.has(r)) {
-      const cellTop = startYmm + r * (totalCardHeightMm + cardSpacingMm);
-      yCuts.add(cellTop + cutInY);
-      yCuts.add(cellTop + cutOutY);
-    }
-  }
-
-  // Guide width is in CSS pixels
   const guideWidthPx = Math.max(1, Math.round(guideWidth));
 
   const els: React.ReactElement[] = [];
-  // Re-calculate cuts with direction
+
+  // Build maps to track cut positions with direction
   const xCutsMap = new Map<number, 'left' | 'right' | 'both'>();
-  for (let c = 0; c < columns; c++) {
-    if (occupiedCols.has(c)) {
-      const cellLeft = startXmm + c * (totalCardWidthMm + cardSpacingMm);
-      const leftCut = cellLeft + cutInX;
-      const rightCut = cellLeft + cutOutX;
+  const yCutsMap = new Map<number, 'top' | 'bottom' | 'both'>();
 
-      // Left cut (left edge of card content) -> grow left
-      xCutsMap.set(leftCut, xCutsMap.get(leftCut) === 'right' ? 'both' : 'left');
-
-      // Right cut (right edge of card content) -> grow right
-      xCutsMap.set(rightCut, xCutsMap.get(rightCut) === 'left' ? 'both' : 'right');
-    }
+  // Compute column start positions
+  const colStarts: number[] = [];
+  let xPos = startXmm;
+  for (let c = 0; c < colWidths.length; c++) {
+    colStarts.push(xPos);
+    xPos += colWidths[c] + cardSpacingMm;
   }
 
+  // Compute row start positions
+  const rowStarts: number[] = [];
+  let yPos = startYmm;
+  for (let r = 0; r < rowHeights.length; r++) {
+    rowStarts.push(yPos);
+    yPos += rowHeights[r] + cardSpacingMm;
+  }
+
+  // Process each card to compute cut positions
+  cardLayouts.forEach((layout, idx) => {
+    const col = idx % columns;
+    const row = Math.floor(idx / columns);
+
+    if (col >= colStarts.length || row >= rowStarts.length) return;
+
+    const cellLeft = colStarts[col];
+    const cellTop = rowStarts[row];
+    const cellWidth = colWidths[col];
+    const cellHeight = rowHeights[row];
+
+    // Card is centered within cell
+    const cardLeft = cellLeft + (cellWidth - layout.cardWidthMm) / 2;
+    const cardTop = cellTop + (cellHeight - layout.cardHeightMm) / 2;
+
+    // Cut positions are at bleed edge (inset from card edge by bleedMm)
+    const leftCut = cardLeft + layout.bleedMm;
+    const rightCut = cardLeft + layout.bleedMm + baseCardWidthMm;
+    const topCut = cardTop + layout.bleedMm;
+    const bottomCut = cardTop + layout.bleedMm + baseCardHeightMm;
+
+    // Vertical cuts
+    xCutsMap.set(leftCut, xCutsMap.get(leftCut) === 'right' ? 'both' : 'left');
+    xCutsMap.set(rightCut, xCutsMap.get(rightCut) === 'left' ? 'both' : 'right');
+
+    // Horizontal cuts
+    yCutsMap.set(topCut, yCutsMap.get(topCut) === 'bottom' ? 'both' : 'top');
+    yCutsMap.set(bottomCut, yCutsMap.get(bottomCut) === 'top' ? 'both' : 'bottom');
+  });
+
+  // Draw vertical cut lines
   [...xCutsMap.entries()].forEach(([x, type], i) => {
     const drawLine = (offsetPx: number) => {
       if (cutLineStyle === "full") {
@@ -150,26 +157,14 @@ const EdgeCutLines = memo(function EdgeCutLines({
     };
 
     if (type === 'left' || type === 'both') {
-      drawLine(-guideWidthPx); // Grow left
+      drawLine(-guideWidthPx);
     }
     if (type === 'right' || type === 'both') {
-      drawLine(0); // Grow right
+      drawLine(0);
     }
   });
 
-  // Horizontal cuts
-  const yCutsMap = new Map<number, 'top' | 'bottom' | 'both'>();
-  for (let r = 0; r < rows; r++) {
-    if (occupiedRows.has(r)) {
-      const cellTop = startYmm + r * (totalCardHeightMm + cardSpacingMm);
-      const topCut = cellTop + cutInY;
-      const botCut = cellTop + cutOutY;
-
-      yCutsMap.set(topCut, yCutsMap.get(topCut) === 'bottom' ? 'both' : 'top');
-      yCutsMap.set(botCut, yCutsMap.get(botCut) === 'top' ? 'both' : 'bottom');
-    }
-  }
-
+  // Draw horizontal cut lines
   [...yCutsMap.entries()].forEach(([y, type], i) => {
     const drawLine = (offsetPx: number) => {
       if (cutLineStyle === "full") {
@@ -226,10 +221,10 @@ const EdgeCutLines = memo(function EdgeCutLines({
     };
 
     if (type === 'top' || type === 'both') {
-      drawLine(-guideWidthPx); // Grow up
+      drawLine(-guideWidthPx);
     }
     if (type === 'bottom' || type === 'both') {
-      drawLine(0); // Grow down
+      drawLine(0);
     }
   });
 

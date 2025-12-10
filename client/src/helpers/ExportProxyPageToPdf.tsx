@@ -49,6 +49,12 @@ export async function exportProxyPagesToPdf({
   cutLineStyle,
   perCardGuideStyle,
   guidePlacement,
+  mpcBleedMode,
+  mpcExistingBleed,
+  mpcExistingBleedUnit,
+  uploadBleedMode,
+  uploadExistingBleed,
+  uploadExistingBleedUnit,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
@@ -73,6 +79,12 @@ export async function exportProxyPagesToPdf({
   cutLineStyle: 'none' | 'edges' | 'full';
   perCardGuideStyle: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
   guidePlacement: 'inside' | 'outside';
+  mpcBleedMode: 'use-existing' | 'trim-regenerate' | 'none';
+  mpcExistingBleed: number;
+  mpcExistingBleedUnit: 'mm' | 'in';
+  uploadBleedMode: 'generate' | 'existing' | 'none';
+  uploadExistingBleed: number;
+  uploadExistingBleedUnit: 'mm' | 'in';
 }): Promise<void> {
   if (!cards || !cards.length) {
     return;
@@ -237,6 +249,12 @@ export async function exportProxyPagesToPdf({
                       cutLineStyle,
                       perCardGuideStyle,
                       guidePlacement,
+                      mpcBleedMode,
+                      mpcExistingBleed,
+                      mpcExistingBleedUnit,
+                      uploadBleedMode,
+                      uploadExistingBleed,
+                      uploadExistingBleedUnit,
                     };
 
                     idleWorker.worker.postMessage({

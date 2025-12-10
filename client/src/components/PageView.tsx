@@ -16,7 +16,7 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { Button, Label } from "flowbite-react";
-import { Copy, Trash, ZoomIn, ZoomOut } from "lucide-react";
+import { ZoomIn, ZoomOut } from "lucide-react";
 import { useRef, useState, useEffect, useMemo, useCallback, useLayoutEffect } from "react";
 import { usePinch, useDrag } from "@use-gesture/react";
 import fullLogo from "../assets/fullLogo.png";
@@ -30,6 +30,7 @@ import { undoableDeleteCard, undoableDuplicateCard, undoableReorderCards } from 
 import type { useImageProcessing } from "../hooks/useImageProcessing";
 import { useArtworkModalStore } from "../store";
 import { useSettingsStore } from "../store/settings";
+import { useSelectionStore } from "../store/selection";
 import { useUndoRedoStore } from "../store/undoRedo";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 import { ArtworkModal } from "./ArtworkModal";
@@ -38,9 +39,96 @@ import { UndoRedoControls } from "./UndoRedoControls";
 import { useShallow } from "zustand/react/shallow";
 import { useOnClickOutside } from "../hooks/useOnClickOutside";
 import { PullToRefresh } from "./PullToRefresh";
+import { Copy, Trash, CheckSquare, XSquare, Settings } from "lucide-react";
 
 const baseCardWidthMm = 63;
 const baseCardHeightMm = 88;
+
+// Helper to compute per-card layout with variable bleed widths
+type CardLayoutInfo = {
+  cardWidthMm: number;
+  cardHeightMm: number;
+  bleedMm: number;
+};
+
+type SourceTypeSettings = {
+  mpcBleedMode: 'use-existing' | 'trim-regenerate' | 'none';
+  mpcExistingBleed: number;
+  mpcExistingBleedUnit: 'mm' | 'in';
+  uploadBleedMode: 'generate' | 'existing' | 'none';
+  uploadExistingBleed: number;
+  uploadExistingBleedUnit: 'mm' | 'in';
+};
+
+/**
+ * Compute per-card bleed width based on:
+ * 1. Per-card override (card.bleedMode, card.existingBleedMm)
+ * 2. Source-type settings (MPC vs Other)
+ * 3. Global bleed setting
+ */
+function getCardTargetBleed(
+  card: CardOption,
+  sourceSettings: SourceTypeSettings,
+  globalBleedWidth: number,
+): number {
+  // Per-card override takes precedence
+  if (card.bleedMode) {
+    if (card.bleedMode === 'none') return 0;
+    if (card.bleedMode === 'existing' && card.existingBleedMm !== undefined) {
+      return card.existingBleedMm;
+    }
+    // 'generate' uses global bleed width
+    return globalBleedWidth;
+  }
+
+  // MPC images (hasBakedBleed = true)
+  if (card.hasBakedBleed) {
+    if (sourceSettings.mpcBleedMode === 'none') {
+      return 0;
+    } else if (sourceSettings.mpcBleedMode === 'use-existing') {
+      const existingMm = sourceSettings.mpcExistingBleedUnit === 'in'
+        ? sourceSettings.mpcExistingBleed * 25.4
+        : sourceSettings.mpcExistingBleed;
+      return existingMm;
+    } else {
+      // trim-regenerate: use global bleed width
+      return globalBleedWidth;
+    }
+  }
+
+  // Other Uploads (isUserUpload = true, hasBakedBleed = false)
+  if (card.isUserUpload) {
+    if (sourceSettings.uploadBleedMode === 'none') {
+      return 0;
+    } else if (sourceSettings.uploadBleedMode === 'existing') {
+      const existingMm = sourceSettings.uploadExistingBleedUnit === 'in'
+        ? sourceSettings.uploadExistingBleed * 25.4
+        : sourceSettings.uploadExistingBleed;
+      return existingMm;
+    }
+    // 'generate' uses global bleed width
+    return globalBleedWidth;
+  }
+
+  // Scryfall/standard images (isUserUpload = false) - use global bleed
+  return globalBleedWidth;
+}
+
+function computeCardLayouts(
+  pageCards: CardOption[],
+  sourceSettings: SourceTypeSettings,
+  globalBleedWidth: number,
+): CardLayoutInfo[] {
+  return pageCards.map((card) => {
+    const bleedMm = getCardTargetBleed(card, sourceSettings, globalBleedWidth);
+    return {
+      cardWidthMm: baseCardWidthMm + bleedMm * 2,
+      cardHeightMm: baseCardHeightMm + bleedMm * 2,
+      bleedMm,
+    };
+  });
+}
+
 
 type PageViewProps = {
   loadingMap: ReturnType<typeof useImageProcessing>["loadingMap"];
@@ -61,6 +149,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     rows,
     bleedEdge,
     bleedEdgeWidth,
+    bleedEdgeUnit,
     zoom,
     setZoom,
     settingsPanelWidth,
@@ -73,6 +162,13 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     filterColors,
     cardPositionX,
     cardPositionY,
+    // Source-type bleed settings
+    mpcBleedMode,
+    mpcExistingBleed,
+    mpcExistingBleedUnit,
+    uploadBleedMode,
+    uploadExistingBleed,
+    uploadExistingBleedUnit,
   } = useSettingsStore(
     useShallow((state) => ({
       pageSizeUnit: state.pageSizeUnit,
@@ -82,6 +178,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       rows: state.rows,
       bleedEdge: state.bleedEdge,
       bleedEdgeWidth: state.bleedEdgeWidth,
+      bleedEdgeUnit: state.bleedEdgeUnit,
       zoom: state.zoom,
       setZoom: state.setZoom,
       settingsPanelWidth: state.settingsPanelWidth,
@@ -94,10 +191,29 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       filterColors: state.filterColors,
       cardPositionX: state.cardPositionX,
       cardPositionY: state.cardPositionY,
+      // Source-type bleed settings
+      mpcBleedMode: state.mpcBleedMode,
+      mpcExistingBleed: state.mpcExistingBleed,
+      mpcExistingBleedUnit: state.mpcExistingBleedUnit,
+      uploadBleedMode: state.uploadBleedMode,
+      uploadExistingBleed: state.uploadExistingBleed,
+      uploadExistingBleedUnit: state.uploadExistingBleedUnit,
     }))
   );
 
-  const effectiveBleedWidth = bleedEdge ? bleedEdgeWidth : 0;
+  // Build source settings object for computeCardLayouts
+  const sourceSettings: SourceTypeSettings = useMemo(() => ({
+    mpcBleedMode,
+    mpcExistingBleed,
+    mpcExistingBleedUnit,
+    uploadBleedMode,
+    uploadExistingBleed,
+    uploadExistingBleedUnit,
+  }), [mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode, uploadExistingBleed, uploadExistingBleedUnit]);
+
+  const effectiveBleedWidth = bleedEdge
+    ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth)
+    : 0;
 
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -198,10 +314,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
 
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
-  // Guide offset is simply the bleed width in mm (no pixel conversion needed)
-  const guideOffset = `${effectiveBleedWidth}mm`;
-  const totalCardWidth = baseCardWidthMm + effectiveBleedWidth * 2;
-  const totalCardHeight = baseCardHeightMm + effectiveBleedWidth * 2;
   const pageCapacity = columns * rows;
   const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
 
@@ -291,6 +403,15 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   const lastOptimisticOrder = useRef<string[]>([]);
 
   const { filteredAndSortedCards } = useFilteredAndSortedCards(localCards);
+
+  // Compute allCardUuids for range selection
+  const allCardUuids = useMemo(() => filteredAndSortedCards.map(c => c.uuid), [filteredAndSortedCards]);
+
+  // Selection store
+  const selectedCards = useSelectionStore((state) => state.selectedCards);
+  const selectAll = useSelectionStore((state) => state.selectAll);
+  const clearSelection = useSelectionStore((state) => state.clearSelection);
+  const hasSelection = selectedCards.size > 0;
 
   useEffect(() => {
     if (droppedId) {
@@ -686,96 +807,143 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
                     }}
                   >
                     <div className="relative w-full h-full">
-                      <EdgeCutLines
-                        totalCardWidthMm={totalCardWidth}
-                        totalCardHeightMm={totalCardHeight}
-                        baseCardWidthMm={baseCardWidthMm}
-                        baseCardHeightMm={baseCardHeightMm}
-                        bleedEdgeWidthMm={effectiveBleedWidth}
-                        cardCount={page.length}
-                      />
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "50%",
-                          top: "50%",
-                          transform: `translate(calc(-50% + ${cardPositionX}mm), calc(-50% + ${cardPositionY}mm))`,
-                          display: "grid",
-                          gridTemplateColumns: `repeat(${columns}, ${totalCardWidth}mm)`,
-                          gridTemplateRows: `repeat(${rows}, ${totalCardHeight}mm)`,
-                          gap: `${cardSpacingMm}mm`,
-                        }}
-                      >
-                        {page.map((card, index) => {
-                          const globalIndex = pageIndex * pageCapacity + index;
+                      {(() => {
+                        // Compute layouts once for this page
+                        const layouts = computeCardLayouts(page, sourceSettings, effectiveBleedWidth);
 
-                          // If the card has no imageId, it's permanently not found.
-                          if (!card.imageId) {
-                            return (
-                              <div
-                                key={globalIndex}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setContextMenu({
-                                    visible: true,
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                    cardUuid: card.uuid,
-                                  });
-                                }}
-                                onClick={() => {
-                                  openArtworkModal({
-                                    card,
-                                    index: globalIndex,
-                                  });
-                                }}
-                                className="flex items-center justify-center border-2 border-dashed border-red-500 bg-gray-50 text-center p-2 select-none"
-                                style={{
-                                  boxSizing: "border-box",
-                                }}
-                                title={`"${card.name}" not found`}
-                              >
-                                <div>
-                                  <div className="font-semibold text-red-700">
-                                    "{card.name}"
-                                  </div>
-                                  <div className="text-xs text-gray-600">
-                                    Image not available
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          }
+                        // Initialize with base dimensions (no bleed) to allow growing only as needed
+                        // This prevents pages with only existing-bleed cards (e.g. MPC) from being forced
+                        // to the global bleed size if the global setting is large.
+                        const startWidth = baseCardWidthMm;
+                        const startHeight = baseCardHeightMm;
 
-                          const processedBlobUrl = processedImageUrls[card.imageId];
+                        // Compute max width per column (use base for empty columns)
+                        const colWidths: number[] = Array(columns).fill(startWidth);
+                        layouts.forEach((layout, idx) => {
+                          const col = idx % columns;
+                          colWidths[col] = Math.max(colWidths[col], layout.cardWidthMm);
+                        });
 
-                          return (
-                            <CardCellLazy
-                              key={card.uuid}
-                              card={card}
-                              state={loadingMap[card.uuid] ?? "idle"}
-                              hasImage={!!processedBlobUrl}
-                              ensureProcessed={ensureProcessed}
+                        // Compute max height per row - always use full grid rows
+                        const rowHeights: number[] = Array(rows).fill(startHeight);
+                        layouts.forEach((layout, idx) => {
+                          const row = Math.floor(idx / columns);
+                          rowHeights[row] = Math.max(rowHeights[row], layout.cardHeightMm);
+                        });
+
+                        return (
+                          <>
+                            <EdgeCutLines
+                              cardLayouts={layouts}
+                              colWidths={colWidths}
+                              rowHeights={rowHeights}
+                              baseCardWidthMm={baseCardWidthMm}
+                              baseCardHeightMm={baseCardHeightMm}
+                            />
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: "50%",
+                                top: "50%",
+                                transform: `translate(calc(-50% + ${cardPositionX}mm), calc(-50% + ${cardPositionY}mm))`,
+                                display: "grid",
+                                gridTemplateColumns: colWidths.map(w => `${w}mm`).join(' '),
+                                gridTemplateRows: rowHeights.map(h => `${h}mm`).join(' '),
+                                gap: `${cardSpacingMm}mm`,
+                              }}
                             >
-                              <SortableCard
-                                key={card.uuid}
-                                card={card}
-                                index={index}
-                                globalIndex={globalIndex}
-                                imageSrc={processedBlobUrl!}
-                                totalCardWidth={totalCardWidth}
-                                totalCardHeight={totalCardHeight}
-                                guideOffset={guideOffset}
-                                setContextMenu={setContextMenu}
-                                disabled={dndDisabled}
-                                mobile={mobile}
-                                scale={mobile ? zoom * mobileZoomFactor : zoom}
-                                dropped={droppedId === card.uuid}
-                              />
-                            </CardCellLazy>
-                          );
-                        })}
-                      </div>
+                              {page.map((card, index) => {
+                                const globalIndex = pageIndex * pageCapacity + index;
+                                const layout = layouts[index];
+
+                                // If the card has no imageId, it's permanently not found.
+                                if (!card.imageId) {
+                                  return (
+                                    <div
+                                      key={globalIndex}
+                                      className="flex items-center justify-center"
+                                      style={{
+                                        width: `${layout.cardWidthMm}mm`,
+                                        height: `${layout.cardHeightMm}mm`,
+                                        justifySelf: 'center',
+                                        alignSelf: 'center',
+                                      }}
+                                    >
+                                      <div
+                                        onContextMenu={(e) => {
+                                          e.preventDefault();
+                                          setContextMenu({
+                                            visible: true,
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            cardUuid: card.uuid,
+                                          });
+                                        }}
+                                        onClick={() => {
+                                          openArtworkModal({
+                                            card,
+                                            index: globalIndex,
+                                          });
+                                        }}
+                                        className="flex items-center justify-center border-2 border-dashed border-red-500 bg-gray-50 text-center p-2 select-none w-full h-full"
+                                        style={{
+                                          boxSizing: "border-box",
+                                        }}
+                                        title={`"${card.name}" not found`}
+                                      >
+                                        <div>
+                                          <div className="font-semibold text-red-700">
+                                            "{card.name}"
+                                          </div>
+                                          <div className="text-xs text-gray-600">
+                                            Image not available
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                const processedBlobUrl = processedImageUrls[card.imageId];
+
+                                return (
+                                  <div
+                                    key={card.uuid}
+                                    style={{
+                                      justifySelf: 'center',
+                                      alignSelf: 'center',
+                                    }}
+                                  >
+                                    <CardCellLazy
+                                      card={card}
+                                      state={loadingMap[card.uuid] ?? "idle"}
+                                      hasImage={!!processedBlobUrl}
+                                      ensureProcessed={ensureProcessed}
+                                    >
+                                      <SortableCard
+                                        card={card}
+                                        index={index}
+                                        globalIndex={globalIndex}
+                                        imageSrc={processedBlobUrl!}
+                                        totalCardWidth={layout.cardWidthMm}
+                                        totalCardHeight={layout.cardHeightMm}
+                                        guideOffset={`${layout.bleedMm}mm`}
+                                        imageBleedWidth={layout.bleedMm}
+                                        allCardUuids={allCardUuids}
+                                        setContextMenu={setContextMenu}
+                                        disabled={dndDisabled}
+                                        mobile={mobile}
+                                        scale={mobile ? zoom * mobileZoomFactor : zoom}
+                                        dropped={droppedId === card.uuid}
+                                      />
+                                    </CardCellLazy>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
@@ -785,6 +953,10 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
             <DragOverlay zIndex={40}>
               {droppedId ? null : (localCards.find(c => c.uuid === activeId) ? (() => {
                 const card = localCards.find(c => c.uuid === activeId)!;
+                // Compute per-card bleed for the dragged card using source settings
+                const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
+                const cardWidthMm = baseCardWidthMm + bleedMm * 2;
+                const cardHeightMm = baseCardHeightMm + bleedMm * 2;
 
                 return (
                   <CardView
@@ -792,9 +964,10 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
                     index={0} // Index doesn't matter for overlay
                     globalIndex={0} // Global index doesn't matter for overlay
                     imageSrc={processedImageUrls[card.imageId!] || ""}
-                    totalCardWidth={totalCardWidth}
-                    totalCardHeight={totalCardHeight}
-                    guideOffset={guideOffset}
+                    totalCardWidth={cardWidthMm}
+                    totalCardHeight={cardHeightMm}
+                    guideOffset={`${bleedMm}mm`}
+                    imageBleedWidth={bleedMm}
                     setContextMenu={setContextMenu}
                     disabled={true} // Disable interactions on overlay
                     mobile={mobile}
@@ -825,30 +998,125 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
             setContextMenu({ ...contextMenu, visible: false })
           }
         >
-          <Button
-            size="xs"
-            onClick={async () => {
-              await undoableDuplicateCard(contextMenu.cardUuid!);
-              setContextMenu({ ...contextMenu, visible: false });
-            }}
-          >
-            <Copy className="size-3 mr-1" />
-            Duplicate
-          </Button>
-          <Button
-            size="xs"
-            color="red"
-            onClick={async () => {
-              await undoableDeleteCard(contextMenu.cardUuid!);
-              setContextMenu({ ...contextMenu, visible: false });
-            }}
-          >
-            <Trash className="size-3 mr-1" />
-            Delete
-          </Button>
+          {/* Show selection controls when multiple cards are selected */}
+          {hasSelection && selectedCards.has(contextMenu.cardUuid) && (
+            <>
+              <Button
+                size="xs"
+                onClick={async () => {
+                  const uuids = Array.from(selectedCards);
+                  for (const uuid of uuids) {
+                    await undoableDuplicateCard(uuid);
+                  }
+                  clearSelection();
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Copy className="size-3 mr-1" />
+                Duplicate {selectedCards.size} Selected
+              </Button>
+              <Button
+                size="xs"
+                onClick={() => {
+                  const card = cards?.find(c => c.uuid === contextMenu.cardUuid);
+                  if (card) {
+                    openArtworkModal({ card, index: null, initialTab: 'settings' });
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Settings className="size-3 mr-1" />
+                Settings {selectedCards.size} Selected
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                onClick={async () => {
+                  const uuids = Array.from(selectedCards);
+                  for (const uuid of uuids) {
+                    await undoableDeleteCard(uuid);
+                  }
+                  clearSelection();
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Trash className="size-3 mr-1" />
+                Delete {selectedCards.size} Selected
+              </Button>
+            </>
+          )}
+          {/* Single card operations */}
+          {(!hasSelection || !selectedCards.has(contextMenu.cardUuid)) && (
+            <>
+              <Button
+                size="xs"
+                onClick={async () => {
+                  await undoableDuplicateCard(contextMenu.cardUuid!);
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Copy className="size-3 mr-1" />
+                Duplicate
+              </Button>
+              <Button
+                size="xs"
+                onClick={() => {
+                  const card = cards?.find(c => c.uuid === contextMenu.cardUuid);
+                  if (card) {
+                    openArtworkModal({ card, index: null, initialTab: 'settings' });
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Settings className="size-3 mr-1" />
+                Settings
+              </Button>
+              <Button
+                size="xs"
+                color="red"
+                onClick={async () => {
+                  await undoableDeleteCard(contextMenu.cardUuid!);
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                <Trash className="size-3 mr-1" />
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       )}
 
+      {/* Floating Selection Bar - shows when cards are selected */}
+      {hasSelection && cards && cards.length > 0 && (
+        <div
+          className="fixed bottom-6 z-40 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg flex items-center"
+          style={{
+            left: `calc(50% + ${((isUploadPanelCollapsed ? 60 : uploadPanelWidth) - (isSettingsPanelCollapsed ? 60 : settingsPanelWidth)) / 2}px)`,
+            transform: 'translateX(-50%)'
+          }}>
+          <span className="px-3 py-3 text-sm font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap border-r border-gray-300 dark:border-gray-600">
+            {selectedCards.size} selected
+          </span>
+          <button
+            onClick={() => selectAll(allCardUuids)}
+            className="px-3 py-3 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-75 active:translate-y-[1px] flex items-center gap-2 border-r border-gray-300 dark:border-gray-600"
+            title="Select All"
+          >
+            <CheckSquare className="size-4" />
+            <span className="text-sm">Select All</span>
+          </button>
+          <button
+            onClick={clearSelection}
+            className="px-3 py-3 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-75 active:translate-y-[1px] flex items-center gap-2"
+            title="Deselect All"
+          >
+            <XSquare className="size-4" />
+            <span className="text-sm">Deselect</span>
+          </button>
+        </div>
+      )
+      }
       {/* Floating Zoom Controls - Desktop Only */}
       {
         !mobile && cards && cards.length > 0 && (
@@ -916,6 +1184,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
         )
       }
       <ArtworkModal />
-    </div>
+    </div >
   );
 }

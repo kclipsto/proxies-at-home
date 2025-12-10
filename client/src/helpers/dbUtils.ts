@@ -365,6 +365,13 @@ export async function changeCardArtwork(
     const changes: Partial<CardOption> = {
       imageId: newImageId,
       isUserUpload: newImageIsCustom,
+      // Reset baked bleed flag because we are switching to a specific image
+      // (usually Scryfall) which we assume does NOT have baked bleed.
+      hasBakedBleed: false,
+      // Reset enrichment flags since user manually selected this
+      needsEnrichment: false,
+      enrichmentRetryCount: undefined,
+      enrichmentNextRetryAt: undefined,
     };
     if (newName) {
       changes.name = newName;
@@ -422,6 +429,39 @@ export async function changeCardArtwork(
         }
       }
     }
+  });
+}
+
+/**
+ * Updates the per-card bleed settings for one or more cards.
+ * @param cardUuids Array of card UUIDs to update.
+ * @param bleedSettings The bleed settings to apply.
+ */
+export async function updateCardBleedSettings(
+  cardUuids: string[],
+  bleedSettings: {
+    bleedMode?: 'generate' | 'existing' | 'none';
+    existingBleedMm?: number;
+  }
+): Promise<void> {
+  if (cardUuids.length === 0) return;
+
+  await db.transaction("rw", db.cards, async () => {
+    const changes: Partial<CardOption> = {};
+
+    if (bleedSettings.bleedMode !== undefined) {
+      changes.bleedMode = bleedSettings.bleedMode;
+    }
+    if (bleedSettings.existingBleedMm !== undefined) {
+      changes.existingBleedMm = bleedSettings.existingBleedMm;
+    }
+
+    await db.cards.bulkUpdate(
+      cardUuids.map((uuid) => ({
+        key: uuid,
+        changes,
+      }))
+    );
   });
 }
 

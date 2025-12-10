@@ -4,7 +4,9 @@ import { CSS } from "@dnd-kit/utilities";
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import type { DraggableAttributes } from "@dnd-kit/core";
 import { useArtworkModalStore, useSettingsStore } from "../store";
+import { useSelectionStore } from "../store/selection";
 import type { CardOption } from "../../../shared/types";
+import { Check } from "lucide-react";
 
 type SortableCardProps = {
   card: CardOption;
@@ -14,6 +16,8 @@ type SortableCardProps = {
   totalCardWidth: number;
   totalCardHeight: number;
   guideOffset: number | string;
+  imageBleedWidth?: number;  // Per-image bleed width for custom bleed overrides
+  allCardUuids?: string[];  // For shift+click range selection
   setContextMenu: (menu: {
     visible: boolean;
     x: number;
@@ -34,6 +38,8 @@ export const CardView = memo(function CardView({
   globalIndex,
   imageSrc,
   guideOffset,
+  imageBleedWidth,
+  allCardUuids,
   setContextMenu,
   disabled,
   mobile,
@@ -56,10 +62,32 @@ export const CardView = memo(function CardView({
   const guidePlacement = useSettingsStore((state) => state.guidePlacement);
   const openArtworkModal = useArtworkModalStore((state) => state.openModal);
 
+  // Multi-select state
+  const isSelected = useSelectionStore((state) => state.selectedCards.has(card.uuid));
+  const toggleSelection = useSelectionStore((state) => state.toggleSelection);
+  const selectRange = useSelectionStore((state) => state.selectRange);
+  const hasAnySelection = useSelectionStore((state) => state.selectedCards.size > 0);
+
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (isOverlay) return; // No interactions on overlay
+
+    // Shift+click for range selection
+    if (e.shiftKey && allCardUuids) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectRange(allCardUuids, globalIndex);
+      return;
+    }
+
+    // Ctrl/Cmd+click for multi-select
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSelection(card.uuid, globalIndex);
+      return;
+    }
 
     if (mobile) {
       if (clickTimeoutRef.current) {
@@ -77,13 +105,14 @@ export const CardView = memo(function CardView({
       } else {
         // Single tap - wait for potential second tap
         clickTimeoutRef.current = setTimeout(() => {
-          openArtworkModal({ card, index: globalIndex });
+          // If card is selected, open Settings tab
+          openArtworkModal({ card, index: globalIndex, initialTab: isSelected ? 'settings' : 'artwork' });
           clickTimeoutRef.current = null;
         }, 300);
       }
     } else {
-      // Desktop behavior
-      openArtworkModal({ card, index: globalIndex });
+      // Desktop behavior - if card is selected, open Settings tab
+      openArtworkModal({ card, index: globalIndex, initialTab: isSelected ? 'settings' : 'artwork' });
     }
   };
 
@@ -114,6 +143,35 @@ export const CardView = memo(function CardView({
           onDragStart={(e) => e.preventDefault()}
           className="cursor-pointer block select-none w-full h-full"
         />
+      )}
+
+      {/* Selection Overlay - visible when card is selected */}
+      {isSelected && !isOverlay && (
+        <div className="absolute inset-0 bg-blue-500/30 pointer-events-none z-10 border-4 border-blue-500" />
+      )}
+
+      {/* Selection Checkbox - visible on hover or when any card is selected */}
+      {!disabled && !isOverlay && (
+        <div
+          className={`absolute left-1 top-1 w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer z-20 transition-opacity ${isSelected
+            ? 'bg-blue-600 border-blue-600 opacity-100'
+            : hasAnySelection
+              ? 'bg-white/80 border-gray-400 opacity-100'
+              : 'bg-white/80 border-gray-400 opacity-0 group-hover:opacity-100'
+            }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            // Shift+click for range selection
+            if (e.shiftKey && allCardUuids) {
+              selectRange(allCardUuids, globalIndex);
+            } else {
+              toggleSelection(card.uuid, globalIndex);
+            }
+          }}
+          title="Select card"
+        >
+          {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+        </div>
       )}
 
       {/* ⠿ Drag Handle - Desktop Only */}
@@ -258,9 +316,12 @@ export const CardView = memo(function CardView({
               const DPI = 96;
               const mmToPx = (mm: number) => (mm * DPI) / 25.4;
 
-              // Parse guideOffset to pixels
+              // Parse guideOffset to pixels, or use imageBleedWidth if available (for per-card custom bleed)
               let offsetPx = 0;
-              if (typeof guideOffset === 'number') {
+              if (imageBleedWidth !== undefined) {
+                // Per-card bleed width takes precedence
+                offsetPx = mmToPx(imageBleedWidth);
+              } else if (typeof guideOffset === 'number') {
                 offsetPx = guideOffset;
               } else if (typeof guideOffset === 'string' && guideOffset.endsWith('mm')) {
                 offsetPx = mmToPx(parseFloat(guideOffset));
@@ -338,9 +399,21 @@ export const CardView = memo(function CardView({
               const isSquare = perCardGuideStyle === 'solid-squared-rect' || perCardGuideStyle === 'dashed-squared-rect';
               const isDashed = perCardGuideStyle === 'dashed-rounded-rect' || perCardGuideStyle === 'dashed-squared-rect';
 
-              // For outside: offset by full width to place guide entirely outside the cut line
-              // For inside: just use the offset as-is
-              const offsetValue = typeof guideOffset === 'number' ? `${guideOffset}px` : guideOffset;
+              // Parse guideOffset to get offset value, or use imageBleedWidth if available (for per-card custom bleed)
+              let offsetMm: number;
+              if (imageBleedWidth !== undefined) {
+                // Per-card bleed width takes precedence
+                offsetMm = imageBleedWidth;
+              } else if (typeof guideOffset === 'string' && guideOffset.endsWith('mm')) {
+                offsetMm = parseFloat(guideOffset);
+              } else if (typeof guideOffset === 'number') {
+                // Convert pixels back to mm (assuming 96 DPI)
+                offsetMm = (guideOffset * 25.4) / 96;
+              } else {
+                offsetMm = 0;
+              }
+
+              const offsetValue = `${offsetMm}mm`;
               const positionOffset = guidePlacement === 'outside'
                 ? `calc(${offsetValue} - ${guideWidthPx}px)`
                 : offsetValue;
@@ -377,13 +450,24 @@ export const CardView = memo(function CardView({
 });
 
 const SortableCard = memo(function SortableCard(props: SortableCardProps) {
-  const { card, dropped, totalCardWidth, totalCardHeight, scale = 1 } = props;
+  const { card, dropped, totalCardWidth, totalCardHeight, imageBleedWidth, scale = 1 } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: card.uuid,
       disabled: props.disabled,
     });
 
+  // Base card dimensions in mm (MTG standard)
+  const BASE_CARD_WIDTH_MM = 63;
+  const BASE_CARD_HEIGHT_MM = 88;
+
+  // Calculate actual card dimensions: use per-card bleed if available, otherwise use passed totals
+  const actualCardWidth = imageBleedWidth !== undefined
+    ? BASE_CARD_WIDTH_MM + imageBleedWidth * 2
+    : totalCardWidth;
+  const actualCardHeight = imageBleedWidth !== undefined
+    ? BASE_CARD_HEIGHT_MM + imageBleedWidth * 2
+    : totalCardHeight;
 
   const scaledTransform = transform ? {
     ...transform,
@@ -394,8 +478,8 @@ const SortableCard = memo(function SortableCard(props: SortableCardProps) {
   const style = {
     transform: dropped ? undefined : CSS.Transform.toString(scaledTransform),
     transition,
-    width: `${totalCardWidth}mm`,
-    height: `${totalCardHeight}mm`,
+    width: `${actualCardWidth}mm`,
+    height: `${actualCardHeight}mm`,
     zIndex: isDragging ? 999 : "auto",
     opacity: isDragging ? 0 : 1, // Hide original when dragging
     touchAction: "manipulation",

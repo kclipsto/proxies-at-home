@@ -29,6 +29,12 @@ vi.mock("../store", () => ({
         hasHydrated: vi.fn().mockReturnValue(true),
         onFinishHydration: vi.fn().mockReturnValue(() => { }),
       },
+      getState: vi.fn().mockReturnValue({
+        dpi: 300,
+        darkenNearBlack: false,
+        bleedEdgeWidth: 1, // Default matching default props in tests
+        unit: 'mm',
+      }),
     }
   ),
 }));
