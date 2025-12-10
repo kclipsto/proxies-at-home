@@ -15,6 +15,7 @@ import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 import { importStats } from "../helpers/importStats";
 import { cleanExpiredImageCache } from "../helpers/imageCacheUtils";
+import { getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
 
 const PageView = lazy(() =>
   import("../components/PageView").then((module) => ({
@@ -37,6 +38,9 @@ const EMPTY_IMAGES: Image[] = [];
 export default function ProxyBuilderPage() {
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const bleedEdgeUnit = useSettingsStore((state) => state.bleedEdgeUnit);
+  // Convert to mm for processing (stored value may be in inches)
+  const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
   const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
   const setSettingsPanelWidth = useSettingsStore((state) => state.setSettingsPanelWidth);
   const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
@@ -182,7 +186,10 @@ export default function ProxyBuilderPage() {
   const { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
     useImageProcessing({
       unit: "mm",
-      bleedEdgeWidth: bleedEdge ? bleedEdgeWidth : 0,
+      bleedEdgeWidth: (() => {
+        const val = bleedEdge ? bleedEdgeWidthMm : 0;
+        return val;
+      })(),
       imageProcessor,
     });
 
@@ -199,36 +206,54 @@ export default function ProxyBuilderPage() {
       const unprocessedCards = [];
       const tracking = importStats.isTracking();
 
+      const state = useSettingsStore.getState();
+      const settings: GlobalSettings = {
+        bleedEdgeWidth: bleedEdge ? bleedEdgeWidthMm : 0,
+        mpcBleedMode: state.mpcBleedMode,
+        mpcExistingBleed: state.mpcExistingBleed,
+        mpcExistingBleedUnit: state.mpcExistingBleedUnit,
+        uploadBleedMode: state.uploadBleedMode,
+        uploadExistingBleed: state.uploadExistingBleed,
+        uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+      };
+
       for (const card of allCards) {
         if (!card.imageId) continue;
         const img = imagesById.get(card.imageId);
 
-        // Check if fully processed
-        const isProcessed =
-          img?.displayBlob &&
-          img?.displayBlobDarkened &&
-          img.exportDpi === dpi &&
-          img.exportBleedWidth === (bleedEdge ? bleedEdgeWidth : 0);
+        // Check if fully processed using same smart logic as settings change
+        if (!img?.displayBlob || !img?.displayBlobDarkened || !img?.exportBlob) {
+          unprocessedCards.push(card);
+          continue;
+        }
+
+        const expectedBleedWidth = getExpectedBleedWidth(card, settings.bleedEdgeWidth, settings);
+
+        const isDpiMatch = img.exportDpi === dpi;
+        const isBleedMatch = img.exportBleedWidth !== undefined && Math.abs(img.exportBleedWidth - expectedBleedWidth) < 0.001;
+
+        const isProcessed = isDpiMatch && isBleedMatch;
 
         if (!isProcessed) {
           unprocessedCards.push(card);
         } else if (tracking) {
           // If tracking import, report cache hits immediately
-          // This ensures the summary logs even if all cards are skipped
           importStats.markCacheHit(card.uuid);
           importStats.markCardProcessed(card.uuid);
         }
       }
 
-      for (const card of unprocessedCards) {
-        void ensureProcessed(card, Priority.LOW);
+      if (unprocessedCards.length > 0) {
+        for (const card of unprocessedCards) {
+          void ensureProcessed(card, Priority.LOW);
+        }
       }
     };
 
     // Debounce slightly to avoid thrashing on bulk adds
     const timer = setTimeout(() => processUnprocessed(), 200);
     return () => clearTimeout(timer);
-  }, [allCards, ensureProcessed, dpi, bleedEdge, bleedEdgeWidth]);
+  }, [allCards, ensureProcessed, dpi, bleedEdge, bleedEdgeWidthMm]);
 
   // Trigger reprocessing when DPI or bleed settings actually change
   const prevDpi = useRef(dpi);
@@ -238,12 +263,12 @@ export default function ProxyBuilderPage() {
   useEffect(() => {
     const dpiChanged = prevDpi.current !== dpi;
     const bleedEdgeChanged = prevBleedEdge.current !== bleedEdge;
-    const bleedWidthChanged = prevBleedEdgeWidth.current !== bleedEdgeWidth;
+    const bleedWidthChanged = prevBleedEdgeWidth.current !== bleedEdgeWidthMm;
 
     // Update refs for next comparison
     prevDpi.current = dpi;
     prevBleedEdge.current = bleedEdge;
-    prevBleedEdgeWidth.current = bleedEdgeWidth;
+    prevBleedEdgeWidth.current = bleedEdgeWidthMm;
 
     // Only reprocess if settings actually changed
     if (!dpiChanged && !bleedEdgeChanged && !bleedWidthChanged) {
@@ -253,15 +278,55 @@ export default function ProxyBuilderPage() {
     const timer = setTimeout(async () => {
       cancelProcessing();
       const allCards = await db.cards.toArray();
-      // Only reprocess cards that have an image
+      // Only reprocess cards that have an image AND whose processed state doesn't match new settings
       const cardsWithImages = allCards.filter(c => c.imageId);
-      if (cardsWithImages.length > 0) {
-        void reprocessSelectedImages(cardsWithImages, bleedEdge ? bleedEdgeWidth : 0);
+
+      if (cardsWithImages.length === 0) return;
+
+      const state = useSettingsStore.getState();
+      const settings: GlobalSettings = {
+        bleedEdgeWidth: bleedEdge ? bleedEdgeWidthMm : 0,
+        mpcBleedMode: state.mpcBleedMode,
+        mpcExistingBleed: state.mpcExistingBleed,
+        mpcExistingBleedUnit: state.mpcExistingBleedUnit,
+        uploadBleedMode: state.uploadBleedMode,
+        uploadExistingBleed: state.uploadExistingBleed,
+        uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+      };
+
+      const images = await db.images.toArray();
+      const imageMap = new Map(images.map(i => [i.id, i]));
+
+      const cardsToReprocess = cardsWithImages.filter(card => {
+        if (!card.imageId) return false;
+        const img = imageMap.get(card.imageId);
+        if (!img) return true; // Image record missing, reprocess
+
+        // Check if image matches current settings
+        const expectedBleedWidth = getExpectedBleedWidth(card, settings.bleedEdgeWidth, settings);
+
+        // Conditions requiring reprocessing:
+        // 1. Export DPI mismatch
+        if (img.exportDpi !== dpi) return true;
+
+        // 2. Export bleed width mismatch (allow small float diff)
+        if (img.exportBleedWidth === undefined) return true;
+        const diff = Math.abs(img.exportBleedWidth - expectedBleedWidth);
+        if (diff > 0.001) return true;
+
+        // 3. Missing blobs (shouldn't happen if fully processed, but good safety)
+        if (!img.displayBlob || !img.exportBlob) return true;
+
+        return false;
+      });
+
+      if (cardsToReprocess.length > 0) {
+        void reprocessSelectedImages(cardsToReprocess, bleedEdge ? bleedEdgeWidthMm : 0);
       }
     }, 500); // Debounce by 500ms
 
     return () => clearTimeout(timer);
-  }, [dpi, bleedEdge, bleedEdgeWidth, reprocessSelectedImages, cancelProcessing]);
+  }, [dpi, bleedEdge, bleedEdgeWidthMm, reprocessSelectedImages, cancelProcessing]);
 
   // Mobile Layout
   if (isMobile) {

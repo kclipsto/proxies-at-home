@@ -6,6 +6,9 @@ export interface CardOption {
   imageId?: string | undefined;
   isUserUpload: boolean;
   hasBakedBleed?: boolean | undefined;
+  bleedMode?: 'generate' | 'existing' | 'none' | undefined;  // Per-card bleed override
+  existingBleedMm?: number | undefined;  // Amount when bleedMode is 'existing'
+  generateBleedMm?: number | undefined;  // Custom bleed width when bleedMode is 'generate' (undefined = use global)
   set?: string | undefined;
   number?: string | undefined;
   lang?: string | undefined;

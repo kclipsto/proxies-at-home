@@ -28,7 +28,10 @@ export function ExportActions({ cards }: Props) {
   const columns = useSettingsStore((state) => state.columns);
   const rows = useSettingsStore((state) => state.rows);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
+  const bleedEdgeUnit = useSettingsStore((state) => state.bleedEdgeUnit);
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
+  // Convert to mm for processing (stored value may be in inches)
+  const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
   const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
   const guideColor = useSettingsStore((state) => state.guideColor);
   const guideWidth = useSettingsStore((state) => state.guideWidth);
@@ -39,6 +42,12 @@ export function ExportActions({ cards }: Props) {
   const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
   const perCardGuideStyle = useSettingsStore((state) => state.perCardGuideStyle);
   const guidePlacement = useSettingsStore((state) => state.guidePlacement);
+  const mpcBleedMode = useSettingsStore((state) => state.mpcBleedMode);
+  const mpcExistingBleed = useSettingsStore((state) => state.mpcExistingBleed);
+  const mpcExistingBleedUnit = useSettingsStore((state) => state.mpcExistingBleedUnit);
+  const uploadBleedMode = useSettingsStore((state) => state.uploadBleedMode);
+  const uploadExistingBleed = useSettingsStore((state) => state.uploadExistingBleed);
+  const uploadExistingBleedUnit = useSettingsStore((state) => state.uploadExistingBleedUnit);
 
   const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
@@ -96,7 +105,7 @@ export function ExportActions({ cards }: Props) {
         cards: filteredAndSortedCards,
         imagesById,
         bleedEdge,
-        bleedEdgeWidthMm: bleedEdgeWidth,
+        bleedEdgeWidthMm: bleedEdgeWidthMm,
         guideColor,
         guideWidthCssPx: guideWidth,
         pageOrientation,
@@ -116,6 +125,12 @@ export function ExportActions({ cards }: Props) {
         cutLineStyle,
         perCardGuideStyle,
         guidePlacement,
+        mpcBleedMode,
+        mpcExistingBleed,
+        mpcExistingBleedUnit,
+        uploadBleedMode,
+        uploadExistingBleed,
+        uploadExistingBleedUnit,
       });
     } catch (err: unknown) {
       if (err instanceof Error && err.message === "Cancelled by user") {

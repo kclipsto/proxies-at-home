@@ -198,12 +198,13 @@ export async function processMpcImport(
 
   const cardsToAdd: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }> = [];
   const totalItems = mpcData.length;
+  const totalCards = mpcData.reduce((sum, item) => sum + item.qty, 0);
 
   // Start import tracking
-  importStats.start(totalItems, undefined, { importType: 'mpc' });
+  importStats.start(totalCards, undefined, { importType: 'mpc' });
   importStats.markImageLoadStart();
 
-  // First pass: Collect all images to batch add
+  // First pass: Collect all images to batch add (with correct ref counts based on qty)
   const imagesToBatch: Array<{ imageUrls: string[]; count: number }> = [];
   const itemsWithUrls: Array<{ item: MpcItem; frontUrl?: string; backUrl?: string }> = [];
 
@@ -212,11 +213,12 @@ export async function processMpcImport(
     const frontUrl = getMpcImageUrl(item.frontId);
     const backUrl = getMpcImageUrl(item.backId);
 
+    // Use item.qty for the image ref count (multiple cards share the same image)
     if (frontUrl) {
-      imagesToBatch.push({ imageUrls: [frontUrl], count: 1 });
+      imagesToBatch.push({ imageUrls: [frontUrl], count: item.qty });
     }
     if (backUrl) {
-      imagesToBatch.push({ imageUrls: [backUrl], count: 1 });
+      imagesToBatch.push({ imageUrls: [backUrl], count: item.qty });
     }
 
     itemsWithUrls.push({ item, frontUrl: frontUrl || undefined, backUrl: backUrl || undefined });
@@ -225,12 +227,9 @@ export async function processMpcImport(
   // Batch add logic
   const urlToIdMap = await addRemoteImages(imagesToBatch);
 
-  // Second pass: Create card entries
+  // Second pass: Create card entries (respecting qty for multiple copies)
+  let cardIndex = 0;
   itemsWithUrls.forEach(({ item, frontUrl }, i) => {
-    if (onProgress) {
-      onProgress(i + 1, totalItems, `Processing card ${i + 1} of ${totalItems}...`);
-    }
-
     let frontImageId: string | undefined;
     if (frontUrl) {
       frontImageId = urlToIdMap.get(frontUrl);
@@ -240,22 +239,30 @@ export async function processMpcImport(
     const rawName = item.name || `MPC Import ${i + 1}`;
     const cardInfo = extractCardInfo(rawName);
 
-    // Skip Scryfall enrichment during import - will be done in background
-    cardsToAdd.push({
-      name: cardInfo.name,
-      set: cardInfo.set,
-      number: cardInfo.number,
-      imageId: frontImageId || "",
-      isUserUpload: true,
-      hasBakedBleed: true,
-      needsEnrichment: true,
-    });
+    // Create item.qty copies of this card
+    for (let copy = 0; copy < item.qty; copy++) {
+      cardIndex++;
+      if (onProgress) {
+        onProgress(cardIndex, totalCards, `Processing card ${cardIndex}...`);
+      }
+
+      // Skip Scryfall enrichment during import - will be done in background
+      cardsToAdd.push({
+        name: cardInfo.name,
+        set: cardInfo.set,
+        number: cardInfo.number,
+        imageId: frontImageId || "",
+        isUserUpload: true,
+        hasBakedBleed: true,
+        needsEnrichment: true,
+      });
+    }
   });
 
   importStats.markImageLoadEnd();
 
   if (cardsToAdd.length > 0) {
-    console.log("[MPC Import] Sample card with needsEnrichment:", cardsToAdd[0]);
+
     const addedCards = await undoableAddCards(cardsToAdd);
     const cardUuids = addedCards.map(c => c.uuid);
     // Start tracking stats, expecting enrichment to follow
@@ -263,11 +270,11 @@ export async function processMpcImport(
 
     // Register pending cards (now that we have UUIDs)
     importStats.registerPendingCards(cardUuids);
-    console.log(`[MPC Import] Added ${cardsToAdd.length} cards with needsEnrichment: true`);
+
   }
 
   // Note: importStats.finish() will be automatically called when all registered cards are processed
-  console.log(`[MPC Import] Added ${cardsToAdd.length} cards to DB, enrichment will run in background`);
+
 
   return { success: true, count: cardsToAdd.length };
 }

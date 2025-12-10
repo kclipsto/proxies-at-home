@@ -262,7 +262,7 @@ export async function processCardImageWebGL(
     exportBlobDarkened: Blob;
     displayBlobDarkened: Blob;
 }> {
-    const startTime = performance.now();
+
     const exportDpi = opts?.exportDpi ?? 300;
     const displayDpi = opts?.displayDpi ?? 300;
     const unit = opts?.unit ?? "mm";
@@ -270,6 +270,7 @@ export async function processCardImageWebGL(
     const targetCardWidth = IN(2.48, exportDpi);
     const targetCardHeight = IN(3.47, exportDpi);
     const bleed = Math.round(getBleedInPixels(bleedWidthMm, unit, exportDpi));
+    // console.log('[WebGL] Params:', { bleedWidthMm, unit, exportDpi, calculatedBleed: bleed, targetCardWidth });
 
     const finalWidth = Math.ceil(targetCardWidth + bleed * 2);
     const finalHeight = Math.ceil(targetCardHeight + bleed * 2);
@@ -286,7 +287,7 @@ export async function processCardImageWebGL(
         throw new Error("WebGL2 not supported");
     }
 
-    const initTime = performance.now();
+
 
     // Initialize WebGL resources once
     const progs = initWebGLPrograms(gl);
@@ -325,7 +326,7 @@ export async function processCardImageWebGL(
     gl.enableVertexAttribArray(aPositionLoc);
     gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    const setupTime = performance.now();
+
 
     // --- PASS 1: INIT (run once) ---
     gl.useProgram(progs.init);
@@ -380,7 +381,7 @@ export async function processCardImageWebGL(
         nextTex = tempTex;
     }
 
-    const jfaTime = performance.now();
+
 
     // Helper function to render final pass and extract blobs
     async function renderFinalAndExtract(
@@ -425,11 +426,11 @@ export async function processCardImageWebGL(
 
     // --- PASS 3A: FINAL (normal, darken=false) ---
     const normalResult = await renderFinalAndExtract(gl, false);
-    const normalTime = performance.now();
+
 
     // --- PASS 3B: FINAL (darkened, darken=true) ---
     const darkenedResult = await renderFinalAndExtract(gl, true);
-    const darkenTime = performance.now();
+
 
     // Cleanup WebGL resources
     gl.deleteTexture(texA);
@@ -442,8 +443,8 @@ export async function processCardImageWebGL(
     gl.deleteProgram(progs.final);
     gl.deleteBuffer(quadBuffer);
 
-    const totalTime = performance.now();
-    console.log(`[WebGL] Processing: init=${(initTime - startTime).toFixed(1)}ms, setup=${(setupTime - initTime).toFixed(1)}ms, JFA=${(jfaTime - setupTime).toFixed(1)}ms, final=${(normalTime - jfaTime).toFixed(1)}ms, darkened=${(darkenTime - normalTime).toFixed(1)}ms, total=${(totalTime - startTime).toFixed(1)}ms`);
+
+
 
     return {
         exportBlob: normalResult.exportBlob,

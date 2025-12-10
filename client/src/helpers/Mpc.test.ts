@@ -370,5 +370,56 @@ describe('Mpc', () => {
         }),
       ]);
     });
+
+    it("should create multiple card copies based on qty (slots)", async () => {
+      const xml = `
+        <order>
+          <fronts>
+            <card>
+              <id>forest-id-123</id>
+              <name>Forest.png</name>
+              <slots>56,57,58,59,60</slots>
+            </card>
+          </fronts>
+        </order>
+      `;
+
+      const mockUrlMap = new Map();
+      mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=forest-id-123`, "forestImgId");
+      (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
+
+      (addCards as Mock).mockResolvedValue([
+        { uuid: 'uuid1', name: 'Forest' },
+        { uuid: 'uuid2', name: 'Forest' },
+        { uuid: 'uuid3', name: 'Forest' },
+        { uuid: 'uuid4', name: 'Forest' },
+        { uuid: 'uuid5', name: 'Forest' },
+      ]);
+
+      const onProgress = vi.fn();
+      const result = await processMpcImport(xml, onProgress);
+
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(5); // 5 copies from slots
+
+      // Should batch add images with count=5 for ref counting
+      expect(addRemoteImages).toHaveBeenCalledTimes(1);
+      const imgArgs = (addRemoteImages as Mock).mock.calls[0][0];
+      expect(imgArgs).toEqual([
+        { imageUrls: [`${constants.API_BASE}/api/cards/images/mpc?id=forest-id-123`], count: 5 }
+      ]);
+
+      // Should add 5 cards
+      expect(addCards).toHaveBeenCalledTimes(1);
+      const cardArgs = (addCards as Mock).mock.calls[0][0];
+      expect(cardArgs).toHaveLength(5);
+      cardArgs.forEach((card: { name: string; imageId: string }) => {
+        expect(card.name).toBe("Forest");
+        expect(card.imageId).toBe("forestImgId");
+      });
+
+      // Should call progress 5 times
+      expect(onProgress).toHaveBeenCalledTimes(5);
+    });
   });
 });

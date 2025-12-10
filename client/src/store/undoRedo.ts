@@ -9,7 +9,8 @@ export type ActionType =
     | "DUPLICATE_CARD"
     | "REORDER_CARDS"
     | "CHANGE_ARTWORK"
-    | "CHANGE_SETTING";
+    | "CHANGE_SETTING"
+    | "UPDATE_BLEED_SETTINGS";
 
 /**
  * Represents an undoable action in the history

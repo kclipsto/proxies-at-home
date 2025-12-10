@@ -15,36 +15,65 @@ function getLocalBleedImageUrl(originalUrl: string, apiBase: string) {
 
 
 /**
- * Create a reusable full-page guides canvas
+ * Create a reusable full-page guides canvas with per-card layout support
  */
+type LayoutInfo = {
+    cardWidthPx: number;
+    cardHeightPx: number;
+    bleedPx: number;
+};
+
 function createFullPageGuidesCanvas(
-    pageW: number, pageH: number, startX: number, startY: number,
-    columns: number, rows: number, contentW: number, contentH: number,
-    cardW: number, cardH: number, bleedPx: number, guideWidthPx: number,
-    spacingPx: number, occupiedCols: Set<number>, occupiedRows: Set<number>,
+    pageW: number, pageH: number,
+    startX: number, startY: number,
+    columns: number,
+    cardLayouts: LayoutInfo[],
+    colWidths: number[], rowHeights: number[],
+    colOffsets: number[], rowOffsets: number[],
+    contentWidthPx: number, contentHeightPx: number,
+    spacingPx: number, guideWidthPx: number,
     cutLineStyle: 'none' | 'edges' | 'full'
 ): OffscreenCanvas | null {
-    if (cutLineStyle === 'none' || guideWidthPx <= 0) return null;
+    if (cutLineStyle === 'none' || guideWidthPx <= 0 || cardLayouts.length === 0) return null;
 
     const canvas = new OffscreenCanvas(pageW, pageH);
     const ctx = canvas.getContext('2d')!;
 
-    const xCuts: number[] = [];
-    for (let c = 0; c < columns; c++) {
-        if (occupiedCols.has(c)) {
-            const cellLeft = startX + c * (cardW + spacingPx);
-            xCuts.push(cellLeft + bleedPx);
-            xCuts.push(cellLeft + bleedPx + contentW);
-        }
-    }
-    const yCuts: number[] = [];
-    for (let r = 0; r < rows; r++) {
-        if (occupiedRows.has(r)) {
-            const cellTop = startY + r * (cardH + spacingPx);
-            yCuts.push(cellTop + bleedPx);
-            yCuts.push(cellTop + bleedPx + contentH);
-        }
-    }
+    // Use Sets to collect unique cut positions
+    const xCuts = new Set<number>();
+    const yCuts = new Set<number>();
+
+    // For each card, calculate its cut positions
+    cardLayouts.forEach((layout, idx) => {
+        const col = idx % columns;
+        const row = Math.floor(idx / columns);
+
+        if (col >= colWidths.length || row >= rowHeights.length) return;
+
+        const slotX = startX + colOffsets[col];
+        const slotY = startY + rowOffsets[row];
+        const slotWidth = colWidths[col];
+        const slotHeight = rowHeights[row];
+
+        // Card is centered within slot
+        const cardX = slotX + (slotWidth - layout.cardWidthPx) / 2;
+        const cardY = slotY + (slotHeight - layout.cardHeightPx) / 2;
+
+        // Cut positions are at bleed edge (inset from card edge by bleedPx)
+        const leftCut = cardX + layout.bleedPx;
+        const rightCut = cardX + layout.bleedPx + contentWidthPx;
+        const topCut = cardY + layout.bleedPx;
+        const bottomCut = cardY + layout.bleedPx + contentHeightPx;
+
+        xCuts.add(leftCut);
+        xCuts.add(rightCut);
+        yCuts.add(topCut);
+        yCuts.add(bottomCut);
+    });
+
+    // Calculate grid bounds for edge-style lines
+    const gridWidthPx = colWidths.reduce((sum, w) => sum + w, 0) + Math.max(0, colWidths.length - 1) * spacingPx;
+    const gridHeightPx = rowHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, rowHeights.length - 1) * spacingPx;
 
     ctx.fillStyle = "#000000";
 
@@ -53,10 +82,11 @@ function createFullPageGuidesCanvas(
         if (cutLineStyle === 'full') {
             ctx.fillRect(x, 0, guideWidthPx, pageH);
         } else {
+            // Edges only - stubs at top and bottom
             if (startY > 0) {
                 ctx.fillRect(x, 0, guideWidthPx, startY);
             }
-            const botStubStart = startY + rows * cardH + (rows - 1) * spacingPx;
+            const botStubStart = startY + gridHeightPx;
             const botStubH = pageH - botStubStart;
             if (botStubH > 0) {
                 ctx.fillRect(x, botStubStart, guideWidthPx, botStubH);
@@ -69,10 +99,11 @@ function createFullPageGuidesCanvas(
         if (cutLineStyle === 'full') {
             ctx.fillRect(0, y, pageW, guideWidthPx);
         } else {
+            // Edges only - stubs at left and right
             if (startX > 0) {
                 ctx.fillRect(0, y, startX, guideWidthPx);
             }
-            const rightStubStart = startX + columns * cardW + (columns - 1) * spacingPx;
+            const rightStubStart = startX + gridWidthPx;
             const rightStubW = pageW - rightStubStart;
             if (rightStubW > 0) {
                 ctx.fillRect(rightStubStart, y, rightStubW, guideWidthPx);
@@ -107,6 +138,8 @@ function createGuideCanvas(
 ): OffscreenCanvas | null {
     if (style === 'none' || guideWidthPx <= 0) return null;
 
+    const w = Math.max(1, Math.round(guideWidthPx));
+
     const cardW = contentW + 2 * bleedPx;
     const cardH = contentH + 2 * bleedPx;
     const canvas = new OffscreenCanvas(cardW, cardH);
@@ -114,7 +147,6 @@ function createGuideCanvas(
 
     const gx = bleedPx;
     const gy = bleedPx;
-    const w = Math.max(1, Math.round(guideWidthPx));
 
     ctx.fillStyle = guideColor;
     ctx.strokeStyle = guideColor;
@@ -123,8 +155,9 @@ function createGuideCanvas(
     // Calculate offset based on placement
     // For outside: offset outward by guideWidth (so inner edge touches cut line)
     // For inside: no offset (so outer edge touches cut line)
-    // Note: This logic depends on the shape type
-    const offset = placement === 'outside' ? -w : 0;
+    // Clamp the offset so guides don't exceed the bleed area (stay within canvas)
+    const rawOffset = placement === 'outside' ? -w : 0;
+    const offset = Math.max(rawOffset, -bleedPx); // Don't go beyond the bleed area
 
     if (style === 'corners') {
         const len = MM_TO_PX(2, dpi);
@@ -206,8 +239,100 @@ function createGuideCanvas(
     return canvas;
 }
 
+type SourceTypeSettings = {
+    mpcBleedMode: 'use-existing' | 'trim-regenerate' | 'none';
+    mpcExistingBleed: number;
+    mpcExistingBleedUnit: 'mm' | 'in';
+    uploadBleedMode: 'generate' | 'existing' | 'none';
+    uploadExistingBleed: number;
+    uploadExistingBleedUnit: 'mm' | 'in';
+};
 
+interface CardData {
+    bleedMode?: 'generate' | 'existing' | 'none';
+    existingBleedMm?: number;
+    hasBakedBleed?: boolean;
+    isUserUpload?: boolean;
+}
 
+/**
+ * Get the target bleed for a card based on per-card overrides, source-type settings, and global settings.
+ * Matches the logic in PageView.tsx getCardTargetBleed.
+ */
+function getCardTargetBleed(
+    card: CardData,
+    sourceSettings: SourceTypeSettings,
+    globalBleedWidth: number
+): number {
+    let result: number;
+    let reason: string;
+
+    // Per-card override takes precedence
+    if (card.bleedMode) {
+        if (card.bleedMode === 'none') {
+            result = 0;
+            reason = 'per-card bleedMode=none';
+        } else if (card.bleedMode === 'existing' && card.existingBleedMm !== undefined) {
+            result = card.existingBleedMm;
+            reason = `per-card bleedMode=existing, existingBleedMm=${card.existingBleedMm}`;
+        } else {
+            // 'generate' uses global bleed width
+            result = globalBleedWidth;
+            reason = 'per-card bleedMode=generate';
+        }
+    } else if (card.hasBakedBleed) {
+        // MPC images (hasBakedBleed = true)
+        if (sourceSettings.mpcBleedMode === 'none') {
+            result = 0;
+            reason = 'hasBakedBleed=true, mpcBleedMode=none';
+        } else if (sourceSettings.mpcBleedMode === 'use-existing') {
+            const existingMm = sourceSettings.mpcExistingBleedUnit === 'in'
+                ? sourceSettings.mpcExistingBleed * 25.4
+                : sourceSettings.mpcExistingBleed;
+            result = existingMm;
+            reason = `hasBakedBleed=true, mpcBleedMode=use-existing, existingMm=${existingMm}`;
+        } else {
+            // trim-regenerate: use global bleed width
+            result = globalBleedWidth;
+            reason = 'hasBakedBleed=true, mpcBleedMode=trim-regenerate';
+        }
+    } else if (card.isUserUpload) {
+        // Other Uploads (isUserUpload = true, hasBakedBleed = false)
+        if (sourceSettings.uploadBleedMode === 'none') {
+            result = 0;
+            reason = 'isUserUpload=true, uploadBleedMode=none';
+        } else if (sourceSettings.uploadBleedMode === 'existing') {
+            const existingMm = sourceSettings.uploadExistingBleedUnit === 'in'
+                ? sourceSettings.uploadExistingBleed * 25.4
+                : sourceSettings.uploadExistingBleed;
+            result = existingMm;
+            reason = `isUserUpload=true, uploadBleedMode=existing, existingMm=${existingMm}`;
+        } else {
+            // 'generate' uses global bleed width
+            result = globalBleedWidth;
+            reason = 'isUserUpload=true, uploadBleedMode=generate';
+        }
+    } else {
+        // Scryfall/standard images (isUserUpload = false) - use global bleed
+        result = globalBleedWidth;
+        reason = 'Scryfall image, using global bleed';
+    }
+
+    console.log('[PDF Worker] getCardTargetBleed:', {
+        hasBakedBleed: card.hasBakedBleed,
+        isUserUpload: card.isUserUpload,
+        bleedMode: card.bleedMode,
+        existingBleedMm: card.existingBleedMm,
+        mpcBleedMode: sourceSettings.mpcBleedMode,
+        mpcExistingBleed: sourceSettings.mpcExistingBleed,
+        uploadBleedMode: sourceSettings.uploadBleedMode,
+        globalBleedWidth,
+        result,
+        reason,
+    });
+
+    return result;
+}
 
 const canvasCache = new Map<string, OffscreenCanvas>();
 
@@ -217,23 +342,71 @@ self.onmessage = async (event: MessageEvent) => {
         const {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
-            imagesById, API_BASE, darkenNearBlack, cutLineStyle, perCardGuideStyle, guidePlacement
+            imagesById, API_BASE, darkenNearBlack, cutLineStyle, perCardGuideStyle, guidePlacement,
+            mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode,
+            uploadExistingBleed, uploadExistingBleedUnit
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
         const pageHeightPx = pageSizeUnit === "in" ? IN(pageHeight, DPI) : MM_TO_PX(pageHeight, DPI);
         const contentWidthInPx = MM_TO_PX(63, DPI);
         const contentHeightInPx = MM_TO_PX(88, DPI);
-        const bleedPx = bleedEdge ? MM_TO_PX(bleedEdgeWidthMm, DPI) : 0;
-        const cardWidthPx = contentWidthInPx + 2 * bleedPx;
-        const cardHeightPx = contentHeightInPx + 2 * bleedPx;
         const spacingPx = MM_TO_PX(cardSpacingMm || 0, DPI);
-        const gridWidthPx = columns * cardWidthPx + Math.max(0, columns - 1) * spacingPx;
-        const gridHeightPx = rows * cardHeightPx + Math.max(0, rows - 1) * spacingPx;
         const positionOffsetXPx = MM_TO_PX(cardPositionX || 0, DPI);
         const positionOffsetYPx = MM_TO_PX(cardPositionY || 0, DPI);
+
+        // Global bleed for default/empty slots
+        const globalBleedPx = bleedEdge ? MM_TO_PX(bleedEdgeWidthMm, DPI) : 0;
+        const defaultCardWidthPx = contentWidthInPx + 2 * globalBleedPx;
+        const defaultCardHeightPx = contentHeightInPx + 2 * globalBleedPx;
+
+        // Compute per-card layouts
+        const sourceSettings: SourceTypeSettings = { mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode, uploadExistingBleed, uploadExistingBleedUnit };
+        interface CardLayout {
+            cardWidthPx: number;
+            cardHeightPx: number;
+            bleedPx: number;
+        }
+        const layouts: CardLayout[] = pageCards.map((card: CardData) => {
+            const bleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
+            const bleedPx = MM_TO_PX(bleedMm, DPI);
+            return {
+                cardWidthPx: contentWidthInPx + 2 * bleedPx,
+                cardHeightPx: contentHeightInPx + 2 * bleedPx,
+                bleedPx,
+            };
+        });
+
+        // Compute column widths (max card width per column, use default for empty columns)
+        const colWidths: number[] = Array(columns).fill(defaultCardWidthPx);
+        const rowHeights: number[] = Array(rows).fill(defaultCardHeightPx);
+        layouts.forEach((layout, idx) => {
+            const col = idx % columns;
+            const row = Math.floor(idx / columns);
+            if (layout.cardWidthPx > colWidths[col]) colWidths[col] = layout.cardWidthPx;
+            if (layout.cardHeightPx > rowHeights[row]) rowHeights[row] = layout.cardHeightPx;
+        });
+
+        // Compute grid dimensions and starting position
+        const gridWidthPx = colWidths.reduce((a, b) => a + b, 0) + Math.max(0, columns - 1) * spacingPx;
+        const gridHeightPx = rowHeights.reduce((a, b) => a + b, 0) + Math.max(0, rows - 1) * spacingPx;
         const startX = Math.round((pageWidthPx - gridWidthPx) / 2) + positionOffsetXPx;
         const startY = Math.round((pageHeightPx - gridHeightPx) / 2) + positionOffsetYPx;
+
+        // Precompute column X offsets and row Y offsets
+        const colOffsets: number[] = [];
+        let cumX = 0;
+        for (let c = 0; c < columns; c++) {
+            colOffsets.push(cumX);
+            cumX += colWidths[c] + spacingPx;
+        }
+        const rowOffsets: number[] = [];
+        let cumY = 0;
+        for (let r = 0; r < rows; r++) {
+            rowOffsets.push(cumY);
+            cumY += rowHeights[r] + spacingPx;
+        }
+
 
         const canvas = new OffscreenCanvas(pageWidthPx, pageHeightPx);
         const ctx = canvas.getContext("2d")!;
@@ -243,26 +416,15 @@ self.onmessage = async (event: MessageEvent) => {
         let imagesProcessed = 0;
         const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthCssPx, 96, DPI);
 
-        // Create reusable guide overlay canvas once
-        const guideCanvas = createGuideCanvas(
-            contentWidthInPx, contentHeightInPx, bleedPx,
-            guideColor, scaledGuideWidth, DPI, perCardGuideStyle ?? 'corners',
-            guidePlacement ?? 'outside'
-        );
-
-        // Determine occupied rows and columns
-        const occupiedCols = new Set<number>();
-        const occupiedRows = new Set<number>();
-        for (let i = 0; i < pageCards.length; i++) {
-            occupiedCols.add(i % columns);
-            occupiedRows.add(Math.floor(i / columns));
-        }
+        // We'll create per-card guides as needed instead of reusing one
+        // (since each card may have different bleed)
 
         // Create and draw full page guides (behind cards)
+        // Uses per-card layouts to compute cut positions for mixed bleed sizes
         const fullPageGuidesCanvas = createFullPageGuidesCanvas(
-            pageWidthPx, pageHeightPx, startX, startY, columns, rows,
-            contentWidthInPx, contentHeightInPx, cardWidthPx, cardHeightPx,
-            bleedPx, scaledGuideWidth, spacingPx, occupiedCols, occupiedRows, cutLineStyle
+            pageWidthPx, pageHeightPx, startX, startY, columns,
+            layouts, colWidths, rowHeights, colOffsets, rowOffsets,
+            contentWidthInPx, contentHeightInPx, spacingPx, scaledGuideWidth, cutLineStyle
         );
         if (fullPageGuidesCanvas) {
             ctx.drawImage(fullPageGuidesCanvas, 0, 0);
@@ -271,8 +433,17 @@ self.onmessage = async (event: MessageEvent) => {
         for (const [idx, card] of pageCards.entries()) {
             const col = idx % columns;
             const row = Math.floor(idx / columns);
-            const x = startX + col * (cardWidthPx + spacingPx);
-            const y = startY + row * (cardHeightPx + spacingPx);
+            const cardLayout = layouts[idx];
+            const slotWidth = colWidths[col];
+            const slotHeight = rowHeights[row];
+
+            // Card position at top-left of slot, centered within if smaller
+            const slotX = startX + colOffsets[col];
+            const slotY = startY + rowOffsets[row];
+            const centerOffsetInSlotX = (slotWidth - cardLayout.cardWidthPx) / 2;
+            const centerOffsetInSlotY = (slotHeight - cardLayout.cardHeightPx) / 2;
+            const x = slotX + centerOffsetInSlotX;
+            const y = slotY + centerOffsetInSlotY;
 
             let finalCardCanvas: OffscreenCanvas | ImageBitmap;
             const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
@@ -280,10 +451,27 @@ self.onmessage = async (event: MessageEvent) => {
             // Select appropriate blob based on darkenNearBlack setting
             const selectedExportBlob = darkenNearBlack ? imageInfo?.exportBlobDarkened : imageInfo?.exportBlob;
 
+            // Get the target bleed for this card based on per-card settings or source-type settings
+            const sourceSettings: SourceTypeSettings = { mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode, uploadExistingBleed, uploadExistingBleedUnit };
+            const targetBleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
+
+            // Use the image's actual bleed width if available, otherwise use the target bleed
+            const imageBleedWidthMm = imageInfo?.exportBleedWidth ?? targetBleedMm;
+            const imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
+
+            // Cache is valid if we have the blob at the right DPI
+            // (bleed width mismatch just means we need to center the image)
             const isCacheValid =
                 selectedExportBlob &&
-                imageInfo?.exportDpi === DPI &&
-                imageInfo?.exportBleedWidth === bleedEdgeWidthMm;
+                imageInfo?.exportDpi === DPI;
+
+            // Calculate centering offset if image has different bleed than card's target
+            const slotBleedPx = cardLayout.bleedPx;
+            const bleedDifferencePx = slotBleedPx - imageBleedPx;
+            const centerOffsetX = bleedDifferencePx;
+            const centerOffsetY = bleedDifferencePx;
+            const imageCardWidthPx = contentWidthInPx + 2 * imageBleedPx;
+            const imageCardHeightPx = contentHeightInPx + 2 * imageBleedPx;
 
             if (isCacheValid) {
                 finalCardCanvas = await createImageBitmap(selectedExportBlob!);
@@ -306,15 +494,16 @@ self.onmessage = async (event: MessageEvent) => {
 
                     try {
                         if (!src) {
-                            const cardWidthWithBleed = contentWidthInPx + 2 * bleedPx;
-                            const cardHeightWithBleed = contentHeightInPx + 2 * bleedPx;
+                            const cardBleedPx = cardLayout.bleedPx;
+                            const cardWidthWithBleed = contentWidthInPx + 2 * cardBleedPx;
+                            const cardHeightWithBleed = contentHeightInPx + 2 * cardBleedPx;
                             const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
                             const cardCtx = placeholderCanvas.getContext('2d')!;
                             cardCtx.fillStyle = 'white';
                             cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
                             cardCtx.strokeStyle = 'red';
                             cardCtx.lineWidth = 5;
-                            cardCtx.strokeRect(bleedPx, bleedPx, contentWidthInPx, contentHeightInPx);
+                            cardCtx.strokeRect(cardBleedPx, cardBleedPx, contentWidthInPx, contentHeightInPx);
                             cardCtx.fillStyle = 'red';
                             cardCtx.font = '30px sans-serif';
                             cardCtx.textAlign = 'center';
@@ -330,8 +519,12 @@ self.onmessage = async (event: MessageEvent) => {
                             const blob = await response.blob();
                             let img = await createImageBitmap(blob);
 
-                            // Trim bleed if needed
-                            if (card.isUserUpload && card.hasBakedBleed) {
+                            // Determine effective bleed mode for this card
+                            const cardBleedMode = card.bleedMode;
+                            const shouldTrim = card.hasBakedBleed && cardBleedMode !== 'existing';
+
+                            // Trim bleed if needed (for generate mode with baked bleed)
+                            if (shouldTrim) {
                                 const trimmed = await trimBleedFromBitmap(img);
                                 if (trimmed !== img) {
                                     img.close();
@@ -339,8 +532,13 @@ self.onmessage = async (event: MessageEvent) => {
                                 }
                             }
 
+                            // For 'existing' mode, use the card's existingBleedMm, otherwise use global
+                            const effectiveBleedMm = cardBleedMode === 'existing' && card.existingBleedMm != null
+                                ? card.existingBleedMm
+                                : bleedEdgeWidthMm;
+
                             // Generate bleed using WebGL
-                            finalCardCanvas = await generateBleedCanvasWebGL(img, bleedEdgeWidthMm, {
+                            finalCardCanvas = await generateBleedCanvasWebGL(img, effectiveBleedMm, {
                                 unit: 'mm',
                                 dpi: DPI,
                                 darkenNearBlack,
@@ -360,14 +558,20 @@ self.onmessage = async (event: MessageEvent) => {
                 }
             }
 
-            ctx.drawImage(finalCardCanvas, x, y, cardWidthPx, cardHeightPx);
+            // Draw image centered in slot (accounts for different bleed widths)
+            ctx.drawImage(finalCardCanvas, x + centerOffsetX, y + centerOffsetY, imageCardWidthPx, imageCardHeightPx);
             if (finalCardCanvas instanceof ImageBitmap) {
                 finalCardCanvas.close();
             }
 
-            // Stamp the pre-rendered guide overlay
-            if (guideCanvas) {
-                ctx.drawImage(guideCanvas, x, y);
+            // Stamp per-card guide overlay
+            const cardGuideCanvas = createGuideCanvas(
+                contentWidthInPx, contentHeightInPx, cardLayout.bleedPx,
+                guideColor, scaledGuideWidth, DPI, perCardGuideStyle ?? 'corners',
+                guidePlacement ?? 'outside'
+            );
+            if (cardGuideCanvas) {
+                ctx.drawImage(cardGuideCanvas, x, y);
             }
 
             imagesProcessed++;

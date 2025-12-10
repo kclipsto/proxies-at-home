@@ -51,6 +51,64 @@ function getCacheKey(url: string): string {
   }
 }
 
+/**
+ * Resize an image WITHOUT generating new bleed.
+ * Used for 'existing' mode where the image already has bleed baked in.
+ * We resize to match the expected dimensions (card + specified bleed width)
+ * and report the correct bleed width for cut guide placement.
+ */
+async function resizeWithoutBleed(
+  img: ImageBitmap,
+  bleedWidthMm: number,
+  opts?: { unit?: 'mm' | 'in'; dpi?: number }
+): Promise<{
+  exportBlob: Blob;
+  exportDpi: number;
+  exportBleedWidth: number;
+  displayBlob: Blob;
+  displayDpi: number;
+  displayBleedWidth: number;
+}> {
+  const dpi = opts?.dpi ?? 300;
+  const unit = opts?.unit ?? 'mm';
+
+  // Standard MTG card dimensions: 63x88mm
+  const cardWidthMm = 63;
+  const cardHeightMm = 88;
+
+  // Calculate bleed in pixels
+  const bleedPx = Math.round(getBleedInPixels(bleedWidthMm, unit, dpi));
+
+  // Calculate total dimensions including bleed
+  const exportWidth = MM_TO_PX(cardWidthMm, dpi) + bleedPx * 2;
+  const exportHeight = MM_TO_PX(cardHeightMm, dpi) + bleedPx * 2;
+
+  // Create export canvas and resize image to fit
+  const exportCanvas = new OffscreenCanvas(exportWidth, exportHeight);
+  const exportCtx = exportCanvas.getContext('2d')!;
+  exportCtx.imageSmoothingQuality = 'high';
+  exportCtx.drawImage(img, 0, 0, exportWidth, exportHeight);
+
+  // Create display canvas (same DPI for fallback worker)
+  const displayCanvas = new OffscreenCanvas(exportWidth, exportHeight);
+  const displayCtx = displayCanvas.getContext('2d')!;
+  displayCtx.imageSmoothingQuality = 'high';
+  displayCtx.drawImage(img, 0, 0, exportWidth, exportHeight);
+
+  // Convert to blobs
+  const exportBlob = await exportCanvas.convertToBlob({ type: 'image/png' });
+  const displayBlob = await displayCanvas.convertToBlob({ type: 'image/png' });
+
+  return {
+    exportBlob,
+    exportDpi: dpi,
+    exportBleedWidth: bleedWidthMm,
+    displayBlob,
+    displayDpi: dpi,
+    displayBleedWidth: bleedWidthMm,
+  };
+}
+
 async function addBleedEdge(
   img: ImageBitmap,
   bleedOverride?: number,
@@ -197,6 +255,8 @@ self.onmessage = async (e: MessageEvent) => {
     apiBase,
     isUserUpload,
     hasBakedBleed,
+    bleedMode,
+    existingBleedMm,
     dpi,
     darkenNearBlack,
   } = e.data;
@@ -263,23 +323,88 @@ self.onmessage = async (e: MessageEvent) => {
       }
     }
 
+    // Determine how to handle the image based on bleed mode
     // blob is guaranteed to be set at this point by the control flow above
     let imageBitmap = await createImageBitmap(blob!);
 
-    if (isUserUpload && hasBakedBleed) {
+    console.log('[Worker Fallback] Bleed mode handling:', {
+      bleedMode,
+      existingBleedMm,
+      hasBakedBleed,
+      isUserUpload
+    });
+
+    if (bleedMode === 'existing') {
+      // Use existing bleed as-is - no trimming needed
+      console.log('[Worker Fallback] Using existing bleed - no trimming');
+    } else if (bleedMode === 'none') {
+      // No bleed processing - use image as-is
+      console.log('[Worker Fallback] No bleed mode - using image as-is');
+    } else if (bleedMode === 'generate') {
+      // Generate new bleed - need to trim existing bleed first if present
+      if (hasBakedBleed) {
+        if (existingBleedMm !== undefined && existingBleedMm > 0) {
+          // User specified exact bleed amount to trim
+          const cardHeightMm = 88;
+          const pxPerMm = imageBitmap.height / (cardHeightMm + existingBleedMm * 2);
+          const trim = Math.round(existingBleedMm * pxPerMm);
+          const trimmed = await trimBleedFromBitmap(imageBitmap, trim);
+          if (trimmed !== imageBitmap) {
+            imageBitmap.close();
+            imageBitmap = trimmed;
+          }
+          console.log('[Worker Fallback] Generate mode - trimming user-specified bleed:', existingBleedMm, 'mm');
+        } else {
+          // Use calibrated MPC bleed trim
+          const trimmed = await trimBleedFromBitmap(imageBitmap);
+          if (trimmed !== imageBitmap) {
+            imageBitmap.close();
+            imageBitmap = trimmed;
+          }
+          console.log('[Worker Fallback] Generate mode - trimming with calibrated MPC bleed');
+        }
+      } else {
+        console.log('[Worker Fallback] Generate mode - no existing bleed to trim');
+      }
+    } else if (hasBakedBleed) {
+      // Legacy fallback for undefined bleedMode with baked bleed - use calibrated trim
       const trimmed = await trimBleedFromBitmap(imageBitmap);
       if (trimmed !== imageBitmap) {
         imageBitmap.close();
         imageBitmap = trimmed;
       }
+      console.log('[Worker Fallback] Legacy fallback - trimming with calibrated MPC bleed');
+    } else {
+      // Default: no trimming, will generate bleed
+      console.log('[Worker Fallback] Default - no trimming');
     }
 
-    const result = await addBleedEdge(imageBitmap, bleedEdgeWidth, {
-      unit,
-      bleedEdgeWidth,
-      dpi,
-      darkenNearBlack,
-    });
+    let result;
+
+    if (bleedMode === 'existing') {
+      // For existing mode, use existingBleedMm (the bleed already in the image)
+      const existingBleed = existingBleedMm ?? 3; // Default to 3mm if not specified
+      result = await resizeWithoutBleed(imageBitmap, existingBleed, {
+        unit: 'mm', // existingBleedMm is always in mm
+        dpi,
+      });
+      console.log('[Worker Fallback] Using existing bleed - skipped bleed generation, existingBleedMm:', existingBleed);
+    } else if (bleedMode === 'none') {
+      // For 'none' mode, resize to card size without any bleed
+      result = await resizeWithoutBleed(imageBitmap, 0, {
+        unit: 'mm',
+        dpi,
+      });
+      console.log('[Worker Fallback] No bleed mode - resized to card size without bleed');
+    } else {
+      // For generate mode (and legacy), run bleed generation
+      result = await addBleedEdge(imageBitmap, bleedEdgeWidth, {
+        unit,
+        bleedEdgeWidth,
+        dpi,
+        darkenNearBlack,
+      });
+    }
     imageBitmap.close(); // Close the bitmap, we only keep the Blob in cache
     self.postMessage({ uuid, imageCacheHit: cacheHit, ...result });
   } catch (error: unknown) {

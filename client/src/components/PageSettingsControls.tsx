@@ -56,8 +56,6 @@ import { useState } from "react";
 // ...
 
 export function PageSettingsControls({
-  reprocessSelectedImages,
-  cancelProcessing,
   cards,
   mobile,
 }: PageSettingsControlsProps) {
@@ -147,11 +145,7 @@ export function PageSettingsControls({
             icon={Droplet}
             mobile={mobile}
           >
-            <BleedSection
-              reprocessSelectedImages={reprocessSelectedImages}
-              cancelProcessing={cancelProcessing}
-              cards={cards}
-            />
+            <BleedSection />
           </SettingsPanel>
         );
       case "guides":

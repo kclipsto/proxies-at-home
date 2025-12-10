@@ -29,7 +29,14 @@ export type UndoableSettingKey =
     | "sortOrder"
     | "filterManaCost"
     | "filterColors"
-    | "filterMatchType";
+    | "filterMatchType"
+    | "bleedEdgeUnit"
+    | "mpcBleedMode"
+    | "mpcExistingBleed"
+    | "mpcExistingBleedUnit"
+    | "uploadBleedMode"
+    | "uploadExistingBleed"
+    | "uploadExistingBleedUnit";
 
 // Human-readable descriptions for each setting
 const settingDescriptions: Record<UndoableSettingKey, string> = {
@@ -55,6 +62,13 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     filterManaCost: "mana cost filter",
     filterColors: "color filter",
     filterMatchType: "filter match type",
+    bleedEdgeUnit: "bleed unit",
+    mpcBleedMode: "MPC bleed mode",
+    mpcExistingBleed: "MPC existing bleed",
+    mpcExistingBleedUnit: "MPC bleed unit",
+    uploadBleedMode: "upload bleed mode",
+    uploadExistingBleed: "upload existing bleed",
+    uploadExistingBleedUnit: "upload bleed unit",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

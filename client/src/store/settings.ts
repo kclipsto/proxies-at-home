@@ -29,6 +29,22 @@ type Store = {
   setBleedEdgeWidth: (value: number) => void;
   bleedEdge: boolean;
   setBleedEdge: (value: boolean) => void;
+  bleedEdgeUnit: 'mm' | 'in';
+  setBleedEdgeUnit: (value: 'mm' | 'in') => void;
+  // MPC Images bleed settings
+  mpcBleedMode: 'trim-regenerate' | 'use-existing' | 'none';
+  setMpcBleedMode: (value: 'trim-regenerate' | 'use-existing' | 'none') => void;
+  mpcExistingBleed: number;
+  setMpcExistingBleed: (value: number) => void;
+  mpcExistingBleedUnit: 'mm' | 'in';
+  setMpcExistingBleedUnit: (value: 'mm' | 'in') => void;
+  // Other uploads bleed settings
+  uploadBleedMode: 'generate' | 'existing' | 'none';
+  setUploadBleedMode: (value: 'generate' | 'existing' | 'none') => void;
+  uploadExistingBleed: number;
+  setUploadExistingBleed: (value: number) => void;
+  uploadExistingBleedUnit: 'mm' | 'in';
+  setUploadExistingBleedUnit: (value: 'mm' | 'in') => void;
   darkenNearBlack: boolean;
   setDarkenNearBlack: (value: boolean) => void;
   guideColor: string;
@@ -102,6 +118,15 @@ const defaultPageSettings = {
   rows: 3,
   bleedEdgeWidth: 1,
   bleedEdge: true,
+  bleedEdgeUnit: "mm" as "mm" | "in",
+  // MPC Images bleed settings
+  mpcBleedMode: "trim-regenerate" as "trim-regenerate" | "use-existing" | "none",
+  mpcExistingBleed: 3,  // ~1/8 inch default
+  mpcExistingBleedUnit: "mm" as "mm" | "in",
+  // Other uploads bleed settings
+  uploadBleedMode: "generate" as "generate" | "existing" | "none",
+  uploadExistingBleed: 0,
+  uploadExistingBleedUnit: "mm" as "mm" | "in",
   darkenNearBlack: true,
   guideColor: "#39FF14",
   guideWidth: 1,
@@ -243,6 +268,36 @@ export const useSettingsStore = create<Store>()(
       setBleedEdge: (value) => set((state) => {
         recordSettingChange("bleedEdge", state.bleedEdge);
         return { bleedEdge: value };
+      }),
+      setBleedEdgeUnit: (value) => set((state) => {
+        recordSettingChange("bleedEdgeUnit", state.bleedEdgeUnit);
+        return { bleedEdgeUnit: value };
+      }),
+      // MPC Images bleed setters
+      setMpcBleedMode: (value) => set((state) => {
+        recordSettingChange("mpcBleedMode", state.mpcBleedMode);
+        return { mpcBleedMode: value };
+      }),
+      setMpcExistingBleed: (value) => set((state) => {
+        recordSettingChange("mpcExistingBleed", state.mpcExistingBleed);
+        return { mpcExistingBleed: value };
+      }),
+      setMpcExistingBleedUnit: (value) => set((state) => {
+        recordSettingChange("mpcExistingBleedUnit", state.mpcExistingBleedUnit);
+        return { mpcExistingBleedUnit: value };
+      }),
+      // Other uploads bleed setters
+      setUploadBleedMode: (value) => set((state) => {
+        recordSettingChange("uploadBleedMode", state.uploadBleedMode);
+        return { uploadBleedMode: value };
+      }),
+      setUploadExistingBleed: (value) => set((state) => {
+        recordSettingChange("uploadExistingBleed", state.uploadExistingBleed);
+        return { uploadExistingBleed: value };
+      }),
+      setUploadExistingBleedUnit: (value) => set((state) => {
+        recordSettingChange("uploadExistingBleedUnit", state.uploadExistingBleedUnit);
+        return { uploadExistingBleedUnit: value };
       }),
       setDarkenNearBlack: (value) => set((state) => {
         recordSettingChange("darkenNearBlack", state.darkenNearBlack);

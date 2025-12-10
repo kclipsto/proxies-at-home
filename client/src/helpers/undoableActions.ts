@@ -288,3 +288,87 @@ export async function undoableChangeArtwork(
         },
     });
 }
+
+/**
+ * Undoable card bleed settings update.
+ * Captures old bleed settings before update for restoration on undo.
+ */
+export async function undoableUpdateCardBleedSettings(
+    cardUuids: string[],
+    newSettings: {
+        bleedMode?: 'generate' | 'existing' | 'none';
+        existingBleedMm?: number;
+        generateBleedMm?: number;
+    }
+): Promise<void> {
+    if (cardUuids.length === 0) return;
+
+    // Capture old settings for all affected cards
+    const oldSettings: Map<string, {
+        bleedMode?: CardOption['bleedMode'];
+        existingBleedMm?: number;
+        generateBleedMm?: number;
+    }> = new Map();
+    const cards = await db.cards.where('uuid').anyOf(cardUuids).toArray();
+
+    for (const card of cards) {
+        oldSettings.set(card.uuid, {
+            bleedMode: card.bleedMode,
+            existingBleedMm: card.existingBleedMm,
+            generateBleedMm: card.generateBleedMm,
+        });
+    }
+
+    const cardName = cards.length === 1 ? cards[0]?.name || 'card' : `${cards.length} cards`;
+
+    // Perform the update - always set all fields to allow resetting to undefined
+    await db.transaction("rw", db.cards, async () => {
+        const changes: Partial<CardOption> = {
+            bleedMode: newSettings.bleedMode,
+            existingBleedMm: newSettings.existingBleedMm,
+            generateBleedMm: newSettings.generateBleedMm,
+        };
+
+        await db.cards.bulkUpdate(
+            cardUuids.map((uuid) => ({
+                key: uuid,
+                changes,
+            }))
+        );
+    });
+
+    // Record the action for undo
+    useUndoRedoStore.getState().pushAction({
+        type: "UPDATE_BLEED_SETTINGS",
+        description: `Change bleed settings for "${cardName}"`,
+        undo: async () => {
+            // Restore old settings for each card
+            await db.transaction("rw", db.cards, async () => {
+                for (const [uuid, settings] of oldSettings) {
+                    await db.cards.update(uuid, {
+                        bleedMode: settings.bleedMode,
+                        existingBleedMm: settings.existingBleedMm,
+                        generateBleedMm: settings.generateBleedMm,
+                    });
+                }
+            });
+        },
+        redo: async () => {
+            // Re-apply new settings
+            await db.transaction("rw", db.cards, async () => {
+                const changes: Partial<CardOption> = {
+                    bleedMode: newSettings.bleedMode,
+                    existingBleedMm: newSettings.existingBleedMm,
+                    generateBleedMm: newSettings.generateBleedMm,
+                };
+
+                await db.cards.bulkUpdate(
+                    cardUuids.map((uuid) => ({
+                        key: uuid,
+                        changes,
+                    }))
+                );
+            });
+        },
+    });
+}
