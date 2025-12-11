@@ -8,7 +8,7 @@ import {
   type DragEndEvent,
   type DragOverEvent,
   DragOverlay,
-  pointerWithin,
+  closestCenter,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -26,7 +26,7 @@ import SortableCard, { CardView } from "../components/SortableCard";
 import { db, type Image } from "../db";
 import type { CardOption } from "../../../shared/types";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
-import { undoableDeleteCard, undoableDuplicateCard, undoableReorderCards } from "@/helpers/undoableActions";
+import { undoableDeleteCard, undoableDuplicateCard, undoableReorderCards, undoableReorderMultipleCards } from "@/helpers/undoableActions";
 import type { useImageProcessing } from "../hooks/useImageProcessing";
 import { useArtworkModalStore } from "../store";
 import { useSettingsStore } from "../store/settings";
@@ -44,7 +44,6 @@ import { Copy, Trash, CheckSquare, XSquare, Settings } from "lucide-react";
 const baseCardWidthMm = 63;
 const baseCardHeightMm = 88;
 
-// Helper to compute per-card layout with variable bleed widths
 type CardLayoutInfo = {
   cardWidthMm: number;
   cardHeightMm: number;
@@ -60,28 +59,20 @@ type SourceTypeSettings = {
   uploadExistingBleedUnit: 'mm' | 'in';
 };
 
-/**
- * Compute per-card bleed width based on:
- * 1. Per-card override (card.bleedMode, card.existingBleedMm)
- * 2. Source-type settings (MPC vs Other)
- * 3. Global bleed setting
- */
+/** Compute per-card bleed width based on overrides, settings, and global defaults. */
 function getCardTargetBleed(
   card: CardOption,
   sourceSettings: SourceTypeSettings,
   globalBleedWidth: number,
 ): number {
-  // Per-card override takes precedence
   if (card.bleedMode) {
     if (card.bleedMode === 'none') return 0;
     if (card.bleedMode === 'existing' && card.existingBleedMm !== undefined) {
       return card.existingBleedMm;
     }
-    // 'generate' uses global bleed width
     return globalBleedWidth;
   }
 
-  // MPC images (hasBakedBleed = true)
   if (card.hasBakedBleed) {
     if (sourceSettings.mpcBleedMode === 'none') {
       return 0;
@@ -91,12 +82,10 @@ function getCardTargetBleed(
         : sourceSettings.mpcExistingBleed;
       return existingMm;
     } else {
-      // trim-regenerate: use global bleed width
       return globalBleedWidth;
     }
   }
 
-  // Other Uploads (isUserUpload = true, hasBakedBleed = false)
   if (card.isUserUpload) {
     if (sourceSettings.uploadBleedMode === 'none') {
       return 0;
@@ -106,11 +95,9 @@ function getCardTargetBleed(
         : sourceSettings.uploadExistingBleed;
       return existingMm;
     }
-    // 'generate' uses global bleed width
     return globalBleedWidth;
   }
 
-  // Scryfall/standard images (isUserUpload = false) - use global bleed
   return globalBleedWidth;
 }
 
@@ -133,14 +120,13 @@ function computeCardLayouts(
 type PageViewProps = {
   loadingMap: ReturnType<typeof useImageProcessing>["loadingMap"];
   ensureProcessed: ReturnType<typeof useImageProcessing>["ensureProcessed"];
-  images: Image[]; // Passed from parent to avoid redundant DB query
-  cards: CardOption[]; // Passed from parent to avoid redundant DB query
+  images: Image[];
+  cards: CardOption[];
   mobile?: boolean;
   active?: boolean;
 };
 
 export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, active = true }: PageViewProps) {
-  // Consolidate settings subscriptions with use Shallow to prevent unnecessary re-renders
   const {
     pageSizeUnit,
     pageWidth,
@@ -162,7 +148,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     filterColors,
     cardPositionX,
     cardPositionY,
-    // Source-type bleed settings
     mpcBleedMode,
     mpcExistingBleed,
     mpcExistingBleedUnit,
@@ -191,7 +176,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       filterColors: state.filterColors,
       cardPositionX: state.cardPositionX,
       cardPositionY: state.cardPositionY,
-      // Source-type bleed settings
       mpcBleedMode: state.mpcBleedMode,
       mpcExistingBleed: state.mpcExistingBleed,
       mpcExistingBleedUnit: state.mpcExistingBleedUnit,
@@ -220,13 +204,13 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 8, // 8px movement required before drag starts (prevents accidental drags)
+        distance: 8,
       },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 500, // 500ms delay for touch drag (allows for long-press context menu)
-        tolerance: 5, // 5px tolerance for movement during delay
+        delay: 500,
+        tolerance: 5,
       },
     })
   );
@@ -246,22 +230,18 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     const usedIds = new Set<string>();
 
     images.forEach((img) => {
-      // Select appropriate blob based on darkenNearBlack setting
       const selectedBlob = darkenNearBlack ? img.displayBlobDarkened : img.displayBlob;
 
       if (selectedBlob && selectedBlob.size > 0) {
         usedIds.add(img.id);
 
-        // Check if we already have a URL for this exact blob
         const cached = currentCache.get(img.id);
         if (cached && cached.blob === selectedBlob) {
           urls[img.id] = cached.url;
         } else {
-          // Queue old URL for revocation
           if (cached) {
             revocationQueueRef.current.push(cached.url);
           }
-          // Create new URL
           const newUrl = URL.createObjectURL(selectedBlob);
           urls[img.id] = newUrl;
           currentCache.set(img.id, { blob: selectedBlob, url: newUrl });
@@ -269,7 +249,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       }
     });
 
-    // Clean up URLs for images that no longer exist or don't have blobs
     for (const [id, cached] of currentCache.entries()) {
       if (!usedIds.has(id)) {
         revocationQueueRef.current.push(cached.url);
@@ -284,14 +263,9 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   useEffect(() => {
     const queue = revocationQueueRef.current;
     if (queue.length > 0) {
-      // Small delay to ensure DOM has updated
       const timer = setTimeout(() => {
         queue.forEach((url) => URL.revokeObjectURL(url));
-        // Clear the queue in the ref (though we are iterating a local reference, the ref should be cleared)
       }, 2000);
-
-      // Clear the ref immediately so we don't process again, 
-      // but we need to keep the local array for the timeout.
       revocationQueueRef.current = [];
 
       return () => clearTimeout(timer);
@@ -302,8 +276,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   useEffect(() => {
     const cache = urlCacheRef.current;
     return () => {
-      // Delay revocation to avoid ERR_FILE_NOT_FOUND if the browser is still finishing up with these URLs
-      // or if there are pending network requests for them.
       const urlsToRevoke = Array.from(cache.values()).map((c) => c.url);
       setTimeout(() => {
         urlsToRevoke.forEach((url) => URL.revokeObjectURL(url));
@@ -364,12 +336,11 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // Calculate vertical scroll percentage
     const maxScrollTop = container.scrollHeight - container.clientHeight;
     const ratioY = maxScrollTop > 0 ? container.scrollTop / maxScrollTop : 0;
 
     lastCenterOffsetRef.current = {
-      x: 0, // Unused, we always center horizontally
+      x: 0,
       y: ratioY,
     };
   }, []);
@@ -403,11 +374,8 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   const lastOptimisticOrder = useRef<string[]>([]);
 
   const { filteredAndSortedCards } = useFilteredAndSortedCards(localCards);
-
-  // Compute allCardUuids for range selection
   const allCardUuids = useMemo(() => filteredAndSortedCards.map(c => c.uuid), [filteredAndSortedCards]);
 
-  // Selection store
   const selectedCards = useSelectionStore((state) => state.selectedCards);
   const selectAll = useSelectionStore((state) => state.selectAll);
   const clearSelection = useSelectionStore((state) => state.clearSelection);
@@ -441,16 +409,66 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   const [activeId, setActiveId] = useState<string | null>(null);
   const dragStartOrderRef = useRef<{ cardUuid: string; oldOrder: number } | null>(null);
 
+  const multiDragState = useRef<{
+    isMultiDrag: boolean;
+    draggedCards: CardOption[];
+    originalLocalCards: CardOption[];
+    activeId: string | null;
+    ghostIds: Set<string>;
+  }>({
+    isMultiDrag: false,
+    draggedCards: [],
+    originalLocalCards: [],
+    activeId: null,
+    ghostIds: new Set(),
+  });
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const cardUuid = event.active.id as string;
     const card = localCards.find(c => c.uuid === cardUuid);
-    if (card) {
-      dragStartOrderRef.current = { cardUuid, oldOrder: card.order };
+    const isMultiSelect = selectedCards.has(cardUuid) && selectedCards.size > 1;
+
+    if (isMultiSelect) {
+      const draggedCards = localCards.filter(c => selectedCards.has(c.uuid));
+      multiDragState.current = {
+        isMultiDrag: true,
+        draggedCards,
+        originalLocalCards: [...localCards],
+        activeId: cardUuid,
+        ghostIds: new Set(),
+      };
+
+      // Collapse grid by removing selected cards, then inserting leader at its original index.
+      const remainingCards = localCards.filter(c => !selectedCards.has(c.uuid));
+      const leaderOriginalIndex = localCards.findIndex(c => c.uuid === cardUuid);
+      const insertIndex = Math.min(leaderOriginalIndex, remainingCards.length);
+
+      const newLocalCards = [...remainingCards];
+      if (card) {
+        newLocalCards.splice(insertIndex, 0, card);
+      }
+
+      // Defer state update for dnd-kit node capture.
+      setTimeout(() => {
+        setLocalCards(newLocalCards);
+      }, 50);
+    } else {
+      multiDragState.current = {
+        isMultiDrag: false,
+        draggedCards: [],
+        originalLocalCards: [],
+        activeId: null,
+        ghostIds: new Set(),
+      };
+      if (card) {
+        dragStartOrderRef.current = { cardUuid, oldOrder: card.order };
+      }
     }
+
     setActiveId(cardUuid);
     setIsOptimistic(true);
     setBlockDbUpdates(true);
-  }, [localCards]);
+  }, [localCards, selectedCards]);
 
   // Ref to track the latest localCards for the debounced handler
   const localCardsRef = useRef(localCards);
@@ -492,17 +510,67 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     setDroppedId(active.id as string);
     setActiveId(null);
 
-    // Unblock DB updates after a short delay
     setTimeout(() => {
       setBlockDbUpdates(false);
     }, 500);
 
     if (!over) {
+      if (multiDragState.current.isMultiDrag) {
+        setLocalCards(multiDragState.current.originalLocalCards);
+      }
+      if (!multiDragState.current.isMultiDrag) {
+        setLocalCards(cards);
+      }
+
+      multiDragState.current = { isMultiDrag: false, draggedCards: [], originalLocalCards: [], activeId: null, ghostIds: new Set() };
       return;
     }
 
-    // Calculate new order for DB
-    // We use localCards which should already be reordered by handleDragOver
+    if (multiDragState.current.isMultiDrag) {
+      const { draggedCards, activeId: leaderId } = multiDragState.current;
+
+      const leaderIndex = localCards.findIndex(c => c.uuid === leaderId);
+      if (leaderIndex === -1) {
+        setLocalCards(multiDragState.current.originalLocalCards);
+        return;
+      }
+
+      const cardsWithoutLeader = localCards.filter(c => c.uuid !== leaderId);
+      const newLocalCards = [
+        ...cardsWithoutLeader.slice(0, leaderIndex),
+        ...draggedCards,
+        ...cardsWithoutLeader.slice(leaderIndex)
+      ];
+
+      setLocalCards(newLocalCards);
+
+      const adjustments: { uuid: string; oldOrder: number; newOrder: number }[] = [];
+      const rebalanced = newLocalCards.map((c, i) => ({ ...c, order: (i + 1) * 1000 }));
+
+      draggedCards.forEach((c) => {
+        const moved = rebalanced.find(r => r.uuid === c.uuid);
+        if (moved) {
+          adjustments.push({ uuid: c.uuid, oldOrder: c.order, newOrder: moved.order });
+        }
+      });
+
+      await undoableReorderMultipleCards(adjustments);
+
+      // 4. Update the DB
+      for (const c of draggedCards) {
+        const adjustment = adjustments.find(a => a.uuid === c.uuid);
+        if (adjustment) {
+          await db.cards.update(c.uuid, { order: adjustment.newOrder });
+        }
+      }
+
+      // 5. Rebalance all cards to ensure gaps/duplicates are fixed
+      await rebalanceCardOrders(newLocalCards);
+
+      multiDragState.current = { isMultiDrag: false, draggedCards: [], originalLocalCards: [], activeId: null, ghostIds: new Set() };
+      return;
+    }
+
     const currentIndex = localCards.findIndex((c) => c.uuid === active.id);
     if (currentIndex === -1) return;
 
@@ -521,8 +589,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       newOrder = (prevCard.order + nextCard.order) / 2.0;
     }
 
-
-
     if (newOrder === prevCard?.order || newOrder === nextCard?.order) {
       await rebalanceCardOrders(localCards);
       return;
@@ -536,7 +602,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     dragStartOrderRef.current = null;
 
     await db.cards.update(active.id as string, { order: newOrder });
-  }, [localCards]);
+  }, [localCards, cards, multiDragState]);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
@@ -545,21 +611,19 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     const prevZoom = prevZoomRef.current;
     if (prevZoom === zoom) return;
 
-    // Mobile Pinch Zoom: Zoom about the pinch center
+    // Mobile Pinch: Zoom about pinch center using relative movement.
     if (mobile && pinchState.current.active) {
       const { x: currX, y: currY } = pinchState.current;
       const { x: prevX, y: prevY } = lastPinchPosRef.current;
       const ratio = zoom / prevZoom;
 
-      // Formula: (scroll + prevPinch) * ratio - currPinch
-      // This accounts for both the scaling around the point AND the movement of the fingers (panning)
       container.scrollLeft = (container.scrollLeft + prevX) * ratio - currX;
       container.scrollTop = (container.scrollTop + prevY) * ratio - currY;
 
       // Update last pinch pos for next frame
       lastPinchPosRef.current = { x: currX, y: currY };
     } else if (mobile) {
-      // Mobile Fallback (e.g. buttons or settling): Zoom about center
+      // Mobile Fallback: Zoom about center.
       const cx = container.clientWidth / 2;
       const cy = container.clientHeight / 2;
       const ratio = zoom / prevZoom;
@@ -572,7 +636,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       // Horizontal: Always center
       const targetScrollLeft = (container.scrollWidth - container.clientWidth) / 2;
 
-      // Vertical: Maintain relative position (percentage)
+      // Vertical: Maintain relative scroll percentage.
       const maxScrollTop = container.scrollHeight - container.clientHeight;
       const targetScrollTop = ratioY * maxScrollTop;
 
@@ -601,9 +665,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
 
         if (isInside) {
           e.preventDefault();
-          // Standard mouse wheel delta is usually around 100.
-          // We want a reasonable zoom speed.
-          // Negative deltaY means scrolling up (zooming in).
           const sensitivity = 0.001;
           const delta = -e.deltaY * sensitivity;
 
@@ -622,10 +683,8 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     };
   }, [setZoom]);
 
-  // Handle Ctrl+Z and Ctrl+Shift+Z for undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if focused on input or textarea
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
         return;
@@ -637,11 +696,11 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
 
       if (modifierActive && e.key.toLowerCase() === "z") {
         if (e.shiftKey) {
-          // Ctrl+Shift+Z (or Cmd+Shift+Z on Mac) = Redo
+          // Redo
           e.preventDefault();
           void useUndoRedoStore.getState().redo();
         } else {
-          // Ctrl+Z (or Cmd+Z on Mac) = Undo
+          // Undo
           e.preventDefault();
           void useUndoRedoStore.getState().undo();
         }
@@ -668,7 +727,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
           const rect = container.getBoundingClientRect();
           const x = ox - rect.left;
           const y = oy - rect.top;
-          // Initialize last pos on start
           lastPinchPosRef.current = { x, y };
           pinchState.current.x = x;
           pinchState.current.y = y;
@@ -710,8 +768,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
       if (last) setIsPinching(false);
 
       if (shiftKey) {
-        // Sensitivity factor
-        const delta = my * -0.01; // Drag up to zoom in, down to zoom out
+        const delta = my * -0.01;
         const newZoom = Math.min(Math.max(0.1, memo + delta), 5);
         setZoom(newZoom);
         return memo;
@@ -721,15 +778,10 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
     {
       target: document,
       eventOptions: { passive: false, capture: true },
-      enabled: active, // Always enabled to catch the shift key
+      enabled: active,
     }
   );
 
-
-
-  // Mobile: Fit to width on mount/resize
-  // User requested fixed 0.4x factor for mobile
-  // so 1x on slider = 0.4x actual zoom
   const mobileZoomFactor = 0.4;
 
   // Desktop: Center view logic
@@ -783,7 +835,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
 
           <DndContext
             sensors={sensors}
-            collisionDetection={pointerWithin}
+            collisionDetection={closestCenter}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
@@ -951,8 +1003,74 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
               </SortableContext>
             </div>
             <DragOverlay zIndex={40}>
-              {droppedId ? null : (localCards.find(c => c.uuid === activeId) ? (() => {
+              {droppedId ? null : (activeId ? (() => {
+                if (multiDragState.current.isMultiDrag) {
+                  // Render Stack
+                  const stackCards = multiDragState.current.draggedCards;
+                  const count = stackCards.length;
+
+                  // Reorder to put leader on top for visualization
+                  const leaderId = multiDragState.current.activeId;
+                  const leaderIndex = stackCards.findIndex(c => c.uuid === leaderId);
+
+                  let sortedStack = stackCards;
+                  if (leaderIndex !== -1) {
+                    const leader = stackCards[leaderIndex];
+                    const others = stackCards.filter(c => c.uuid !== leaderId);
+                    sortedStack = [leader, ...others];
+                  }
+
+                  // Show up to 3 cards
+                  const previewCards = sortedStack.slice(0, 3);
+
+                  return (
+                    <div className="relative">
+                      {previewCards.map((card, i) => {
+                        // Compute per-card bleed
+                        const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
+                        const cardWidthMm = baseCardWidthMm + bleedMm * 2;
+                        const cardHeightMm = baseCardHeightMm + bleedMm * 2;
+                        const processedUrl = processedImageUrls[card.imageId!] || "";
+
+                        return (
+                          <div
+                            key={card.uuid}
+                            className="absolute top-0 left-0 shadow-xl"
+                            style={{
+                              zIndex: 40 - i, // Top card on top
+                              transform: `translate(0px, ${i * -60}px) scale(${1 - i * 0.05})`,
+                              transformOrigin: 'bottom center',
+                            }}
+                          >
+                            <CardView
+                              card={card}
+                              index={0}
+                              globalIndex={0}
+                              imageSrc={processedUrl}
+                              totalCardWidth={cardWidthMm}
+                              totalCardHeight={cardHeightMm}
+                              guideOffset={`${bleedMm}mm`}
+                              imageBleedWidth={bleedMm}
+                              setContextMenu={setContextMenu}
+                              disabled={true}
+                              mobile={mobile}
+                              isOverlay={true}
+                            />
+                            {/* Badge for total count if > 1, show on top card */}
+                            {i === 0 && count > 1 && (
+                              <div className="absolute -top-2 -right-2 bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold border-2 border-white z-50">
+                                {count}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
                 const card = localCards.find(c => c.uuid === activeId)!;
+                if (!card) return null;
                 // Compute per-card bleed for the dragged card using source settings
                 const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
                 const cardWidthMm = baseCardWidthMm + bleedMm * 2;

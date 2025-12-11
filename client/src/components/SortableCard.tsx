@@ -120,6 +120,7 @@ export const CardView = memo(function CardView({
     <div
       ref={forwardedRef}
       {...attributes}
+      data-dnd-sortable-item={card.uuid}
       {...(mobile ? listeners : {})}
       className={`bg-black relative group ${isOverlay ? 'cursor-grabbing shadow-2xl z-50' : ''}`}
       style={style}
