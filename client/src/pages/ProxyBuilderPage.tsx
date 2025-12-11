@@ -14,7 +14,7 @@ import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 import { importStats } from "../helpers/importStats";
-import { cleanExpiredImageCache } from "../helpers/imageCacheUtils";
+import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/cacheUtils";
 import { getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
 
 const PageView = lazy(() =>
@@ -160,10 +160,11 @@ export default function ProxyBuilderPage() {
   // On startup, clean expired image cache entries (non-blocking)
   useEffect(() => {
     const timer = setTimeout(() => {
-      cleanExpiredImageCache().then(count => {
-        if (count > 0) {
-          console.log(`[ImageCache] Cleaned ${count} expired entries`);
-        }
+      enforceImageCacheLimits().then(count => {
+        if (count > 0) console.log(`[ImageCache] Cleaned ${count} entries (TTL or Size Limit)`);
+      });
+      enforceMetadataCacheLimits().then(count => {
+        if (count > 0) console.log(`[MetadataCache] Cleaned ${count} entries (TTL or Size Limit)`);
       });
     }, 500);
     return () => clearTimeout(timer);

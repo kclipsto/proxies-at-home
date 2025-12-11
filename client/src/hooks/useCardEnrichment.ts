@@ -116,32 +116,111 @@ export function useCardEnrichment() {
                 const batchStart = performance.now();
 
                 try {
-                    const response = await fetch(`${API_BASE}/api/cards/images/enrich`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            cards: batch.map((c) => ({
-                                name: c.name,
-                                set: c.set,
-                                number: c.number,
-                            })),
-                        }),
-                        signal: abortController.signal,
-                    });
+                    // Check cache for each card in batch first
+                    const cardsToFetch: typeof batch = [];
+                    const cachedDataMap = new Map<string, EnrichedCardData>();
 
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
+                    await Promise.all(batch.map(async (card) => {
+                        try {
+                            // Lookup by name, then filter by set/number
+                            // We normalize checks to handle empty strings vs undefined
+                            const targetSet = card.set || '';
+                            const targetNum = card.number || '';
+
+                            const cached = await db.cardMetadataCache
+                                .where('name').equals(card.name)
+                                .and(item => {
+                                    if (targetSet && item.set !== targetSet) return false;
+                                    if (targetNum && item.number !== targetNum) return false;
+                                    return true;
+                                })
+                                .first();
+
+                            if (cached) {
+                                // Touch cachedAt
+                                db.cardMetadataCache.update(cached.id, { cachedAt: Date.now() });
+                                cachedDataMap.set(card.uuid, cached.data as unknown as EnrichedCardData);
+                                importStats.incrementMetadataCacheHit();
+                            } else {
+                                cardsToFetch.push(card);
+                            }
+                        } catch {
+                            cardsToFetch.push(card);
+                        }
+                    }));
+
+                    // If we have mixed hits/misses, we only fetch what we need
+                    let validResponses: (EnrichedCardData | null)[] = [];
+
+                    if (cardsToFetch.length > 0) {
+                        const response = await fetch(`${API_BASE}/api/cards/images/enrich`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                cards: cardsToFetch.map((c) => ({
+                                    name: c.name,
+                                    set: c.set,
+                                    number: c.number,
+                                })),
+                            }),
+                            signal: abortController.signal,
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+
+                        validResponses = await response.json();
+
+                        // Cache the new results
+                        try {
+                            const entriesToCache: { id: string, name: string, set: string, number: string, data: unknown, cachedAt: number, size: number }[] = [];
+
+                            validResponses.forEach((data) => {
+                                if (data) {
+                                    const jsonStr = JSON.stringify(data);
+                                    const size = new Blob([jsonStr]).size;
+
+                                    entriesToCache.push({
+                                        id: crypto.randomUUID(),
+                                        name: data.name,
+                                        set: data.set || '',
+                                        number: data.number || '',
+                                        data: data as unknown,
+                                        cachedAt: Date.now(),
+                                        size: size
+                                    });
+                                }
+                            });
+
+                            if (entriesToCache.length > 0) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                await db.cardMetadataCache.bulkPut(entriesToCache as any[]);
+                            }
+                        } catch (e) {
+                            console.warn("[Metadata] Failed to cache results:", e);
+                        }
                     }
 
-                    const enrichedData: (EnrichedCardData | null)[] = await response.json();
-                    console.log(`[Metadata] Batch of ${batch.length} cards: ${(performance.now() - batchStart).toFixed(0)}ms`);
+                    console.log(`[Metadata] Batch of ${batch.length} cards (${cachedDataMap.size} cached, ${cardsToFetch.length} fetched): ${(performance.now() - batchStart).toFixed(0)}ms`);
 
-                    // Update each card in DB
+                    // Update each card in DB (Merging cached and fetched data)
                     await db.transaction("rw", db.cards, async () => {
                         let batchEnrichedCount = 0;
+
+                        // Pointer for fetched responses
+                        let fetchIndex = 0;
+
                         for (let i = 0; i < batch.length; i++) {
                             const card = batch[i];
-                            const data = enrichedData[i];
+                            let data: EnrichedCardData | null | undefined;
+
+                            if (cachedDataMap.has(card.uuid)) {
+                                data = cachedDataMap.get(card.uuid);
+                            } else {
+                                data = validResponses[fetchIndex];
+                                fetchIndex++;
+                            }
 
                             if (data) {
                                 await db.cards.update(card.uuid, {
@@ -178,6 +257,10 @@ export function useCardEnrichment() {
                                         enrichmentRetryCount: retryCount,
                                         enrichmentNextRetryAt: nextRetryAt,
                                     });
+                                    // Original code had this logic split:
+                                    // It only incremented failedCount on MAX retry.
+                                    // BUT: original code inside the loop was `importStats.incrementEnrichmentFailed()` only on max retry.
+                                    // Retries were counted separately.
                                     retryingCount++;
                                 }
                             }
@@ -189,10 +272,10 @@ export function useCardEnrichment() {
 
                 } catch (error) {
                     if ((error as Error).name === "AbortError") {
-                        console.log("[Metadata] Aborted");
+                        console.log("[Metadata] Aborted batch");
                         break;
                     }
-                    console.error("[Metadata] Batch failed:", error);
+                    console.error("[Metadata] Batch error:", error);
 
                     // Schedule retry for all cards in failed batch
                     await db.transaction("rw", db.cards, async () => {
@@ -226,14 +309,20 @@ export function useCardEnrichment() {
             }
 
 
+            const pad = (content: string) => content.padEnd(62);
+
+            // Get stats directly for the log box
+            const stats = importStats.getStats();
+
             console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║              METADATA FETCH COMPLETE                         ║
 ╠══════════════════════════════════════════════════════════════╣
-║  Time:                 ${((performance.now() - startTime) / 1000).toFixed(2)}s
-║  Cards Fetched:        ${enrichedCount}
-║  Cards Failed:         ${failedCount}
-║  Cards Retrying:       ${retryingCount}
+║${pad(`  Time:              ${((performance.now() - startTime) / 1000).toFixed(2).padStart(8)}s`)}║
+║${pad(`  Cards Enriched:    ${String(enrichedCount).padStart(8)}`)}║
+║${pad(`  ├── Network:       ${String(enrichedCount - stats.metadataCacheHits).padStart(8)} (${failedCount} failed)`)}║
+║${pad(`  ├── Cache Hits:    ${String(stats.metadataCacheHits).padStart(8)}`)}║
+║${pad(`  └── Retries:       ${String(retryingCount).padStart(8)}`)}║
 ╚══════════════════════════════════════════════════════════════╝
             `);
 
