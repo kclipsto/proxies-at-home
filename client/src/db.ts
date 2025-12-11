@@ -41,6 +41,13 @@ export interface Setting {
   value: Json;
 }
 
+// Persistent image cache for long-term storage (survives card clearing)
+export interface CachedImage {
+  url: string;        // Primary key - the source URL
+  blob: Blob;         // Original unprocessed image
+  cachedAt: number;   // Timestamp for TTL calculation
+}
+
 export class ProxxiedDexie extends Dexie {
   // 'cards' is the name of the table
   // '&uuid' makes 'uuid' a unique index and primary key
@@ -52,6 +59,9 @@ export class ProxxiedDexie extends Dexie {
   images!: Table<Image, string>;
 
   settings!: Table<Setting, string>;
+
+  // Persistent image cache - survives card clearing, has TTL
+  imageCache!: Table<CachedImage, string>;
 
 
   constructor() {
@@ -72,6 +82,13 @@ export class ProxxiedDexie extends Dexie {
       cards: '&uuid, imageId, order, name, needsEnrichment',
       images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
       settings: '&id',
+    });
+    // Version 4: Add imageCache table for persistent image caching across sessions
+    this.version(4).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
     });
   }
 }

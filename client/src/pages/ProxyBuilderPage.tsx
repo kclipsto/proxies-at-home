@@ -14,6 +14,7 @@ import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 import { importStats } from "../helpers/importStats";
+import { cleanExpiredImageCache } from "../helpers/imageCacheUtils";
 
 const PageView = lazy(() =>
   import("../components/PageView").then((module) => ({
@@ -149,6 +150,18 @@ export default function ProxyBuilderPage() {
     const timer = setTimeout(() => {
       void rebalanceCardOrders();
     }, 200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // On startup, clean expired image cache entries (non-blocking)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      cleanExpiredImageCache().then(count => {
+        if (count > 0) {
+          console.log(`[ImageCache] Cleaned ${count} expired entries`);
+        }
+      });
+    }, 500);
     return () => clearTimeout(timer);
   }, []);
 
