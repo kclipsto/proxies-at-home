@@ -45,7 +45,8 @@ export interface Setting {
 export interface CachedImage {
   url: string;        // Primary key - the source URL
   blob: Blob;         // Original unprocessed image
-  cachedAt: number;   // Timestamp for TTL calculation
+  cachedAt: number;   // Timestamp for TTL calculation (last accessed)
+  size: number;       // Size in bytes
 }
 
 export class ProxxiedDexie extends Dexie {
@@ -62,6 +63,9 @@ export class ProxxiedDexie extends Dexie {
 
   // Persistent image cache - survives card clearing, has TTL
   imageCache!: Table<CachedImage, string>;
+
+  // Persistent metadata cache
+  cardMetadataCache!: Table<CachedMetadata, string>;
 
 
   constructor() {
@@ -90,7 +94,25 @@ export class ProxxiedDexie extends Dexie {
       settings: '&id',
       imageCache: '&url, cachedAt',
     });
+    // Version 5: Add cardMetadataCache table
+    this.version(5).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+    });
   }
+}
+
+export interface CachedMetadata {
+  id: string;         // UUID
+  name: string;       // Card Name
+  set: string;        // Set Code (or empty)
+  number: string;     // Collector Number (or empty)
+  data: Json;         // The metadata object
+  cachedAt: number;   // Last accessed
+  size: number;       // Estimated size in bytes
 }
 
 export const db = new ProxxiedDexie();

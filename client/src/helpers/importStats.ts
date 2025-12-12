@@ -29,7 +29,8 @@ export interface ImportStats {
     scryfallRequestCount: number;
     dbHits: number;           // Hits from existing processed blobs in DB
     cacheMisses: number;
-    persistentCacheHits: number; // Hits from 7-day raw image cache
+    persistentCacheHits: number; // Hits from LRU raw image cache
+    metadataCacheHits: number;
 }
 
 export type ImportType = 'scryfall' | 'mpc' | 'upload' | 'unknown';
@@ -58,6 +59,7 @@ class ImportStatsTracker {
             dbHits: 0,
             cacheMisses: 0,
             persistentCacheHits: 0,
+            metadataCacheHits: 0,
         };
     }
 
@@ -217,6 +219,11 @@ class ImportStatsTracker {
         this.stats.persistentCacheHits++;
     }
 
+    incrementMetadataCacheHit() {
+        if (!this.isActive) return;
+        this.stats.metadataCacheHits++;
+    }
+
     finish() {
         // Only finish if no pending cards AND not waiting for enrichment
         if (!this.isActive || this.hasLoggedSummary || this.pendingCardUuids.size > 0 || this.expectingEnrichment) return;
@@ -291,14 +298,16 @@ class ImportStatsTracker {
         // Only show metadata fetched for imports that use enrichment
         if (!isScryfall) {
             summary += `
-║${pad(`  Metadata Fetched:  ${String(s.cardsEnriched).padStart(8)} (${s.enrichmentsFailed} failed)`)}║`;
+║${pad(`  Metadata Fetched:  ${String(s.cardsEnriched).padStart(8)}`)}║
+║${pad(`  ├── Network:       ${String(s.cardsEnriched - s.metadataCacheHits).padStart(8)} (${s.enrichmentsFailed} failed)`)}║
+║${pad(`  └── Cache Hits:    ${String(s.metadataCacheHits).padStart(8)}`)}║`;
         }
 
         summary += `
 ╠══════════════════════════════════════════════════════════════╣
-║${pad(`  Image Cache Hits:  ${String(s.persistentCacheHits).padStart(8)}  (7-day raw image cache)`)}║
-║${pad(`  DB Hits:           ${String(s.dbHits).padStart(8)}  (processed blobs)`)}║
-║${pad(`  Network Fetches:   ${String(s.cacheMisses).padStart(8)}`)}║
+║${pad(`  Network Fetches:   ${String(s.totalCards - s.dbHits - s.persistentCacheHits).padStart(8)} (${s.imagesFailed} failed)`)}║
+║${pad(`  Image Cache Hits:  ${String(s.persistentCacheHits).padStart(8)}`)}║
+║${pad(`  Processed DB Hits: ${String(s.dbHits).padStart(8)}`)}║
 ╚══════════════════════════════════════════════════════════════╝`;
         console.log(summary);
     }

@@ -161,6 +161,8 @@ self.onmessage = async (e: MessageEvent) => {
                 if (cached && (Date.now() - cached.cachedAt) < CACHE_TTL_MS) {
                     blob = cached.blob;
                     cacheHit = true;
+                    // LRU: touch the timestamp
+                    db.imageCache.update(cacheKey, { cachedAt: Date.now() }).catch(() => { });
                 }
             } catch {
                 // IndexedDB error - proceed without cache
@@ -187,6 +189,7 @@ self.onmessage = async (e: MessageEvent) => {
                                 url: cacheKey,
                                 blob,
                                 cachedAt: Date.now(),
+                                size: blob.size,
                             });
                         } catch {
                             // IndexedDB error - proceed without caching
