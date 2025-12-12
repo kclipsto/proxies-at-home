@@ -315,8 +315,8 @@ describe('Mpc', () => {
       // Should add cards
       expect(addCards).toHaveBeenCalledTimes(1);
       expect(addCards).toHaveBeenCalledWith([
-        expect.objectContaining({ name: "MPC Import 1", imageId: "imgId1", isUserUpload: true, hasBakedBleed: true }),
-        expect.objectContaining({ name: "MPC Import 2", imageId: "imgId2", isUserUpload: true, hasBakedBleed: true }),
+        expect.objectContaining({ name: "MPC Import 1", imageId: "imgId1", isUserUpload: true, hasBuiltInBleed: true }),
+        expect.objectContaining({ name: "MPC Import 2", imageId: "imgId2", isUserUpload: true, hasBuiltInBleed: true }),
       ]);
 
       // Should call progress
@@ -366,7 +366,7 @@ describe('Mpc', () => {
         expect.objectContaining({
           name: "Sol Ring",
           needsEnrichment: true,
-          hasBakedBleed: true,
+          hasBuiltInBleed: true,
         }),
       ]);
     });

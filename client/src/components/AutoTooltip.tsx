@@ -1,12 +1,15 @@
 import { Tooltip, type TooltipProps } from "flowbite-react";
 import { useState, useRef, useEffect } from "react";
+import { HelpCircle } from "lucide-react";
 
 interface AutoTooltipProps extends TooltipProps {
     mobile?: boolean;
     timeout?: number;
+    className?: string; // Used for the default HelpCircle icon
+    tooltipClassName?: string; // Used for the tooltip container/bubble
 }
 
-export function AutoTooltip({ mobile, timeout = 2000, children, ...props }: AutoTooltipProps) {
+export function AutoTooltip({ mobile, timeout = 2000, children, className = "w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer", tooltipClassName, ...props }: AutoTooltipProps) {
     const [mounted, setMounted] = useState(false);
     const [show, setShow] = useState(false);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -20,8 +23,10 @@ export function AutoTooltip({ mobile, timeout = 2000, children, ...props }: Auto
         };
     }, []);
 
+    const content = children || <HelpCircle className={className} />;
+
     if (!mobile) {
-        return <Tooltip {...props}>{children}</Tooltip>;
+        return <Tooltip className={tooltipClassName} {...props}>{content}</Tooltip>;
     }
 
     const handleClick = () => {
@@ -79,11 +84,11 @@ export function AutoTooltip({ mobile, timeout = 2000, children, ...props }: Auto
 
     return (
         <div className="relative inline-flex" onClick={handleClick}>
-            {children}
+            {content}
             {mounted && (
                 <div
                     role="tooltip"
-                    className={`absolute z-50 px-3 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg whitespace-nowrap dark:bg-gray-700 transition-opacity duration-300 ${getPositionClasses()} ${show ? 'opacity-100' : 'opacity-0'}`}
+                    className={`absolute z-50 px-3 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg whitespace-nowrap dark:bg-gray-700 transition-opacity duration-300 ${getPositionClasses()} ${show ? 'opacity-100' : 'opacity-0'} ${tooltipClassName || ''}`}
                 >
                     {props.content}
                     <div className={getArrowClasses()} data-testid="flowbite-tooltip-arrow" />

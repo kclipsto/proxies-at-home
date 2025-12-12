@@ -20,7 +20,8 @@ import { PullToRefresh } from "./PullToRefresh";
 import {
   baseCardWidthMm,
   baseCardHeightMm,
-  computeCardLayouts
+  computeCardLayouts,
+  computeGridDimensions
 } from "../helpers/layout";
 import { useImageCache } from "../hooks/useImageCache";
 import { usePageViewSettings } from "../hooks/usePageViewSettings";
@@ -170,23 +171,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
                         // Compute layouts once for this page
                         const layouts = computeCardLayouts(page, sourceSettings, effectiveBleedWidth);
 
-                        // Initialize with base dimensions (no bleed) to allow growing only as needed
-                        const startWidth = baseCardWidthMm;
-                        const startHeight = baseCardHeightMm;
-
-                        // Compute max width per column (use base for empty columns)
-                        const colWidths: number[] = Array(columns).fill(startWidth);
-                        layouts.forEach((layout, idx) => {
-                          const col = idx % columns;
-                          colWidths[col] = Math.max(colWidths[col], layout.cardWidthMm);
-                        });
-
-                        // Compute max height per row - always use full grid rows
-                        const rowHeights: number[] = Array(rows).fill(startHeight);
-                        layouts.forEach((layout, idx) => {
-                          const row = Math.floor(idx / columns);
-                          rowHeights[row] = Math.max(rowHeights[row], layout.cardHeightMm);
-                        });
+                        const { colWidthsMm: colWidths, rowHeightsMm: rowHeights } = computeGridDimensions(layouts, columns, rows);
 
                         return (
                           <>

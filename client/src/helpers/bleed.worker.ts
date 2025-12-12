@@ -53,7 +53,7 @@ function getCacheKey(url: string): string {
 
 /**
  * Resize an image WITHOUT generating new bleed.
- * Used for 'existing' mode where the image already has bleed baked in.
+ * Used for 'existing' mode where the image already has bleed built in.
  * We resize to match the expected dimensions (card + specified bleed width)
  * and report the correct bleed width for cut guide placement.
  */
@@ -254,7 +254,7 @@ self.onmessage = async (e: MessageEvent) => {
     unit,
     apiBase,
     isUserUpload,
-    hasBakedBleed,
+    hasBuiltInBleed,
     bleedMode,
     existingBleedMm,
     dpi,
@@ -336,7 +336,7 @@ self.onmessage = async (e: MessageEvent) => {
     console.log('[Worker Fallback] Bleed mode handling:', {
       bleedMode,
       existingBleedMm,
-      hasBakedBleed,
+      hasBuiltInBleed,
       isUserUpload
     });
 
@@ -347,33 +347,58 @@ self.onmessage = async (e: MessageEvent) => {
       // No bleed processing - use image as-is
       console.log('[Worker Fallback] No bleed mode - using image as-is');
     } else if (bleedMode === 'generate') {
-      // Generate new bleed - need to trim existing bleed first if present
-      if (hasBakedBleed) {
-        if (existingBleedMm !== undefined && existingBleedMm > 0) {
-          // User specified exact bleed amount to trim
-          const cardHeightMm = 88;
-          const pxPerMm = imageBitmap.height / (cardHeightMm + existingBleedMm * 2);
-          const trim = Math.round(existingBleedMm * pxPerMm);
-          const trimmed = await trimBleedFromBitmap(imageBitmap, trim);
-          if (trimmed !== imageBitmap) {
-            imageBitmap.close();
-            imageBitmap = trimmed;
+      // Smart bleed handling for images with existing bleed
+      if (hasBuiltInBleed && existingBleedMm !== undefined && existingBleedMm > 0) {
+        // Convert target bleed to mm for comparison
+        const targetBleedMm = unit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
+        const cardHeightMm = 88;
+        const pxPerMm = imageBitmap.height / (cardHeightMm + existingBleedMm * 2);
+
+        if (targetBleedMm <= existingBleedMm) {
+          // Target is less than or equal to existing - just trim to target, no generation needed
+          const trimAmount = existingBleedMm - targetBleedMm;
+          if (trimAmount > 0.01) { // Only trim if meaningful difference
+            const trimPx = Math.round(trimAmount * pxPerMm);
+            const trimmed = await trimBleedFromBitmap(imageBitmap, trimPx);
+            if (trimmed !== imageBitmap) {
+              imageBitmap.close();
+              imageBitmap = trimmed;
+            }
+            console.log('[Worker Fallback] Smart bleed - trimmed', trimAmount, 'mm to reach target', targetBleedMm, 'mm');
+          } else {
+            console.log('[Worker Fallback] Smart bleed - existing matches target exactly');
           }
-          console.log('[Worker Fallback] Generate mode - trimming user-specified bleed:', existingBleedMm, 'mm');
+          // Use 'existing' mode rendering path
+          const result = await resizeWithoutBleed(imageBitmap, targetBleedMm, {
+            unit: 'mm',
+            dpi,
+          });
+          imageBitmap.close();
+          self.postMessage({ uuid, ...result });
+          return; // Early return - no generation needed
         } else {
-          // Use calibrated MPC bleed trim
-          const trimmed = await trimBleedFromBitmap(imageBitmap);
+          // Target is more than existing - trim all existing bleed and regenerate at full target
+          const trimPx = Math.round(existingBleedMm * pxPerMm);
+          const trimmed = await trimBleedFromBitmap(imageBitmap, trimPx);
           if (trimmed !== imageBitmap) {
             imageBitmap.close();
             imageBitmap = trimmed;
           }
-          console.log('[Worker Fallback] Generate mode - trimming with calibrated MPC bleed');
+          console.log('[Worker Fallback] Smart bleed - target', targetBleedMm, 'mm > existing', existingBleedMm, 'mm - full regeneration');
         }
+      } else if (hasBuiltInBleed) {
+        // hasBuiltInBleed but no existingBleedMm specified - use calibrated MPC bleed trim
+        const trimmed = await trimBleedFromBitmap(imageBitmap);
+        if (trimmed !== imageBitmap) {
+          imageBitmap.close();
+          imageBitmap = trimmed;
+        }
+        console.log('[Worker Fallback] Generate mode - trimming with calibrated MPC bleed');
       } else {
         console.log('[Worker Fallback] Generate mode - no existing bleed to trim');
       }
-    } else if (hasBakedBleed) {
-      // Legacy fallback for undefined bleedMode with baked bleed - use calibrated trim
+    } else if (hasBuiltInBleed) {
+      // Legacy fallback for undefined bleedMode with built in bleed - use calibrated trim
       const trimmed = await trimBleedFromBitmap(imageBitmap);
       if (trimmed !== imageBitmap) {
         imageBitmap.close();
@@ -389,7 +414,7 @@ self.onmessage = async (e: MessageEvent) => {
 
     if (bleedMode === 'existing') {
       // For existing mode, use existingBleedMm (the bleed already in the image)
-      const existingBleed = existingBleedMm ?? 3; // Default to 3mm if not specified
+      const existingBleed = existingBleedMm ?? 3.175; // Default to 1/8 inch if not specified
       result = await resizeWithoutBleed(imageBitmap, existingBleed, {
         unit: 'mm', // existingBleedMm is always in mm
         dpi,

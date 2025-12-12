@@ -36,6 +36,13 @@ export default function ProxyBuilderPage() {
   const bleedEdge = useSettingsStore((state) => state.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
   const bleedEdgeUnit = useSettingsStore((state) => state.bleedEdgeUnit);
+  // Images with bleed settings (new schema)
+  const withBleedSourceAmount = useSettingsStore((state) => state.withBleedSourceAmount);
+  const withBleedTargetMode = useSettingsStore((state) => state.withBleedTargetMode);
+  const withBleedTargetAmount = useSettingsStore((state) => state.withBleedTargetAmount);
+  // Images without bleed settings (new schema)
+  const noBleedTargetMode = useSettingsStore((state) => state.noBleedTargetMode);
+  const noBleedTargetAmount = useSettingsStore((state) => state.noBleedTargetAmount);
   // Convert to mm for processing (stored value may be in inches)
   const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
   const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
@@ -207,12 +214,12 @@ export default function ProxyBuilderPage() {
       const state = useSettingsStore.getState();
       const settings: GlobalSettings = {
         bleedEdgeWidth: bleedEdge ? bleedEdgeWidthMm : 0,
-        mpcBleedMode: state.mpcBleedMode,
-        mpcExistingBleed: state.mpcExistingBleed,
-        mpcExistingBleedUnit: state.mpcExistingBleedUnit,
-        uploadBleedMode: state.uploadBleedMode,
-        uploadExistingBleed: state.uploadExistingBleed,
-        uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+        bleedEdgeUnit,
+        withBleedSourceAmount: state.withBleedSourceAmount,
+        withBleedTargetMode: state.withBleedTargetMode,
+        withBleedTargetAmount: state.withBleedTargetAmount,
+        noBleedTargetMode: state.noBleedTargetMode,
+        noBleedTargetAmount: state.noBleedTargetAmount,
       };
 
       for (const card of allCards) {
@@ -251,25 +258,44 @@ export default function ProxyBuilderPage() {
     // Debounce slightly to avoid thrashing on bulk adds
     const timer = setTimeout(() => processUnprocessed(), 200);
     return () => clearTimeout(timer);
-  }, [allCards, ensureProcessed, dpi, bleedEdge, bleedEdgeWidthMm]);
+  }, [allCards, ensureProcessed, dpi, bleedEdge, bleedEdgeWidthMm, bleedEdgeUnit]);
 
   // Trigger reprocessing when DPI or bleed settings actually change
   const prevDpi = useRef(dpi);
   const prevBleedEdge = useRef(bleedEdge);
   const prevBleedEdgeWidth = useRef(bleedEdgeWidth);
+  // Track previous bleed settings to trigger updates (new schema)
+  const prevWithBleedSourceAmount = useRef(withBleedSourceAmount);
+  const prevWithBleedTargetMode = useRef(withBleedTargetMode);
+  const prevWithBleedTargetAmount = useRef(withBleedTargetAmount);
+  const prevNoBleedTargetMode = useRef(noBleedTargetMode);
+  const prevNoBleedTargetAmount = useRef(noBleedTargetAmount);
 
   useEffect(() => {
     const dpiChanged = prevDpi.current !== dpi;
     const bleedEdgeChanged = prevBleedEdge.current !== bleedEdge;
     const bleedWidthChanged = prevBleedEdgeWidth.current !== bleedEdgeWidthMm;
 
-    // Update refs for next comparison
+    // Check for changes in bleed settings
+    const bleedSettingsChanged =
+      prevWithBleedSourceAmount.current !== withBleedSourceAmount ||
+      prevWithBleedTargetMode.current !== withBleedTargetMode ||
+      prevWithBleedTargetAmount.current !== withBleedTargetAmount ||
+      prevNoBleedTargetMode.current !== noBleedTargetMode ||
+      prevNoBleedTargetAmount.current !== noBleedTargetAmount;
+
+    // Update all refs for next comparison
     prevDpi.current = dpi;
     prevBleedEdge.current = bleedEdge;
     prevBleedEdgeWidth.current = bleedEdgeWidthMm;
+    prevWithBleedSourceAmount.current = withBleedSourceAmount;
+    prevWithBleedTargetMode.current = withBleedTargetMode;
+    prevWithBleedTargetAmount.current = withBleedTargetAmount;
+    prevNoBleedTargetMode.current = noBleedTargetMode;
+    prevNoBleedTargetAmount.current = noBleedTargetAmount;
 
     // Only reprocess if settings actually changed
-    if (!dpiChanged && !bleedEdgeChanged && !bleedWidthChanged) {
+    if (!dpiChanged && !bleedEdgeChanged && !bleedWidthChanged && !bleedSettingsChanged) {
       return;
     }
 
@@ -284,12 +310,12 @@ export default function ProxyBuilderPage() {
       const state = useSettingsStore.getState();
       const settings: GlobalSettings = {
         bleedEdgeWidth: bleedEdge ? bleedEdgeWidthMm : 0,
-        mpcBleedMode: state.mpcBleedMode,
-        mpcExistingBleed: state.mpcExistingBleed,
-        mpcExistingBleedUnit: state.mpcExistingBleedUnit,
-        uploadBleedMode: state.uploadBleedMode,
-        uploadExistingBleed: state.uploadExistingBleed,
-        uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+        bleedEdgeUnit,
+        withBleedSourceAmount: state.withBleedSourceAmount,
+        withBleedTargetMode: state.withBleedTargetMode,
+        withBleedTargetAmount: state.withBleedTargetAmount,
+        noBleedTargetMode: state.noBleedTargetMode,
+        noBleedTargetAmount: state.noBleedTargetAmount,
       };
 
       const images = await db.images.toArray();
@@ -299,6 +325,8 @@ export default function ProxyBuilderPage() {
         if (!card.imageId) return false;
         const img = imageMap.get(card.imageId);
         if (!img) return true; // Image record missing, reprocess
+
+
 
         // Check if image matches current settings
         const expectedBleedWidth = getExpectedBleedWidth(card, settings.bleedEdgeWidth, settings);
@@ -324,7 +352,12 @@ export default function ProxyBuilderPage() {
     }, 500); // Debounce by 500ms
 
     return () => clearTimeout(timer);
-  }, [dpi, bleedEdge, bleedEdgeWidthMm, reprocessSelectedImages, cancelProcessing]);
+  }, [
+    allCards, ensureProcessed, dpi, bleedEdgeUnit,
+    bleedEdge, bleedEdgeWidthMm, reprocessSelectedImages, cancelProcessing,
+    withBleedSourceAmount, withBleedTargetMode, withBleedTargetAmount,
+    noBleedTargetMode, noBleedTargetAmount
+  ]);
 
   // Mobile Layout
   if (isMobile) {

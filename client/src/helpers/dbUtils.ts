@@ -365,9 +365,9 @@ export async function changeCardArtwork(
     const changes: Partial<CardOption> = {
       imageId: newImageId,
       isUserUpload: newImageIsCustom,
-      // Reset baked bleed flag because we are switching to a specific image
-      // (usually Scryfall) which we assume does NOT have baked bleed.
-      hasBakedBleed: false,
+      // Reset built in bleed flag because we are switching to a specific image
+      // (usually Scryfall) which we assume does NOT have built in bleed.
+      hasBuiltInBleed: false,
       // Reset enrichment flags since user manually selected this
       needsEnrichment: false,
       enrichmentRetryCount: undefined,

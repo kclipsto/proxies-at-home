@@ -1,8 +1,8 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Select, Tooltip } from "flowbite-react";
+import { Label, Select } from "flowbite-react";
 import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput, usePositionInput } from "@/hooks/useInputHooks";
-import { HelpCircle } from "lucide-react";
+import { AutoTooltip } from "../../AutoTooltip";
 import { useMemo, useEffect } from "react";
 
 const INCH_TO_MM = 25.4;
@@ -116,15 +116,13 @@ export function CardSection() {
                             {cardSpacingInput.warning}
                         </span>
                     )}
-                    <Tooltip
+                    <AutoTooltip
                         content={
                             <div className="whitespace-nowrap">
                                 Max that fits with current layout: {maxSpacingMm} mm
                             </div>
                         }
-                    >
-                        <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-                    </Tooltip>
+                    />
                 </div>
                 <NumberInput
                     ref={cardSpacingInput.inputRef}
@@ -141,17 +139,13 @@ export function CardSection() {
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
                     <Label>Card Position Adjustment (mm)</Label>
-                    <Tooltip content="Adjust card position for perfect printer alignment. Use small values (0.1-2.0mm) for fine-tuning.">
-                        <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-                    </Tooltip>
+                    <AutoTooltip content="Adjust card position for perfect printer alignment. Use small values (0.1-2.0mm) for fine-tuning." />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <div className="flex items-center justify-between">
                             <Label>Horizontal Offset</Label>
-                            <Tooltip content="Positive = right, negative = left">
-                                <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-                            </Tooltip>
+                            <AutoTooltip content="Positive = right, negative = left" />
                         </div>
                         <NumberInput
                             ref={cardPositionXInput.inputRef}
@@ -166,9 +160,7 @@ export function CardSection() {
                     <div>
                         <div className="flex items-center justify-between">
                             <Label>Vertical Offset</Label>
-                            <Tooltip content="Positive = down, negative = up">
-                                <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-                            </Tooltip>
+                            <AutoTooltip content="Positive = down, negative = up" />
                         </div>
                         <NumberInput
                             ref={cardPositionYInput.inputRef}

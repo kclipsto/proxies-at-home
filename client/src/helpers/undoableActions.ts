@@ -331,6 +331,7 @@ export async function undoableChangeArtwork(
 export async function undoableUpdateCardBleedSettings(
     cardUuids: string[],
     newSettings: {
+        hasBuiltInBleed?: boolean;
         bleedMode?: 'generate' | 'existing' | 'none';
         existingBleedMm?: number;
         generateBleedMm?: number;
@@ -340,6 +341,7 @@ export async function undoableUpdateCardBleedSettings(
 
     // Capture old settings for all affected cards
     const oldSettings: Map<string, {
+        hasBuiltInBleed?: boolean;
         bleedMode?: CardOption['bleedMode'];
         existingBleedMm?: number;
         generateBleedMm?: number;
@@ -348,6 +350,7 @@ export async function undoableUpdateCardBleedSettings(
 
     for (const card of cards) {
         oldSettings.set(card.uuid, {
+            hasBuiltInBleed: card.hasBuiltInBleed,
             bleedMode: card.bleedMode,
             existingBleedMm: card.existingBleedMm,
             generateBleedMm: card.generateBleedMm,
@@ -359,6 +362,7 @@ export async function undoableUpdateCardBleedSettings(
     // Perform the update - always set all fields to allow resetting to undefined
     await db.transaction("rw", db.cards, async () => {
         const changes: Partial<CardOption> = {
+            hasBuiltInBleed: newSettings.hasBuiltInBleed,
             bleedMode: newSettings.bleedMode,
             existingBleedMm: newSettings.existingBleedMm,
             generateBleedMm: newSettings.generateBleedMm,
@@ -381,6 +385,7 @@ export async function undoableUpdateCardBleedSettings(
             await db.transaction("rw", db.cards, async () => {
                 for (const [uuid, settings] of oldSettings) {
                     await db.cards.update(uuid, {
+                        hasBuiltInBleed: settings.hasBuiltInBleed,
                         bleedMode: settings.bleedMode,
                         existingBleedMm: settings.existingBleedMm,
                         generateBleedMm: settings.generateBleedMm,
@@ -392,6 +397,7 @@ export async function undoableUpdateCardBleedSettings(
             // Re-apply new settings
             await db.transaction("rw", db.cards, async () => {
                 const changes: Partial<CardOption> = {
+                    hasBuiltInBleed: newSettings.hasBuiltInBleed,
                     bleedMode: newSettings.bleedMode,
                     existingBleedMm: newSettings.existingBleedMm,
                     generateBleedMm: newSettings.generateBleedMm,

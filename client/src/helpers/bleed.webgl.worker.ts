@@ -26,7 +26,7 @@ function getBleedInPixels(bleedMm: number, unit: 'mm' | 'in', dpi: number): numb
 
 /**
  * Resize an image WITHOUT generating new bleed.
- * Used for 'existing' mode where the image already has bleed baked in.
+ * Used for 'existing' mode where the image already has bleed built in.
  * We resize to match the expected dimensions (card + specified bleed width)
  * and report the correct bleed width for cut guide placement.
  */
@@ -134,7 +134,7 @@ self.onmessage = async (e: MessageEvent) => {
         bleedEdgeWidth,
         unit,
         apiBase,
-        hasBakedBleed,
+        hasBuiltInBleed,
         bleedMode,
         existingBleedMm,
         dpi,
@@ -251,21 +251,45 @@ self.onmessage = async (e: MessageEvent) => {
             // No bleed processing - use image as-is (for cards without bleed)
             imageBitmap = await createImageBitmap(blob!);
         } else if (bleedMode === 'generate') {
-            // Generate new bleed - need to trim existing bleed first if present
-            if (hasBakedBleed) {
-                if (existingBleedMm !== undefined && existingBleedMm > 0) {
-                    // User specified exact bleed amount to trim
-                    imageBitmap = await createTrimmedBitmapWithExistingBleed(blob!, existingBleedMm);
+            // Smart bleed handling for images with existing bleed
+            if (hasBuiltInBleed && existingBleedMm !== undefined && existingBleedMm > 0) {
+                // Convert target bleed to mm for comparison
+                const targetBleedMm = unit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
+
+                if (targetBleedMm <= existingBleedMm) {
+                    // Target is less than or equal to existing - just trim to target, no generation needed
+                    // Trim from existingBleedMm down to targetBleedMm
+                    const trimAmount = existingBleedMm - targetBleedMm;
+                    if (trimAmount > 0.01) { // Only trim if meaningful difference
+                        imageBitmap = await createTrimmedBitmapWithExistingBleed(blob!, trimAmount);
+                    } else {
+                        // Existing bleed matches target exactly
+                        imageBitmap = await createImageBitmap(blob!);
+                    }
+                    // Use 'existing' mode for rendering since we're using the built in bleed (trimmed or not)
+                    // The result will have exactly targetBleedMm of bleed
+                    const result = await resizeWithoutBleed(imageBitmap, targetBleedMm, {
+                        unit: 'mm',
+                        exportDpi: dpi,
+                        displayDpi: 300,
+                    });
+                    imageBitmap.close();
+                    self.postMessage({ uuid, imageCacheHit: cacheHit, ...result });
+                    return; // Early return - no generation needed
                 } else {
-                    // Use calibrated MPC bleed trim
-                    imageBitmap = await createTrimmedBitmap(blob!);
+                    // Target is more than existing - keep existing bleed and generate only the additional amount
+                    // Don't trim - the processCardImageWebGL will handle extending the bleed
+                    imageBitmap = await createImageBitmap(blob!);
                 }
+            } else if (hasBuiltInBleed) {
+                // hasBuiltInBleed but no existingBleedMm specified - use calibrated MPC bleed trim
+                imageBitmap = await createTrimmedBitmap(blob!);
             } else {
-                // No existing bleed to trim
+                // No existing bleed to work with
                 imageBitmap = await createImageBitmap(blob!);
             }
-        } else if (hasBakedBleed) {
-            // Legacy fallback for undefined bleedMode with baked bleed - use calibrated trim
+        } else if (hasBuiltInBleed) {
+            // Legacy fallback for undefined bleedMode with built in bleed - use calibrated trim
             imageBitmap = await createTrimmedBitmap(blob!);
         } else {
             // Default: no trimming, will generate bleed
@@ -277,7 +301,7 @@ self.onmessage = async (e: MessageEvent) => {
         if (bleedMode === 'existing') {
             // For existing mode, use existingBleedMm (the bleed already in the image)
             // This determines the card+bleed dimensions and cut guide placement
-            const existingBleed = existingBleedMm ?? 3; // Default to 3mm if not specified
+            const existingBleed = existingBleedMm ?? 3.175; // Default to 1/8 inch if not specified
             result = await resizeWithoutBleed(imageBitmap, existingBleed, {
                 unit: 'mm', // existingBleedMm is always in mm
                 exportDpi: dpi,
@@ -292,10 +316,12 @@ self.onmessage = async (e: MessageEvent) => {
             });
         } else {
             // For generate mode (and legacy), run WebGL bleed processing
+            // If the image has built in bleed, tell the processor so it only generates additional bleed
             result = await processCardImageWebGL(imageBitmap, bleedEdgeWidth, {
                 unit,
                 exportDpi: dpi,
                 displayDpi: 300,
+                inputHasBleedMm: (hasBuiltInBleed && existingBleedMm) ? existingBleedMm : undefined,
             });
         }
 

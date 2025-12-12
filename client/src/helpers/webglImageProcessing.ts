@@ -251,7 +251,7 @@ export async function generateBleedCanvasWebGL(
 export async function processCardImageWebGL(
     img: ImageBitmap,
     bleedWidthMm: number,
-    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number }
+    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; inputHasBleedMm?: number }
 ): Promise<{
     exportBlob: Blob;
     exportDpi: number;
@@ -266,14 +266,28 @@ export async function processCardImageWebGL(
     const exportDpi = opts?.exportDpi ?? 300;
     const displayDpi = opts?.displayDpi ?? 300;
     const unit = opts?.unit ?? "mm";
+    const inputHasBleedMm = opts?.inputHasBleedMm ?? 0;
+
+    // Convert bleedWidthMm to mm if unit is inches
+    const totalBleedMm = unit === 'in' ? bleedWidthMm * 25.4 : bleedWidthMm;
+
+    // The additional bleed we need to generate (beyond what's already in the image)
+    const additionalBleedMm = Math.max(0, totalBleedMm - inputHasBleedMm);
 
     const targetCardWidth = IN(2.48, exportDpi);
     const targetCardHeight = IN(3.47, exportDpi);
-    const bleed = Math.round(getBleedInPixels(bleedWidthMm, unit, exportDpi));
-    // console.log('[WebGL] Params:', { bleedWidthMm, unit, exportDpi, calculatedBleed: bleed, targetCardWidth });
 
-    const finalWidth = Math.ceil(targetCardWidth + bleed * 2);
-    const finalHeight = Math.ceil(targetCardHeight + bleed * 2);
+    // The input image represents card + inputHasBleedMm, so calculate its expected dimensions
+    const inputBleedPx = Math.round(getBleedInPixels(inputHasBleedMm, 'mm', exportDpi));
+    const inputExpectedWidth = targetCardWidth + inputBleedPx * 2;
+    const inputExpectedHeight = targetCardHeight + inputBleedPx * 2;
+
+    // The additional bleed to generate around the input
+    const additionalBleedPx = Math.round(getBleedInPixels(additionalBleedMm, 'mm', exportDpi));
+
+    // Final output dimensions: input dimensions + additional bleed on each side
+    const finalWidth = Math.ceil(inputExpectedWidth + additionalBleedPx * 2);
+    const finalHeight = Math.ceil(inputExpectedHeight + additionalBleedPx * 2);
 
     // Create WebGL context once for all processing
     const canvas = new OffscreenCanvas(finalWidth, finalHeight);
@@ -294,10 +308,11 @@ export async function processCardImageWebGL(
     const quadBuffer = createQuadBuffer(gl);
 
     // Calculate image placement
+    // When input has existing bleed, the image represents card + existing bleed, not just the card
     const { drawWidth, drawHeight, offsetX, offsetY } = calculateImagePlacement(
         img,
-        targetCardWidth,
-        targetCardHeight
+        inputExpectedWidth,  // Use input dimensions (card + existing bleed)
+        inputExpectedHeight
     );
 
     const scaleX = drawWidth / img.width;
@@ -338,8 +353,8 @@ export async function processCardImageWebGL(
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
     gl.uniform1i(gl.getUniformLocation(progs.init, "u_image"), 0);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), targetCardWidth, targetCardHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), bleed, bleed);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), inputExpectedWidth, inputExpectedHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), additionalBleedPx, additionalBleedPx);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_scale"), scaleX, scaleY);
@@ -401,8 +416,8 @@ export async function processCardImageWebGL(
         glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_image"), 1);
 
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
-        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_imageSize"), targetCardWidth, targetCardHeight);
-        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_offset"), bleed, bleed);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_imageSize"), inputExpectedWidth, inputExpectedHeight);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_offset"), additionalBleedPx, additionalBleedPx);
         glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_darken"), darken ? 1 : 0);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
@@ -449,10 +464,10 @@ export async function processCardImageWebGL(
     return {
         exportBlob: normalResult.exportBlob,
         exportDpi,
-        exportBleedWidth: bleedWidthMm,
+        exportBleedWidth: totalBleedMm, // Report total bleed (existing + generated)
         displayBlob: normalResult.displayBlob,
         displayDpi,
-        displayBleedWidth: bleedWidthMm,
+        displayBleedWidth: totalBleedMm,
         exportBlobDarkened: darkenedResult.exportBlob,
         displayBlobDarkened: darkenedResult.displayBlob,
     };

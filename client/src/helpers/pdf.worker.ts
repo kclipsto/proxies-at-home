@@ -5,6 +5,8 @@ import {
     trimBleedFromBitmap,
 } from "./imageProcessing";
 import { generateBleedCanvasWebGL } from "./webglImageProcessing";
+import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
+import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
@@ -155,9 +157,8 @@ function createGuideCanvas(
     // Calculate offset based on placement
     // For outside: offset outward by guideWidth (so inner edge touches cut line)
     // For inside: no offset (so outer edge touches cut line)
-    // Clamp the offset so guides don't exceed the bleed area (stay within canvas)
-    const rawOffset = placement === 'outside' ? -w : 0;
-    const offset = Math.max(rawOffset, -bleedPx); // Don't go beyond the bleed area
+    // REMOVED CLAMP to prevent outside guides from invading content area when bleed is small
+    const offset = placement === 'outside' ? -w : 0;
 
     if (style === 'corners') {
         const len = MM_TO_PX(2, dpi);
@@ -239,100 +240,8 @@ function createGuideCanvas(
     return canvas;
 }
 
-type SourceTypeSettings = {
-    mpcBleedMode: 'use-existing' | 'trim-regenerate' | 'none';
-    mpcExistingBleed: number;
-    mpcExistingBleedUnit: 'mm' | 'in';
-    uploadBleedMode: 'generate' | 'existing' | 'none';
-    uploadExistingBleed: number;
-    uploadExistingBleedUnit: 'mm' | 'in';
-};
-
-interface CardData {
-    bleedMode?: 'generate' | 'existing' | 'none';
-    existingBleedMm?: number;
-    hasBakedBleed?: boolean;
-    isUserUpload?: boolean;
-}
-
-/**
- * Get the target bleed for a card based on per-card overrides, source-type settings, and global settings.
- * Matches the logic in PageView.tsx getCardTargetBleed.
- */
-function getCardTargetBleed(
-    card: CardData,
-    sourceSettings: SourceTypeSettings,
-    globalBleedWidth: number
-): number {
-    let result: number;
-    let reason: string;
-
-    // Per-card override takes precedence
-    if (card.bleedMode) {
-        if (card.bleedMode === 'none') {
-            result = 0;
-            reason = 'per-card bleedMode=none';
-        } else if (card.bleedMode === 'existing' && card.existingBleedMm !== undefined) {
-            result = card.existingBleedMm;
-            reason = `per-card bleedMode=existing, existingBleedMm=${card.existingBleedMm}`;
-        } else {
-            // 'generate' uses global bleed width
-            result = globalBleedWidth;
-            reason = 'per-card bleedMode=generate';
-        }
-    } else if (card.hasBakedBleed) {
-        // MPC images (hasBakedBleed = true)
-        if (sourceSettings.mpcBleedMode === 'none') {
-            result = 0;
-            reason = 'hasBakedBleed=true, mpcBleedMode=none';
-        } else if (sourceSettings.mpcBleedMode === 'use-existing') {
-            const existingMm = sourceSettings.mpcExistingBleedUnit === 'in'
-                ? sourceSettings.mpcExistingBleed * 25.4
-                : sourceSettings.mpcExistingBleed;
-            result = existingMm;
-            reason = `hasBakedBleed=true, mpcBleedMode=use-existing, existingMm=${existingMm}`;
-        } else {
-            // trim-regenerate: use global bleed width
-            result = globalBleedWidth;
-            reason = 'hasBakedBleed=true, mpcBleedMode=trim-regenerate';
-        }
-    } else if (card.isUserUpload) {
-        // Other Uploads (isUserUpload = true, hasBakedBleed = false)
-        if (sourceSettings.uploadBleedMode === 'none') {
-            result = 0;
-            reason = 'isUserUpload=true, uploadBleedMode=none';
-        } else if (sourceSettings.uploadBleedMode === 'existing') {
-            const existingMm = sourceSettings.uploadExistingBleedUnit === 'in'
-                ? sourceSettings.uploadExistingBleed * 25.4
-                : sourceSettings.uploadExistingBleed;
-            result = existingMm;
-            reason = `isUserUpload=true, uploadBleedMode=existing, existingMm=${existingMm}`;
-        } else {
-            // 'generate' uses global bleed width
-            result = globalBleedWidth;
-            reason = 'isUserUpload=true, uploadBleedMode=generate';
-        }
-    } else {
-        // Scryfall/standard images (isUserUpload = false) - use global bleed
-        result = globalBleedWidth;
-        reason = 'Scryfall image, using global bleed';
-    }
-
-    console.log('[PDF Worker] getCardTargetBleed:', {
-        hasBakedBleed: card.hasBakedBleed,
-        isUserUpload: card.isUserUpload,
-        bleedMode: card.bleedMode,
-        existingBleedMm: card.existingBleedMm,
-        mpcBleedMode: sourceSettings.mpcBleedMode,
-        mpcExistingBleed: sourceSettings.mpcExistingBleed,
-        uploadBleedMode: sourceSettings.uploadBleedMode,
-        globalBleedWidth,
-        result,
-        reason,
-    });
-
-    return result;
-}
+// Local CardData replaced by CardOption from shared types
+// Local getCardTargetBleed replaced by import from ./layout
 
 const canvasCache = new Map<string, OffscreenCanvas>();
 
@@ -343,8 +252,8 @@ self.onmessage = async (event: MessageEvent) => {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
             imagesById, API_BASE, darkenNearBlack, cutLineStyle, perCardGuideStyle, guidePlacement,
-            mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode,
-            uploadExistingBleed, uploadExistingBleedUnit
+            // Receive pre-normalized source settings directly (no legacy conversion)
+            sourceSettings, withBleedSourceAmount
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -355,37 +264,20 @@ self.onmessage = async (event: MessageEvent) => {
         const positionOffsetXPx = MM_TO_PX(cardPositionX || 0, DPI);
         const positionOffsetYPx = MM_TO_PX(cardPositionY || 0, DPI);
 
-        // Global bleed for default/empty slots
-        const globalBleedPx = bleedEdge ? MM_TO_PX(bleedEdgeWidthMm, DPI) : 0;
-        const defaultCardWidthPx = contentWidthInPx + 2 * globalBleedPx;
-        const defaultCardHeightPx = contentHeightInPx + 2 * globalBleedPx;
+        // sourceSettings is now passed directly from the main thread (already normalized)
 
-        // Compute per-card layouts
-        const sourceSettings: SourceTypeSettings = { mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode, uploadExistingBleed, uploadExistingBleedUnit };
-        interface CardLayout {
-            cardWidthPx: number;
-            cardHeightPx: number;
-            bleedPx: number;
-        }
-        const layouts: CardLayout[] = pageCards.map((card: CardData) => {
-            const bleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
-            const bleedPx = MM_TO_PX(bleedMm, DPI);
-            return {
-                cardWidthPx: contentWidthInPx + 2 * bleedPx,
-                cardHeightPx: contentHeightInPx + 2 * bleedPx,
-                bleedPx,
-            };
-        });
+        const layoutsMm = computeCardLayouts(pageCards, sourceSettings, bleedEdge ? bleedEdgeWidthMm : 0);
+        const { colWidthsMm, rowHeightsMm } = computeGridDimensions(layoutsMm, columns, rows, cardSpacingMm);
 
-        // Compute column widths (max card width per column, use default for empty columns)
-        const colWidths: number[] = Array(columns).fill(defaultCardWidthPx);
-        const rowHeights: number[] = Array(rows).fill(defaultCardHeightPx);
-        layouts.forEach((layout, idx) => {
-            const col = idx % columns;
-            const row = Math.floor(idx / columns);
-            if (layout.cardWidthPx > colWidths[col]) colWidths[col] = layout.cardWidthPx;
-            if (layout.cardHeightPx > rowHeights[row]) rowHeights[row] = layout.cardHeightPx;
-        });
+        // Convert to pixels for rendering
+        const layouts = layoutsMm.map(l => ({
+            cardWidthPx: MM_TO_PX(l.cardWidthMm, DPI),
+            cardHeightPx: MM_TO_PX(l.cardHeightMm, DPI),
+            bleedPx: MM_TO_PX(l.bleedMm, DPI)
+        }));
+
+        const colWidths = colWidthsMm.map(w => MM_TO_PX(w, DPI));
+        const rowHeights = rowHeightsMm.map(h => MM_TO_PX(h, DPI));
 
         // Compute grid dimensions and starting position
         const gridWidthPx = colWidths.reduce((a, b) => a + b, 0) + Math.max(0, columns - 1) * spacingPx;
@@ -416,8 +308,14 @@ self.onmessage = async (event: MessageEvent) => {
         let imagesProcessed = 0;
         const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthCssPx, 96, DPI);
 
-        // We'll create per-card guides as needed instead of reusing one
-        // (since each card may have different bleed)
+        // Create per-card guide canvas ONCE (guides are same size for all cards since they mark the fixed content boundary)
+        // The bleed dimension affects where we DRAW the guide, not the guide shape itself
+        const bleedPxForGuide = MM_TO_PX(bleedEdgeWidthMm, DPI);
+        const perCardGuideCanvas = createGuideCanvas(
+            contentWidthInPx, contentHeightInPx, bleedPxForGuide,
+            guideColor, scaledGuideWidth, DPI, perCardGuideStyle ?? 'corners',
+            guidePlacement ?? 'outside'
+        );
 
         // Create and draw full page guides (behind cards)
         // Uses per-card layouts to compute cut positions for mixed bleed sizes
@@ -451,8 +349,7 @@ self.onmessage = async (event: MessageEvent) => {
             // Select appropriate blob based on darkenNearBlack setting
             const selectedExportBlob = darkenNearBlack ? imageInfo?.exportBlobDarkened : imageInfo?.exportBlob;
 
-            // Get the target bleed for this card based on per-card settings or source-type settings
-            const sourceSettings: SourceTypeSettings = { mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode, uploadExistingBleed, uploadExistingBleedUnit };
+            // Get the target bleed for this card using the passed sourceSettings (same as display path)
             const targetBleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
 
             // Use the image's actual bleed width if available, otherwise use the target bleed
@@ -519,30 +416,58 @@ self.onmessage = async (event: MessageEvent) => {
                             const blob = await response.blob();
                             let img = await createImageBitmap(blob);
 
-                            // Determine effective bleed mode for this card
-                            const cardBleedMode = card.bleedMode;
-                            const shouldTrim = card.hasBakedBleed && cardBleedMode !== 'existing';
+                            // Determine bleed mode and amounts using shared logic
+                            const effectiveMode = getEffectiveBleedMode(card, sourceSettings);
+                            const existingBleedMm = getEffectiveExistingBleedMm(card, { withBleedSourceAmount }) ?? 0;
+                            const targetBleedForCard = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
 
-                            // Trim bleed if needed (for generate mode with baked bleed)
-                            if (shouldTrim) {
-                                const trimmed = await trimBleedFromBitmap(img);
-                                if (trimmed !== img) {
-                                    img.close();
-                                    img = trimmed;
+                            if (effectiveMode === 'none') {
+                                // No bleed - trim existing bleed if any
+                                if (card.hasBuiltInBleed && existingBleedMm > 0) {
+                                    const trimmed = await trimBleedFromBitmap(img);
+                                    if (trimmed !== img) {
+                                        img.close();
+                                        img = trimmed;
+                                    }
+                                }
+                                finalCardCanvas = await generateBleedCanvasWebGL(img, 0, {
+                                    unit: 'mm',
+                                    dpi: DPI,
+                                    darkenNearBlack,
+                                });
+                            } else if (effectiveMode === 'existing') {
+                                // Use existing bleed as-is
+                                finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
+                                    unit: 'mm',
+                                    dpi: DPI,
+                                    darkenNearBlack,
+                                });
+                            } else {
+                                // Generate mode - trim/extend as needed
+                                const needsProcessing = Math.abs(existingBleedMm - targetBleedForCard) > 0.01;
+
+                                if (needsProcessing) {
+                                    if (card.hasBuiltInBleed && existingBleedMm > 0) {
+                                        const trimmed = await trimBleedFromBitmap(img);
+                                        if (trimmed !== img) {
+                                            img.close();
+                                            img = trimmed;
+                                        }
+                                    }
+                                    finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedForCard, {
+                                        unit: 'mm',
+                                        dpi: DPI,
+                                        darkenNearBlack,
+                                    });
+                                } else {
+                                    // Source matches target - use as-is
+                                    finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
+                                        unit: 'mm',
+                                        dpi: DPI,
+                                        darkenNearBlack,
+                                    });
                                 }
                             }
-
-                            // For 'existing' mode, use the card's existingBleedMm, otherwise use global
-                            const effectiveBleedMm = cardBleedMode === 'existing' && card.existingBleedMm != null
-                                ? card.existingBleedMm
-                                : bleedEdgeWidthMm;
-
-                            // Generate bleed using WebGL
-                            finalCardCanvas = await generateBleedCanvasWebGL(img, effectiveBleedMm, {
-                                unit: 'mm',
-                                dpi: DPI,
-                                darkenNearBlack,
-                            });
 
                             img.close();
                         }
@@ -559,19 +484,23 @@ self.onmessage = async (event: MessageEvent) => {
             }
 
             // Draw image centered in slot (accounts for different bleed widths)
+            // CLIP to the target card dimensions to prevent overlap if image bleed > target bleed
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, cardLayout.cardWidthPx, cardLayout.cardHeightPx);
+            ctx.clip();
             ctx.drawImage(finalCardCanvas, x + centerOffsetX, y + centerOffsetY, imageCardWidthPx, imageCardHeightPx);
+            ctx.restore();
             if (finalCardCanvas instanceof ImageBitmap) {
                 finalCardCanvas.close();
             }
 
-            // Stamp per-card guide overlay
-            const cardGuideCanvas = createGuideCanvas(
-                contentWidthInPx, contentHeightInPx, cardLayout.bleedPx,
-                guideColor, scaledGuideWidth, DPI, perCardGuideStyle ?? 'corners',
-                guidePlacement ?? 'outside'
-            );
-            if (cardGuideCanvas) {
-                ctx.drawImage(cardGuideCanvas, x, y);
+            // Stamp per-card guide overlay (reuse single canvas created before loop)
+            // Offset to center the guide in the card (guide was created with global bleed, card may have different bleed)
+            if (perCardGuideCanvas) {
+                const guideOffsetX = cardLayout.bleedPx - bleedPxForGuide;
+                const guideOffsetY = cardLayout.bleedPx - bleedPxForGuide;
+                ctx.drawImage(perCardGuideCanvas, x + guideOffsetX, y + guideOffsetY);
             }
 
             imagesProcessed++;
