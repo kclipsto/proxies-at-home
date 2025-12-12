@@ -1,5 +1,7 @@
 import { Loader } from "./components/Loader";
-import ProxyBuilderPage from "./pages/ProxyBuilderPage";
+import { lazy } from "react";
+
+const ProxyBuilderPage = lazy(() => import("./pages/ProxyBuilderPage"));
 
 function App() {
   return (

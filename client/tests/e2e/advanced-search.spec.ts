@@ -28,7 +28,7 @@ test.describe('Advanced Search & Artwork Modal', () => {
         // Since we just searched, the first result should be active.
         // But Swiper loop might have centered it.
         // Let's assume the first result is active.
-        await page.getByRole('button', { name: 'Add Card' }).click(); // The button has a Plus icon, maybe no name?
+        // Let's assume the first result is active.
         // The button has <Plus /> icon. It doesn't have text.
         // But it has `color="indigo"`.
         // Let's use a locator for the button.

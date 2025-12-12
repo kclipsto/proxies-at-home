@@ -4,8 +4,6 @@ import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption } from "../../../shared/types";
 
 import { ResizeHandle } from "../components/ResizeHandle";
-import { PageSettingsControls } from "../components/PageSettingsControls";
-import { UploadSection } from "../components/UploadSection";
 import { ToastContainer } from "../components/ToastContainer";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useCardEnrichment } from "../hooks/useCardEnrichment";
@@ -17,11 +15,10 @@ import { importStats } from "../helpers/importStats";
 import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/cacheUtils";
 import { getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
 
-const PageView = lazy(() =>
-  import("../components/PageView").then((module) => ({
-    default: module.PageView,
-  }))
-);
+// Lazy load heavy components
+const PageView = lazy(() => import("../components/PageView").then(m => ({ default: m.PageView })));
+const PageSettingsControls = lazy(() => import("../components/PageSettingsControls").then(m => ({ default: m.PageSettingsControls })));
+const UploadSection = lazy(() => import("../components/UploadSection").then(m => ({ default: m.UploadSection })));
 
 function PageViewLoader() {
   return (
@@ -377,12 +374,14 @@ export default function ProxyBuilderPage() {
 
         <div className="flex-1 overflow-hidden relative">
           <div className={activeMobileView === "upload" ? "block h-full" : "hidden"}>
-            <UploadSection
-              isCollapsed={false}
-              cardCount={cardCount}
-              mobile={true}
-              onUploadComplete={() => setActiveMobileView("preview")}
-            />
+            <Suspense fallback={<PageViewLoader />}>
+              <UploadSection
+                isCollapsed={false}
+                cardCount={cardCount}
+                mobile={true}
+                onUploadComplete={() => setActiveMobileView("preview")}
+              />
+            </Suspense>
           </div>
 
           <div className={activeMobileView === "preview" ? "block h-full" : "hidden"}>
@@ -400,15 +399,17 @@ export default function ProxyBuilderPage() {
           </div>
 
           <div className={activeMobileView === "settings" ? "block h-full" : "hidden"}>
-            <PageSettingsControls
-              reprocessSelectedImages={reprocessSelectedImages}
-              cancelProcessing={cancelProcessing}
-              cards={allCards}
-              mobile={true}
-            />
+            <Suspense fallback={<PageViewLoader />}>
+              <PageSettingsControls
+                reprocessSelectedImages={reprocessSelectedImages}
+                cancelProcessing={cancelProcessing}
+                cards={allCards}
+                mobile={true}
+              />
+            </Suspense>
           </div>
         </div>
-      </div>
+      </div >
     );
   }
 
@@ -423,10 +424,12 @@ export default function ProxyBuilderPage() {
             minWidth: isUploadPanelCollapsed ? 60 : 320,
           }}
         >
-          <UploadSection
-            isCollapsed={isUploadPanelCollapsed}
-            cardCount={cardCount}
-          />
+          <Suspense fallback={<PageViewLoader />}>
+            <UploadSection
+              isCollapsed={isUploadPanelCollapsed}
+              cardCount={cardCount}
+            />
+          </Suspense>
         </div>
         <ResizeHandle
           isCollapsed={isUploadPanelCollapsed}
@@ -472,11 +475,13 @@ export default function ProxyBuilderPage() {
             transition: "width 0.2s ease-in-out",
           }}
         >
-          <PageSettingsControls
-            reprocessSelectedImages={reprocessSelectedImages}
-            cancelProcessing={cancelProcessing}
-            cards={allCards}
-          />
+          <Suspense fallback={<PageViewLoader />}>
+            <PageSettingsControls
+              reprocessSelectedImages={reprocessSelectedImages}
+              cancelProcessing={cancelProcessing}
+              cards={allCards}
+            />
+          </Suspense>
         </div>
       </div>
 
