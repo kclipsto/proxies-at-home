@@ -68,7 +68,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'flowbite-react', 'lucide-react'],
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-ui': ['flowbite-react', 'lucide-react', 'swiper', '@use-gesture/react'],
+          'vendor-db': ['dexie', 'dexie-react-hooks'],
+          'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/modifiers', '@dnd-kit/sortable'],
           pdf: ['pdf-lib'],
         },
       },

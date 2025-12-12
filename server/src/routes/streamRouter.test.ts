@@ -11,6 +11,7 @@ vi.mock("../utils/getCardImagesPaged", async (importOriginal) => {
     return {
         ...actual,
         batchFetchCards: vi.fn(),
+        getCardsWithImagesForCardInfo: vi.fn(),
     };
 });
 
@@ -19,6 +20,8 @@ describe("Stream Router", () => {
 
     beforeEach(() => {
         vi.mocked(getCardImagesPaged.batchFetchCards).mockClear();
+        vi.mocked(getCardImagesPaged.getCardsWithImagesForCardInfo).mockClear();
+        vi.mocked(getCardImagesPaged.getCardsWithImagesForCardInfo).mockResolvedValue([]);
         app = express();
         app.use(json());
         app.use("/stream", streamRouter);

@@ -8,6 +8,7 @@ export type ActionType =
     | "DELETE_CARD"
     | "DUPLICATE_CARD"
     | "REORDER_CARDS"
+    | "REORDER_MULTIPLE_CARDS"
     | "CHANGE_ARTWORK"
     | "CHANGE_SETTING"
     | "UPDATE_BLEED_SETTINGS";

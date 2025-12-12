@@ -1,18 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Button, TextInput } from "flowbite-react";
 import { X, Plus } from "lucide-react";
 import { useCardAutocomplete } from "@/hooks/useCardAutocomplete";
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { EffectCoverflow, Mousewheel, FreeMode } from 'swiper/modules';
-import type { Swiper as SwiperType } from 'swiper';
-
-// Import Swiper styles
-import 'swiper/css';
-import 'swiper/css/effect-coverflow';
-import { extractCardInfo, hasIncompleteTagSyntax } from "@/helpers/CardInfoHelper";
-import { getImages, type RawScryfallCard } from "@/helpers/scryfallApi";
+import { useScryfallPreview } from "@/hooks/useScryfallPreview";
+import { extractCardInfo } from "@/helpers/CardInfoHelper";
+import { SearchCarousel } from "./SearchComponents/SearchCarousel";
+import { SearchResultsList } from "./SearchComponents/SearchResultsList";
 import type { ScryfallCard } from "../../../shared/types";
+
 
 interface AdvancedSearchProps {
     isOpen: boolean;
@@ -45,165 +41,11 @@ export function AdvancedSearch({
     });
 
     const [showResultsList, setShowResultsList] = useState(false);
-    const swiperRef = useRef<SwiperType | null>(null);
 
     // Get neighbor cards
     const getScryfallImageUrl = (name: string) => `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=large`;
 
-    // Track previous suggestions to detect updates
-    const prevSuggestionsRef = useRef(suggestions);
-
-    // Track programmatic slide changes to prevent infinite loops
-    const isProgrammaticSlideRef = useRef(false);
-
-    // Track the last clicked card index for double-click handling
-    // This prevents adding the wrong card when animation shifts positions
-    const lastClickedIndexRef = useRef<number | null>(null);
-
-    // Debounce timer for snapping to center after scroll
-    const snapDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // Track last tap time for double-tap detection on mobile
-    const lastTapRef = useRef<number>(0);
-
-    const [setVariations, setSetVariations] = useState<ScryfallCard[]>([]);
-    const [validatedPreviewUrl, setValidatedPreviewUrl] = useState<string | null>(null);
-
-    // Cache for preview results to prevent duplicate requests
-    const previewCache = useRef<Record<string, string | null>>({});
-    const variationsCache = useRef<Record<string, ScryfallCard[]>>({});
-
-    // Validate preview when query changes
-    useEffect(() => {
-        const validatePreview = async () => {
-            // Skip validation if query ends with incomplete tag: syntax (e.g., "set:", "c:", "t:")
-            // This prevents 404 errors when user is still typing
-            if (hasIncompleteTagSyntax(query)) {
-                return;
-            }
-
-            const { name: cleanedName, set, number } = extractCardInfo(query);
-            const cacheKey = `${cleanedName}|${set}|${number}`;
-
-            if (set) {
-                if (number) {
-                    // Specific card: Name [Set] {Number}
-                    setSetVariations([]); // Clear variations
-
-                    if (previewCache.current[cacheKey] !== undefined) {
-                        setValidatedPreviewUrl(previewCache.current[cacheKey]);
-                        return;
-                    }
-
-                    try {
-                        const res = await fetch(`https://api.scryfall.com/cards/${set}/${number}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            // If name is provided, validate it matches the card at set/number
-                            if (cleanedName && !data.name.toLowerCase().includes(cleanedName.toLowerCase())) {
-                                previewCache.current[cacheKey] = null;
-                                setValidatedPreviewUrl(null);
-                            } else {
-                                const url = `https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(number)}?format=image&version=png`;
-                                previewCache.current[cacheKey] = url;
-                                setValidatedPreviewUrl(url);
-                            }
-                        } else {
-                            previewCache.current[cacheKey] = null;
-                            setValidatedPreviewUrl(null);
-                        }
-                    } catch {
-                        previewCache.current[cacheKey] = null;
-                        setValidatedPreviewUrl(null);
-                    }
-                } else if (cleanedName) {
-                    // Set but no number: Name [Set] -> Fetch all variations
-                    setValidatedPreviewUrl(null);
-
-                    if (variationsCache.current[cacheKey] !== undefined) {
-                        setSetVariations(variationsCache.current[cacheKey]);
-                        return;
-                    }
-
-                    try {
-                        // Fetch all prints for this card in this set
-                        const searchUrl = `https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(cleanedName)}"+set:${encodeURIComponent(set)}+unique:prints&order=released`;
-                        const res = await fetch(searchUrl);
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (data.data && data.data.length > 0) {
-                                const vars = data.data.map((card: RawScryfallCard) => ({
-                                    name: card.name,
-                                    set: card.set,
-                                    setName: card.set_name,
-                                    number: card.collector_number,
-                                    imageUrls: getImages(card),
-                                    // Add other required fields with defaults/nulls as we only need this for display/selection
-                                    lang: card.lang,
-                                    cmc: card.cmc,
-                                    type_line: card.type_line,
-                                    rarity: card.rarity,
-                                } as ScryfallCard));
-                                variationsCache.current[cacheKey] = vars;
-                                setSetVariations(vars);
-                            } else {
-                                variationsCache.current[cacheKey] = [];
-                                setSetVariations([]);
-                            }
-                        } else {
-                            variationsCache.current[cacheKey] = [];
-                            setSetVariations([]);
-                        }
-                    } catch {
-                        // Ignore errors for variations
-                        variationsCache.current[cacheKey] = [];
-                        setSetVariations([]);
-                    }
-                } else {
-                    setSetVariations([]);
-                    setValidatedPreviewUrl(null);
-                }
-
-            } else {
-                // No set. Simple query.
-                // If it's in suggestions, we assume it's valid (handled by autocomplete).
-                // If NOT in suggestions, we need to validate it.
-                if (cleanedName && cleanedName.length >= 2) {
-                    if (previewCache.current[cacheKey] !== undefined) {
-                        setValidatedPreviewUrl(previewCache.current[cacheKey]);
-                        setSetVariations([]);
-                        return;
-                    }
-
-                    try {
-                        const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cleanedName)}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            // If we have a number but no set, we can't really guarantee it matches, 
-                            // but at least the name is valid. 
-                            // If the user typed "Mountain {273}", cleanedName is "Mountain".
-                            // We show the default Mountain.
-                            const url = data.image_uris?.png || data.image_uris?.large || data.image_uris?.normal || null;
-                            previewCache.current[cacheKey] = url;
-                            setValidatedPreviewUrl(url);
-                        } else {
-                            previewCache.current[cacheKey] = null;
-                            setValidatedPreviewUrl(null);
-                        }
-                    } catch {
-                        previewCache.current[cacheKey] = null;
-                        setValidatedPreviewUrl(null);
-                    }
-                } else {
-                    setValidatedPreviewUrl(null);
-                }
-                setSetVariations([]);
-            }
-        };
-
-        const timeoutId = setTimeout(validatePreview, 500); // Debounce
-        return () => clearTimeout(timeoutId);
-    }, [query]);
+    const { setVariations, validatedPreviewUrl } = useScryfallPreview(query);
 
     // Use set variations if available, otherwise suggestions
     let displaySuggestions = setVariations.length > 0 ? setVariations : suggestions.map(name => ({
@@ -225,33 +67,18 @@ export function AdvancedSearch({
         } as ScryfallCard];
     }
 
-    const shouldLoop = displaySuggestions.length >= 10;
+    // Duplicate slides if fewer than 10 to ensure infinite scroll feel
+    const originalLength = displaySuggestions.length;
+    let loopSuggestions = [...displaySuggestions];
+    const MIN_SLIDES_FOR_LOOP = 12;
 
-    // Sync Swiper with hoveredIndex from autocomplete
-    useEffect(() => {
-        // Track suggestions changes for re-mount detection
-        prevSuggestionsRef.current = suggestions;
-
-        if (swiperRef.current && hoveredIndex !== null && !swiperRef.current.destroyed) {
-            const currentIndex = shouldLoop
-                ? swiperRef.current.realIndex
-                : swiperRef.current.activeIndex;
-
-            if (currentIndex !== hoveredIndex) {
-                // Always use speed 0 for programmatic slides to avoid bounce
-                const speed = 0;
-                // Set flag to prevent onSlideChange from triggering state update
-                isProgrammaticSlideRef.current = true;
-                if (shouldLoop) {
-                    swiperRef.current.slideToLoop(hoveredIndex, speed);
-                } else {
-                    swiperRef.current.slideTo(hoveredIndex, speed);
-                }
-                // Clear flag immediately for instant transitions
-                isProgrammaticSlideRef.current = false;
-            }
+    if (loopSuggestions.length > 0 && loopSuggestions.length < MIN_SLIDES_FOR_LOOP) {
+        while (loopSuggestions.length < MIN_SLIDES_FOR_LOOP) {
+            loopSuggestions = [...loopSuggestions, ...displaySuggestions];
         }
-    }, [hoveredIndex, suggestions, shouldLoop]);
+    }
+
+    const shouldLoop = loopSuggestions.length >= 10;
 
     const handleToggleResultsList = (e?: React.MouseEvent | React.TouchEvent) => {
         if (e) {
@@ -263,12 +90,12 @@ export function AdvancedSearch({
 
     const handleAddCurrentCard = (indexOverride?: number) => {
         const idx = indexOverride ?? hoveredIndex;
-        if (idx !== null && displaySuggestions[idx]) {
+        if (idx !== null && loopSuggestions[idx]) {
             // Use quotes to force exact match search
-            onSelectCard(displaySuggestions[idx].name);
+            onSelectCard(loopSuggestions[idx].name);
             handleClear();
             onClose();
-        } else if (query && displaySuggestions.length === 0) {
+        } else if (query && loopSuggestions.length === 0) {
             onSelectCard(query);
             handleClear();
             onClose();
@@ -314,251 +141,27 @@ export function AdvancedSearch({
 
 
                         {/* 3D Coverflow Carousel */}
-                        <div className="flex justify-center min-h-[300px] landscape:min-h-0">
-                            {suggestions.length > 0 ? (
-                                <div className="w-full relative flex flex-col items-center">
-                                    <div className="w-full landscape:w-[85%] lg:landscape:w-full h-[50vh] landscape:h-[40vh] md:landscape:h-[50vh] flex items-center">
-                                        <Swiper
-                                            // Force re-mount when loop mode changes to prevent state corruption
-                                            key={shouldLoop ? 'loop' : 'no-loop'}
-                                            effect={'coverflow'}
-                                            grabCursor={true}
-                                            centeredSlides={true}
-                                            slidesPerView={'auto'}
-                                            slideToClickedSlide={true}
-                                            loop={shouldLoop}
-                                            loopAdditionalSlides={shouldLoop ? 4 : undefined}
-                                            spaceBetween={0}
-                                            initialSlide={hoveredIndex ?? 0}
-                                            coverflowEffect={{
-                                                rotate: 0,
-                                                stretch: 0,
-                                                depth: 300,
-                                                modifier: 1,
-                                                slideShadows: false,
-                                                scale: 0.85,
-                                            }}
-                                            mousewheel={{
-                                                sensitivity: 4,
-                                            }}
-                                            speed={150}
-                                            freeMode={{
-                                                enabled: true,
-                                                sticky: false,
-                                                momentum: true,
-                                                momentumRatio: 0.5,
-                                                momentumVelocityRatio: 0.5,
-                                                momentumBounce: false,
-                                            }}
-                                            modules={[EffectCoverflow, Mousewheel, FreeMode]}
-                                            onSwiper={(swiper) => {
-                                                swiperRef.current = swiper;
-                                            }}
-                                            onSetTranslate={(swiper) => {
-                                                // Debounced snap: triggers 50ms after last translate change
-                                                // This ensures snap happens after momentum ends
-                                                if (snapDebounceRef.current) {
-                                                    clearTimeout(snapDebounceRef.current);
-                                                }
-                                                snapDebounceRef.current = setTimeout(() => {
-                                                    swiper.slideToClosest(0);
-                                                }, 50);
-                                            }}
-                                            onTouchStart={(swiper, event) => {
-                                                // Capture the card under initial touch/click BEFORE any animation
-                                                // This is used for double-click to ensure we add the right card
-                                                const touchX = 'touches' in event
-                                                    ? (event as TouchEvent).touches[0]?.clientX
-                                                    : (event as MouseEvent).clientX;
-
-                                                if (touchX === undefined) return;
-
-                                                const slides = swiper.slides;
-                                                for (let i = 0; i < slides.length; i++) {
-                                                    const slideEl = slides[i];
-                                                    const rect = slideEl.getBoundingClientRect();
-                                                    if (touchX >= rect.left && touchX <= rect.right) {
-                                                        const dataIndex = slideEl.getAttribute('data-swiper-slide-index');
-                                                        const realIndex = dataIndex !== null ? parseInt(dataIndex, 10) : i;
-                                                        lastClickedIndexRef.current = realIndex;
-                                                        break;
-                                                    }
-                                                }
-                                            }}
-                                            onClick={(swiper, event) => {
-                                                // Find which slide contains the click by checking each slide's bounding rect
-                                                const clickX = 'touches' in event
-                                                    ? (event as TouchEvent).touches[0]?.clientX ?? (event as TouchEvent).changedTouches[0]?.clientX
-                                                    : (event as MouseEvent).clientX;
-                                                if (clickX === undefined) return;
-
-                                                const slides = swiper.slides;
-                                                for (let i = 0; i < slides.length; i++) {
-                                                    const slideEl = slides[i];
-                                                    const rect = slideEl.getBoundingClientRect();
-
-                                                    if (clickX >= rect.left && clickX <= rect.right) {
-                                                        const dataIndex = slideEl.getAttribute('data-swiper-slide-index');
-                                                        const realIndex = dataIndex !== null ? parseInt(dataIndex, 10) : i;
-
-                                                        if (dataIndex !== null) {
-                                                            // Loop mode
-                                                            if (realIndex !== swiper.realIndex) {
-                                                                swiper.slideToLoop(realIndex, 0);
-                                                            }
-                                                        } else {
-                                                            // Non-loop mode
-                                                            if (i !== swiper.activeIndex) {
-                                                                swiper.slideTo(i, 0);
-                                                            }
-                                                        }
-                                                        break;
-                                                    }
-                                                }
-                                            }}
-                                            onSlideChange={(swiper) => {
-                                                const newIndex = shouldLoop ? swiper.realIndex : swiper.activeIndex;
-                                                // Skip state update if this is a programmatic slide change
-                                                if (isProgrammaticSlideRef.current) {
-                                                    return;
-                                                }
-                                                if (newIndex !== hoveredIndex && newIndex >= 0 && newIndex < displaySuggestions.length) {
-                                                    setHoveredIndex(newIndex);
-                                                }
-                                            }}
-                                            onSlideChangeTransitionEnd={() => {
-                                                // Reset flag after any slide transition completes
-                                                isProgrammaticSlideRef.current = false;
-                                            }}
-                                            onDoubleClick={() => {
-                                                // Use the card index from onTouchStart, before animation shifted positions
-                                                if (lastClickedIndexRef.current !== null) {
-                                                    handleAddCurrentCard(lastClickedIndexRef.current);
-                                                }
-                                            }}
-                                            onDoubleTap={() => {
-                                                // Use the card index from onTouchStart, before animation shifted positions
-                                                if (lastClickedIndexRef.current !== null) {
-                                                    handleAddCurrentCard(lastClickedIndexRef.current);
-                                                }
-                                            }}
-                                            watchSlidesProgress={true}
-                                            className="w-full h-full overflow-hidden"
-                                        >
-                                            {displaySuggestions.map((suggestion, index) => (
-                                                <SwiperSlide key={`${suggestion}-${index}`} className="!w-[75%] sm:!w-[400px] landscape:!w-[30vh] sm:landscape:!w-[30vh] md:landscape:!w-[36vh] h-full">
-                                                    {({ isActive, isPrev, isNext }) => {
-                                                        const isPriority = isActive || isPrev || isNext;
-                                                        return (
-                                                            <div
-                                                                className={`transition-all duration-300 p-1 h-full flex items-center justify-center ${isActive ? 'brightness-100' : 'brightness-60'}`}
-                                                                onDoubleClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleAddCurrentCard();
-                                                                }}
-                                                                onTouchEnd={(e) => {
-                                                                    const now = Date.now();
-                                                                    if (now - (lastTapRef.current || 0) < 300) {
-                                                                        e.preventDefault();
-                                                                        e.stopPropagation();
-                                                                        handleAddCurrentCard();
-                                                                    }
-                                                                    lastTapRef.current = now;
-                                                                }}
-                                                            >
-                                                                <img
-                                                                    src={suggestion.imageUrls?.[0] || getScryfallImageUrl(suggestion.name)}
-                                                                    alt={suggestion.name}
-                                                                    loading={isPriority ? "eager" : "lazy"}
-                                                                    fetchPriority={isActive ? "high" : "auto"}
-                                                                    className="h-auto w-auto max-h-[50vh] landscape:max-h-[40vh] md:landscape:max-h-[50vh] max-w-full mx-auto rounded-[4.75%] shadow-xl object-contain select-none"
-                                                                    draggable="false"
-                                                                />
-                                                            </div>
-                                                        );
-                                                    }}
-                                                </SwiperSlide>
-                                            ))}
-                                        </Swiper>
-                                    </div>
-
-                                    {/* 1/N Indicator Pill */}
-                                    <div className="mt-4 h-8 flex items-center justify-center w-full">
-                                        <button
-                                            onClick={(e) => {
-                                                handleToggleResultsList(e);
-                                            }}
-                                            className="inline-flex items-center px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                                        >
-                                            {(hoveredIndex ?? 0) + 1} / {suggestions.length}
-                                            <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-center w-full px-4">
-                                    <div className="w-full flex flex-col justify-center items-center h-[50vh] landscape:h-[40vh] md:landscape:h-[50vh] text-gray-400 dark:text-gray-500">
-                                        <img src="/logo.svg" alt="Proxxied Logo" className="w-24 h-24 mb-4 opacity-50" />
-                                        <p className="text-sm font-medium text-center">Search for a card to preview.<br />Supports <a href="https://scryfall.com/docs/syntax" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">Scryfall syntax</a>.</p>
-                                    </div>
-                                    {/* Spacer to match 1/N indicator height and margin exactly */}
-                                    <div className="mt-4 h-8 flex items-center justify-center w-full invisible pointer-events-none" aria-hidden="true">
-                                        <button className="inline-flex items-center px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" disabled tabIndex={-1}>
-                                            1 / 1
-                                            <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                        <SearchCarousel
+                            suggestions={suggestions}
+                            displaySuggestions={loopSuggestions}
+                            hoveredIndex={hoveredIndex}
+                            setHoveredIndex={setHoveredIndex}
+                            shouldLoop={shouldLoop}
+                            getScryfallImageUrl={getScryfallImageUrl}
+                            onAddCard={handleAddCurrentCard}
+                            onToggleResultsList={handleToggleResultsList}
+                            originalLength={originalLength}
+                        />
 
                     </div>
                     {/* Results List Overlay */}
                     {showResultsList && (
-                        <div
-                            className="absolute inset-y-0 left-0 w-full sm:w-1/3 sm:left-1/2 sm:-translate-x-1/2 bg-white dark:bg-gray-800 z-20 flex flex-col sm:border-x sm:border-gray-200 dark:sm:border-gray-700 shadow-2xl"
-                        >
-                            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shrink-0">
-                                <h4 className="font-medium text-gray-700 dark:text-gray-200">
-                                    {suggestions.length} Results
-                                </h4>
-                                <button
-                                    onClick={handleToggleResultsList}
-                                    className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
-                                >
-                                    Close List
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-2">
-                                {suggestions.length > 0 ? (
-                                    <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-                                        {suggestions.map((suggestion, index) => (
-                                            <li
-                                                key={index}
-                                                id={`result-item-${index}`}
-                                                onClick={() => {
-                                                    setHoveredIndex(index);
-                                                    setShowResultsList(false);
-                                                }}
-                                                className={`p-3 rounded-lg cursor-pointer transition-colors flex items-center justify-between ${hoveredIndex === index
-                                                    ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
-                                                    : "hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200"
-                                                    }`}
-                                            >
-                                                <span>{suggestion}</span>
-                                                {hoveredIndex === index && (
-                                                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                                                )}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                                        <p>No results found</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        <SearchResultsList
+                            suggestions={suggestions}
+                            hoveredIndex={hoveredIndex}
+                            setHoveredIndex={setHoveredIndex}
+                            onClose={() => setShowResultsList(false)}
+                        />
                     )}
                 </div>
 

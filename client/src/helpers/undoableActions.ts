@@ -194,6 +194,41 @@ export async function undoableReorderCards(
 }
 
 /**
+ * Reorders multiple cards with undo support.
+ * Captures the old order for all cards so they can be restored on undo.
+ */
+export async function undoableReorderMultipleCards(
+    adjustments: { uuid: string; oldOrder: number; newOrder: number }[]
+): Promise<void> {
+    if (adjustments.length === 0) return;
+
+    // Record the action for undo
+    useUndoRedoStore.getState().pushAction({
+        type: "REORDER_MULTIPLE_CARDS",
+        description: `Reorder ${adjustments.length} cards`,
+        undo: async () => {
+            // Restore the original order for each card
+            await db.transaction("rw", db.cards, async () => {
+                for (const adj of adjustments) {
+                    await db.cards.update(adj.uuid, { order: adj.oldOrder });
+                }
+            });
+            // Rebalance to clean up
+            await rebalanceCardOrders();
+        },
+        redo: async () => {
+            // Apply the new order for each card
+            await db.transaction("rw", db.cards, async () => {
+                for (const adj of adjustments) {
+                    await db.cards.update(adj.uuid, { order: adj.newOrder });
+                }
+            });
+            await rebalanceCardOrders();
+        },
+    });
+}
+
+/**
  * Changes card artwork with undo support.
  */
 export async function undoableChangeArtwork(

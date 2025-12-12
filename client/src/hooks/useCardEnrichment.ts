@@ -8,10 +8,10 @@ import { getEnrichmentAbortController } from "../helpers/cancellationService";
 // Retry configuration with exponential backoff
 const ENRICHMENT_RETRY_CONFIG = {
     maxRetries: 3,
-    baseDelayMs: 1000,      // 1 second
-    maxDelayMs: 120000,     // 2 minutes cap
-    multiplier: 8,          // 1s → 8s → 64s (ensures 3rd retry is ~1min later)
-    jitterFactor: 0.3,      // ±30% jitter
+    baseDelayMs: 1000,
+    maxDelayMs: 120000,
+    multiplier: 8,
+    jitterFactor: 0.3,
 };
 
 function getRetryDelay(attempt: number): number {
@@ -57,40 +57,25 @@ export function useCardEnrichment() {
         try {
             // Get all cards that need enrichment and are ready for retry
             const now = Date.now();
-
-            // Debug: Log all cards and their needsEnrichment status
             const allCards = await db.cards.toArray();
-            const cardsNeedingEnrichment = allCards.filter(c => c.needsEnrichment);
-            console.log(`[Metadata] All cards: ${allCards.length}, Cards with needsEnrichment=true: ${cardsNeedingEnrichment.length}`);
-            if (cardsNeedingEnrichment.length > 0) {
-                console.log("[Metadata] Sample card needing metadata:", cardsNeedingEnrichment[0]);
-            }
 
             // Note: Dexie may store booleans as true/false or 1/0 depending on version
             // Use filter on all cards for reliability
             const unenrichedCards = allCards.filter((card) => {
                 if (!card.needsEnrichment) return false;
-                // Skip cards that are scheduled for later retry
-                if (card.enrichmentNextRetryAt && card.enrichmentNextRetryAt > now) {
-                    return false;
-                }
-                // Skip cards that have exceeded max retries
+                if (card.enrichmentNextRetryAt && card.enrichmentNextRetryAt > now) return false;
+                // Skip if max retries exceeded
                 if ((card.enrichmentRetryCount ?? 0) >= ENRICHMENT_RETRY_CONFIG.maxRetries) {
                     return false;
                 }
                 return true;
             });
 
-            console.log(`[Metadata] Cards ready for fetch: ${unenrichedCards.length}`);
-
             if (unenrichedCards.length === 0) {
                 isEnrichingRef.current = false;
-                console.log("[Metadata] No cards to fetch - returning");
                 return;
             }
 
-            console.log(`[Metadata] Starting fetch for ${unenrichedCards.length} cards`);
-            const startTime = performance.now();
             setEnrichmentProgress({ current: 0, total: unenrichedCards.length });
 
             // Show metadata toast
@@ -106,9 +91,7 @@ export function useCardEnrichment() {
 
             // Batch enrich via server endpoint
             const batches = chunkArray(unenrichedCards, 50);
-            let enrichedCount = 0;
-            let failedCount = 0;
-            let retryingCount = 0;
+
 
             for (const batch of batches) {
                 if (abortController.signal.aborted) break;
@@ -122,8 +105,7 @@ export function useCardEnrichment() {
 
                     await Promise.all(batch.map(async (card) => {
                         try {
-                            // Lookup by name, then filter by set/number
-                            // We normalize checks to handle empty strings vs undefined
+                            // Lookup by name, then filter by set/number.
                             const targetSet = card.set || '';
                             const targetNum = card.number || '';
 
@@ -149,7 +131,7 @@ export function useCardEnrichment() {
                         }
                     }));
 
-                    // If we have mixed hits/misses, we only fetch what we need
+                    // Fetch only missing cards.
                     let validResponses: (EnrichedCardData | null)[] = [];
 
                     if (cardsToFetch.length > 0) {
@@ -218,8 +200,7 @@ export function useCardEnrichment() {
                             if (cachedDataMap.has(card.uuid)) {
                                 data = cachedDataMap.get(card.uuid);
                             } else {
-                                data = validResponses[fetchIndex];
-                                fetchIndex++;
+                                data = validResponses[fetchIndex++];
                             }
 
                             if (data) {
@@ -238,35 +219,27 @@ export function useCardEnrichment() {
                                 });
                                 batchEnrichedCount++;
                             } else {
-                                // Card not found in enrichment response - schedule retry
+                                // Card not found in enrichment response.
                                 const retryCount = (card.enrichmentRetryCount ?? 0) + 1;
                                 if (retryCount >= ENRICHMENT_RETRY_CONFIG.maxRetries) {
-                                    // Max retries exceeded - give up
+                                    // Max retries exceeded.
                                     console.warn(`[Metadata] Max retries exceeded for: ${card.name} (UUID: ${card.uuid})`);
                                     await db.cards.update(card.uuid, {
                                         needsEnrichment: false,
                                         enrichmentRetryCount: retryCount,
                                     });
                                     importStats.incrementEnrichmentFailed();
-                                    failedCount++;
                                 } else {
-                                    // Schedule retry
+                                    // Schedule retry.
                                     const nextRetryAt = Date.now() + getRetryDelay(retryCount - 1);
-                                    console.log(`[Metadata] Card failed fetch, scheduling retry ${retryCount}: ${card.name}`);
                                     await db.cards.update(card.uuid, {
                                         enrichmentRetryCount: retryCount,
                                         enrichmentNextRetryAt: nextRetryAt,
                                     });
-                                    // Original code had this logic split:
-                                    // It only incremented failedCount on MAX retry.
-                                    // BUT: original code inside the loop was `importStats.incrementEnrichmentFailed()` only on max retry.
-                                    // Retries were counted separately.
-                                    retryingCount++;
                                 }
                             }
                         }
                         importStats.incrementCardsEnriched(batchEnrichedCount);
-                        enrichedCount += batchEnrichedCount;
                     });
 
 
@@ -277,7 +250,7 @@ export function useCardEnrichment() {
                     }
                     console.error("[Metadata] Batch error:", error);
 
-                    // Schedule retry for all cards in failed batch
+                    // Schedule retry for failed batch.
                     await db.transaction("rw", db.cards, async () => {
                         for (const card of batch) {
                             const retryCount = (card.enrichmentRetryCount ?? 0) + 1;
@@ -287,51 +260,21 @@ export function useCardEnrichment() {
                                 enrichmentNextRetryAt: nextRetryAt,
                             });
                             if (retryCount >= ENRICHMENT_RETRY_CONFIG.maxRetries) {
-                                // Max retries exceeded - give up
-                                console.warn(`[Enrichment] Max retries exceeded for: ${card.name} (UUID: ${card.uuid}) due to batch failure`);
+                                // Max retries exceeded.
                                 await db.cards.update(card.uuid, {
                                     needsEnrichment: false,
                                     enrichmentRetryCount: retryCount,
                                 });
                                 importStats.incrementEnrichmentFailed();
-                                failedCount++;
-                            } else {
-                                const nextRetryAt = Date.now() + getRetryDelay(retryCount - 1);
-                                await db.cards.update(card.uuid, {
-                                    enrichmentRetryCount: retryCount,
-                                    enrichmentNextRetryAt: nextRetryAt,
-                                });
-                                retryingCount++;
                             }
                         }
                     });
                 }
             }
 
+            if (importStats.isTracking()) importStats.markEnrichmentEnd();
 
-            const pad = (content: string) => content.padEnd(62);
-
-            // Get stats directly for the log box
-            const stats = importStats.getStats();
-
-            console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║              METADATA FETCH COMPLETE                         ║
-╠══════════════════════════════════════════════════════════════╣
-║${pad(`  Time:              ${((performance.now() - startTime) / 1000).toFixed(2).padStart(8)}s`)}║
-║${pad(`  Cards Enriched:    ${String(enrichedCount).padStart(8)}`)}║
-║${pad(`  ├── Network:       ${String(enrichedCount - stats.metadataCacheHits).padStart(8)} (${failedCount} failed)`)}║
-║${pad(`  ├── Cache Hits:    ${String(stats.metadataCacheHits).padStart(8)}`)}║
-║${pad(`  └── Retries:       ${String(retryingCount).padStart(8)}`)}║
-╚══════════════════════════════════════════════════════════════╝
-            `);
-
-            // Mark enrichment end FIRST so stats are recorded
-            if (importStats.isTracking()) {
-                importStats.markEnrichmentEnd();
-            }
-
-            // THEN signal complete, which triggers the summary log
+            // Signal complete to trigger summary log.
             importStats.markEnrichmentComplete();
 
             // Hide metadata toast
@@ -343,9 +286,8 @@ export function useCardEnrichment() {
         }
     }, []);
 
-    // Trigger enrichment when cards are added
+    // Trigger enrichment when cards are added.
     useEffect(() => {
-        // Check for unenriched cards periodically
         const checkAndEnrich = async () => {
             const count = await db.cards.where("needsEnrichment").equals(1).count();
             if (count > 0 && !isEnrichingRef.current) {
@@ -353,10 +295,7 @@ export function useCardEnrichment() {
             }
         };
 
-        // Initial check after a short delay
         const initialTimer = setTimeout(checkAndEnrich, 1000);
-
-        // Periodic check for retries
         const retryInterval = setInterval(checkAndEnrich, 30000);
 
         return () => {
@@ -366,10 +305,9 @@ export function useCardEnrichment() {
         };
     }, [enrichCards]);
 
-    // Also listen for database changes
+    // Listen for database changes.
     useEffect(() => {
-        // Use a simple approach - trigger enrichment after short delay when cards might be added
-        // The periodic check will handle the actual enrichment
+        // Trigger enrichment after short delay.
         const handler = () => {
             setTimeout(() => {
                 if (!isEnrichingRef.current) {
