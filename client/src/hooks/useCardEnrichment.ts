@@ -96,8 +96,6 @@ export function useCardEnrichment() {
             for (const batch of batches) {
                 if (abortController.signal.aborted) break;
 
-                const batchStart = performance.now();
-
                 try {
                     // Check cache for each card in batch first
                     const cardsToFetch: typeof batch = [];
@@ -184,8 +182,6 @@ export function useCardEnrichment() {
                         }
                     }
 
-                    console.log(`[Metadata] Batch of ${batch.length} cards (${cachedDataMap.size} cached, ${cardsToFetch.length} fetched): ${(performance.now() - batchStart).toFixed(0)}ms`);
-
                     // Update each card in DB (Merging cached and fetched data)
                     await db.transaction("rw", db.cards, async () => {
                         let batchEnrichedCount = 0;
@@ -245,7 +241,6 @@ export function useCardEnrichment() {
 
                 } catch (error) {
                     if ((error as Error).name === "AbortError") {
-                        console.log("[Metadata] Aborted batch");
                         break;
                     }
                     console.error("[Metadata] Batch error:", error);

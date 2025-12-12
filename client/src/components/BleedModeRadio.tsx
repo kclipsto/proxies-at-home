@@ -1,11 +1,5 @@
 import type { ReactNode } from "react";
 
-// Debug logging
-const DEBUG = true;
-const log = (name: string, action: string, value: unknown) => {
-    if (DEBUG) console.log(`[BleedModeRadio] ${name}: ${action} =`, value);
-};
-
 export interface BleedModeRadioProps<T extends string> {
     name: string;
     value: T;
@@ -28,7 +22,6 @@ export function BleedModeRadio<T extends string>({
     children,
 }: BleedModeRadioProps<T>) {
     const handleChange = () => {
-        log(name, 'selected', value);
         onChange(value);
     };
 

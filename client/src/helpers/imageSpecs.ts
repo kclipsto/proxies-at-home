@@ -12,7 +12,10 @@ export interface GlobalSettings {
     noBleedTargetAmount: number;
 }
 
-function hasBleed(card: CardOption): boolean {
+/**
+ * Gets the hasBuiltInBleed status for a card, handling legacy hasBakedBleed property.
+ */
+export function getHasBuiltInBleed(card: CardOption): boolean {
     return card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed ?? false;
 }
 
@@ -35,7 +38,7 @@ export function getEffectiveBleedMode(
     // 2. Type-specific settings
     let targetMode: 'global' | 'manual' | 'none' = 'global';
 
-    if (hasBleed(card)) {
+    if (getHasBuiltInBleed(card)) {
         targetMode = settings.withBleedTargetMode;
     } else if (card.isUserUpload) {
         // Regular upload (no built in bleed)
@@ -67,7 +70,7 @@ export function getEffectiveExistingBleedMm(
     }
 
     // 2. Type-specific Defaults
-    if (hasBleed(card)) {
+    if (getHasBuiltInBleed(card)) {
         return settings.withBleedSourceAmount;
     }
 
@@ -82,20 +85,16 @@ export function getEffectiveExistingBleedMm(
 export function getExpectedBleedWidth(
     card: CardOption,
     globalBleedWidthMm: number,
-    settings: GlobalSettings,
-    debug: boolean = false
+    settings: GlobalSettings
 ): number {
     const effectiveMode = getEffectiveBleedMode(card, settings);
-    const cardName = card.name || card.uuid?.slice(0, 8) || 'unknown';
 
     if (effectiveMode === 'none') {
-        if (debug) console.log(`[BleedCalc] ${cardName}: mode=none → 0mm`);
         return 0;
     }
 
     // Check for per-card override first
     if (card.generateBleedMm !== undefined) {
-        if (debug) console.log(`[BleedCalc] ${cardName}: per-card override → ${card.generateBleedMm}mm`);
         return card.generateBleedMm;
     }
 
@@ -103,7 +102,7 @@ export function getExpectedBleedWidth(
     let targetMode: 'global' | 'manual' | 'none' = 'global';
     let manualAmount = 0;
 
-    if (hasBleed(card)) {
+    if (getHasBuiltInBleed(card)) {
         targetMode = settings.withBleedTargetMode;
         manualAmount = settings.withBleedTargetAmount;
     } else {
@@ -113,11 +112,9 @@ export function getExpectedBleedWidth(
     }
 
     if (targetMode === 'manual') {
-        if (debug) console.log(`[BleedCalc] ${cardName}: manual override → ${manualAmount}mm`);
         return manualAmount;
     }
 
     // Default to 'global'
-    if (debug) console.log(`[BleedCalc] ${cardName}: global default → ${globalBleedWidthMm}mm`);
     return globalBleedWidthMm;
 }

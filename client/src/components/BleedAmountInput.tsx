@@ -1,12 +1,6 @@
 import { Label, Select } from "flowbite-react";
 import { NumberInput } from "./NumberInput";
 
-// Debug logging
-const DEBUG = true;
-const log = (action: string, value: unknown) => {
-    if (DEBUG) console.log(`[BleedAmountInput] ${action} =`, value);
-};
-
 export interface BleedAmountInputProps {
     value: number;
     unit: 'mm' | 'in';
@@ -38,7 +32,6 @@ export function BleedAmountInput({
 }: BleedAmountInputProps) {
     const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newValue = parseFloat(e.target.value) || 0;
-        log('value', newValue);
         onValueChange(newValue);
     };
 
@@ -52,8 +45,6 @@ export function BleedAmountInput({
             // Use 3 decimal places for both inches and mm
             const decimals = 3;
             const rounded = parseFloat(converted.toFixed(decimals));
-            log('unit', newUnit);
-            log('convertedValue', rounded);
             onValueChange(rounded);
         }
         onUnitChange(newUnit);

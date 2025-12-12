@@ -5,7 +5,7 @@ import { useSettingsStore } from "../store";
 import { importStats } from "../helpers/importStats";
 import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
-import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
+import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, getHasBuiltInBleed, type GlobalSettings } from "../helpers/imageSpecs";
 
 export function useImageProcessing({
   unit,
@@ -82,12 +82,12 @@ export function useImageProcessing({
       const effectiveBleedMode = getEffectiveBleedMode(card, settings);
       const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
       // Use getExpectedBleedWidth for correct priority: per-card > type override > global
-      const expectedBleedWidth = getExpectedBleedWidth(card, bleedEdgeWidth, settings, true);
+      const expectedBleedWidth = getExpectedBleedWidth(card, bleedEdgeWidth, settings);
       const effectiveBleedWidth = expectedBleedWidth;
 
       // Smart Cache Check: valid if width matches AND generation parameters match
       // If generatedHasBuiltInBleed is missing (legacy), we might reprocess once, which is safe.
-      const hasBuiltInBleed = card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed;
+      const hasBuiltInBleed = getHasBuiltInBleed(card);
       if (
         currentImage?.displayBlob &&
         currentImage?.displayBlobDarkened &&
@@ -118,7 +118,7 @@ export function useImageProcessing({
           unit,
           apiBase: API_BASE,
           isUserUpload: card.isUserUpload,
-          hasBuiltInBleed: card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed,
+          hasBuiltInBleed: getHasBuiltInBleed(card),
           bleedMode: effectiveBleedMode,
           existingBleedMm: effectiveExistingBleedMm,
           dpi,
@@ -219,12 +219,12 @@ export function useImageProcessing({
           const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
 
           // Use getExpectedBleedWidth for correct priority: per-card > type override > global
-          const effectiveBleedWidth = getExpectedBleedWidth(card, newBleedWidth, settings, true);
+          const effectiveBleedWidth = getExpectedBleedWidth(card, newBleedWidth, settings);
 
 
 
 
-          console.log(`[Processor] ${card.name}: mode=${effectiveBleedMode}, existingMm=${effectiveExistingBleedMm}, target=${effectiveBleedWidth}, hasBaked=${card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed}, from=${card.isUserUpload ? 'upload' : 'mpc'}`);
+
 
           const result = await imageProcessor.process({
             uuid: card.uuid,
@@ -233,7 +233,7 @@ export function useImageProcessing({
             unit,
             apiBase: API_BASE,
             isUserUpload: card.isUserUpload,
-            hasBuiltInBleed: card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed,
+            hasBuiltInBleed: getHasBuiltInBleed(card),
             bleedMode: effectiveBleedMode,
             existingBleedMm: effectiveExistingBleedMm,
             dpi,
@@ -263,7 +263,7 @@ export function useImageProcessing({
               exportBleedWidth,
               displayBlobDarkened,
               exportBlobDarkened,
-              generatedHasBuiltInBleed: card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed,
+              generatedHasBuiltInBleed: getHasBuiltInBleed(card),
               generatedBleedMode: effectiveBleedMode,
             });
           } else {

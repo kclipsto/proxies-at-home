@@ -7,6 +7,7 @@ import {
 import { generateBleedCanvasWebGL } from "./webglImageProcessing";
 import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
+import type { CardOption } from "../../../shared/types";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
@@ -236,12 +237,8 @@ function createGuideCanvas(
         ctx.roundRect(rectX + halfWidth, rectY + halfWidth, rectW - w, rectH - w, pathRadius);
         ctx.stroke();
     }
-
     return canvas;
 }
-
-// Local CardData replaced by CardOption from shared types
-// Local getCardTargetBleed replaced by import from ./layout
 
 const canvasCache = new Map<string, OffscreenCanvas>();
 
@@ -305,7 +302,6 @@ self.onmessage = async (event: MessageEvent) => {
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, pageWidthPx, pageHeightPx);
 
-        let imagesProcessed = 0;
         const scaledGuideWidth = scaleGuideWidthForDPI(guideWidthCssPx, 96, DPI);
 
         // Create per-card guide canvas ONCE (guides are same size for all cards since they mark the fixed content boundary)
@@ -328,7 +324,22 @@ self.onmessage = async (event: MessageEvent) => {
             ctx.drawImage(fullPageGuidesCanvas, 0, 0);
         }
 
-        for (const [idx, card] of pageCards.entries()) {
+        // Type for prepared card data
+        type PreparedCard = {
+            canvas: OffscreenCanvas | ImageBitmap;
+            x: number;
+            y: number;
+            cardWidthPx: number;
+            cardHeightPx: number;
+            centerOffsetX: number;
+            centerOffsetY: number;
+            imageCardWidthPx: number;
+            imageCardHeightPx: number;
+            bleedPx: number;
+        };
+
+        // PHASE 1: Prepare all cards in PARALLEL
+        const preparedCards = await Promise.all(pageCards.map(async (card: CardOption, idx: number): Promise<PreparedCard> => {
             const col = idx % columns;
             const row = Math.floor(idx / columns);
             const cardLayout = layouts[idx];
@@ -349,18 +360,17 @@ self.onmessage = async (event: MessageEvent) => {
             // Select appropriate blob based on darkenNearBlack setting
             const selectedExportBlob = darkenNearBlack ? imageInfo?.exportBlobDarkened : imageInfo?.exportBlob;
 
-            // Get the target bleed for this card using the passed sourceSettings (same as display path)
+            // Compute bleed mode and amounts
+            const effectiveMode = getEffectiveBleedMode(card, sourceSettings);
+            const existingBleedMm = getEffectiveExistingBleedMm(card, { withBleedSourceAmount }) ?? 0;
             const targetBleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
 
-            // Use the image's actual bleed width if available, otherwise use the target bleed
+            // Use the image's actual bleed width if available
             const imageBleedWidthMm = imageInfo?.exportBleedWidth ?? targetBleedMm;
             const imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
 
             // Cache is valid if we have the blob at the right DPI
-            // (bleed width mismatch just means we need to center the image)
-            const isCacheValid =
-                selectedExportBlob &&
-                imageInfo?.exportDpi === DPI;
+            const isCacheValid = selectedExportBlob && imageInfo?.exportDpi === DPI;
 
             // Calculate centering offset if image has different bleed than card's target
             const slotBleedPx = cardLayout.bleedPx;
@@ -371,10 +381,11 @@ self.onmessage = async (event: MessageEvent) => {
             const imageCardHeightPx = contentHeightInPx + 2 * imageBleedPx;
 
             if (isCacheValid) {
+                // Fast path: use pre-processed blob directly
                 finalCardCanvas = await createImageBitmap(selectedExportBlob!);
             } else {
-                // Check in-memory cache for processed canvas
-                const cacheKey = card.imageId;
+                // Check cache
+                const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${darkenNearBlack}` : null;
                 if (cacheKey && canvasCache.has(cacheKey)) {
                     finalCardCanvas = canvasCache.get(cacheKey)!;
                 } else {
@@ -382,7 +393,6 @@ self.onmessage = async (event: MessageEvent) => {
                     let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
 
                     if (src?.startsWith("blob:")) {
-                        // Safety net: auto-revoke after 5 minutes if something goes wrong
                         cleanupTimeout = setTimeout(() => {
                             console.warn("Auto-revoking blob URL (safety net):", src);
                             URL.revokeObjectURL(src!);
@@ -391,6 +401,7 @@ self.onmessage = async (event: MessageEvent) => {
 
                     try {
                         if (!src) {
+                            // Placeholder for missing images
                             const cardBleedPx = cardLayout.bleedPx;
                             const cardWidthWithBleed = contentWidthInPx + 2 * cardBleedPx;
                             const cardHeightWithBleed = contentHeightInPx + 2 * cardBleedPx;
@@ -416,63 +427,34 @@ self.onmessage = async (event: MessageEvent) => {
                             const blob = await response.blob();
                             let img = await createImageBitmap(blob);
 
-                            // Determine bleed mode and amounts using shared logic
-                            const effectiveMode = getEffectiveBleedMode(card, sourceSettings);
-                            const existingBleedMm = getEffectiveExistingBleedMm(card, { withBleedSourceAmount }) ?? 0;
-                            const targetBleedForCard = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
+                            const needsBleedChange = Math.abs(existingBleedMm - targetBleedMm) > 0.01;
 
                             if (effectiveMode === 'none') {
-                                // No bleed - trim existing bleed if any
                                 if (card.hasBuiltInBleed && existingBleedMm > 0) {
                                     const trimmed = await trimBleedFromBitmap(img);
-                                    if (trimmed !== img) {
-                                        img.close();
-                                        img = trimmed;
-                                    }
+                                    if (trimmed !== img) { img.close(); img = trimmed; }
                                 }
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, 0, {
-                                    unit: 'mm',
-                                    dpi: DPI,
-                                    darkenNearBlack,
+                                    unit: 'mm', dpi: DPI, darkenNearBlack,
                                 });
-                            } else if (effectiveMode === 'existing') {
-                                // Use existing bleed as-is
+                            } else if (effectiveMode === 'existing' || !needsBleedChange) {
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
-                                    unit: 'mm',
-                                    dpi: DPI,
-                                    darkenNearBlack,
+                                    unit: 'mm', dpi: DPI, darkenNearBlack,
                                 });
                             } else {
-                                // Generate mode - trim/extend as needed
-                                const needsProcessing = Math.abs(existingBleedMm - targetBleedForCard) > 0.01;
-
-                                if (needsProcessing) {
-                                    if (card.hasBuiltInBleed && existingBleedMm > 0) {
-                                        const trimmed = await trimBleedFromBitmap(img);
-                                        if (trimmed !== img) {
-                                            img.close();
-                                            img = trimmed;
-                                        }
-                                    }
-                                    finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedForCard, {
-                                        unit: 'mm',
-                                        dpi: DPI,
-                                        darkenNearBlack,
-                                    });
-                                } else {
-                                    // Source matches target - use as-is
-                                    finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
-                                        unit: 'mm',
-                                        dpi: DPI,
-                                        darkenNearBlack,
-                                    });
+                                if (card.hasBuiltInBleed && existingBleedMm > 0) {
+                                    const trimmed = await trimBleedFromBitmap(img);
+                                    if (trimmed !== img) { img.close(); img = trimmed; }
                                 }
+                                finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedMm, {
+                                    unit: 'mm', dpi: DPI, darkenNearBlack,
+                                });
                             }
 
                             img.close();
                         }
 
-                        // Cache the result if we have an ID
+                        // Cache the result
                         if (cacheKey && finalCardCanvas instanceof OffscreenCanvas) {
                             canvasCache.set(cacheKey, finalCardCanvas);
                         }
@@ -483,24 +465,39 @@ self.onmessage = async (event: MessageEvent) => {
                 }
             }
 
-            // Draw image centered in slot (accounts for different bleed widths)
-            // CLIP to the target card dimensions to prevent overlap if image bleed > target bleed
+            return {
+                canvas: finalCardCanvas,
+                x,
+                y,
+                cardWidthPx: cardLayout.cardWidthPx,
+                cardHeightPx: cardLayout.cardHeightPx,
+                centerOffsetX,
+                centerOffsetY,
+                imageCardWidthPx,
+                imageCardHeightPx,
+                bleedPx: cardLayout.bleedPx,
+            };
+        }));
+
+        // PHASE 2: Draw all cards SEQUENTIALLY (canvas context not thread-safe)
+        let imagesProcessed = 0;
+        for (const prepared of preparedCards) {
             ctx.save();
             ctx.beginPath();
-            ctx.rect(x, y, cardLayout.cardWidthPx, cardLayout.cardHeightPx);
+            ctx.rect(prepared.x, prepared.y, prepared.cardWidthPx, prepared.cardHeightPx);
             ctx.clip();
-            ctx.drawImage(finalCardCanvas, x + centerOffsetX, y + centerOffsetY, imageCardWidthPx, imageCardHeightPx);
+            ctx.drawImage(prepared.canvas, prepared.x + prepared.centerOffsetX, prepared.y + prepared.centerOffsetY, prepared.imageCardWidthPx, prepared.imageCardHeightPx);
             ctx.restore();
-            if (finalCardCanvas instanceof ImageBitmap) {
-                finalCardCanvas.close();
+
+            if (prepared.canvas instanceof ImageBitmap) {
+                prepared.canvas.close();
             }
 
-            // Stamp per-card guide overlay (reuse single canvas created before loop)
-            // Offset to center the guide in the card (guide was created with global bleed, card may have different bleed)
+            // Stamp per-card guide overlay
             if (perCardGuideCanvas) {
-                const guideOffsetX = cardLayout.bleedPx - bleedPxForGuide;
-                const guideOffsetY = cardLayout.bleedPx - bleedPxForGuide;
-                ctx.drawImage(perCardGuideCanvas, x + guideOffsetX, y + guideOffsetY);
+                const guideOffsetX = prepared.bleedPx - bleedPxForGuide;
+                const guideOffsetY = prepared.bleedPx - bleedPxForGuide;
+                ctx.drawImage(perCardGuideCanvas, prepared.x + guideOffsetX, prepared.y + guideOffsetY);
             }
 
             imagesProcessed++;

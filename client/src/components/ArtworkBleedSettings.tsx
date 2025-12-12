@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/store/settings";
 import { useSelectionStore } from "@/store/selection";
 import { undoableUpdateCardBleedSettings } from "@/helpers/undoableActions";
 import { BleedModeControl } from "@/components/BleedModeControl";
+import { getHasBuiltInBleed } from "@/helpers/imageSpecs";
 import { AutoTooltip } from "./AutoTooltip";
 
 export function ArtworkBleedSettings() {
@@ -31,7 +32,7 @@ export function ArtworkBleedSettings() {
     // Initialize from card
     useEffect(() => {
         if (modalCard) {
-            setHasBleedBuiltIn(modalCard.hasBuiltInBleed ?? (modalCard as { hasBakedBleed?: boolean }).hasBakedBleed ?? false);
+            setHasBleedBuiltIn(getHasBuiltInBleed(modalCard));
 
             if (modalCard.existingBleedMm !== undefined) {
                 setSourceMode('manual');
@@ -141,12 +142,15 @@ export function ArtworkBleedSettings() {
                                 groupName="source-mode"
                                 mode={sourceMode}
                                 onModeChange={setSourceMode}
-                                defaultLabel={`Use Type Default (${globalSourceAmount}mm)`}
+                                defaultLabel={`Use Type Default`}
                                 amount={providedBleedAmount}
                                 onAmountChange={setProvidedBleedAmount}
                                 showNone={false}
                                 valueDefault="default"
                             />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <span className="font-medium">Tip:</span> Setting to 0mm will ignore the built-in bleed and allow bleed generation at any desired amount.
+                            </p>
                         </div>
                     )}
                 </div>

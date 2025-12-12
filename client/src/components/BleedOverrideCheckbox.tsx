@@ -1,12 +1,6 @@
 import { Checkbox } from "flowbite-react";
 import { BleedAmountInput } from "./BleedAmountInput";
 
-// Debug logging
-const DEBUG = true;
-const log = (action: string, value: unknown) => {
-    if (DEBUG) console.log(`[BleedOverrideCheckbox] ${action} =`, value);
-};
-
 export interface BleedOverrideCheckboxProps {
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
@@ -31,7 +25,6 @@ export function BleedOverrideCheckbox({
     label = "Override bleed amount",
 }: BleedOverrideCheckboxProps) {
     const handleCheckedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        log('checked', e.target.checked);
         onCheckedChange(e.target.checked);
     };
 

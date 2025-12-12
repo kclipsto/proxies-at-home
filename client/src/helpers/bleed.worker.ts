@@ -253,7 +253,6 @@ self.onmessage = async (e: MessageEvent) => {
     bleedEdgeWidth,
     unit,
     apiBase,
-    isUserUpload,
     hasBuiltInBleed,
     bleedMode,
     existingBleedMm,
@@ -333,19 +332,10 @@ self.onmessage = async (e: MessageEvent) => {
     // blob is guaranteed to be set at this point by the control flow above
     let imageBitmap = await createImageBitmap(blob!);
 
-    console.log('[Worker Fallback] Bleed mode handling:', {
-      bleedMode,
-      existingBleedMm,
-      hasBuiltInBleed,
-      isUserUpload
-    });
-
     if (bleedMode === 'existing') {
       // Use existing bleed as-is - no trimming needed
-      console.log('[Worker Fallback] Using existing bleed - no trimming');
     } else if (bleedMode === 'none') {
       // No bleed processing - use image as-is
-      console.log('[Worker Fallback] No bleed mode - using image as-is');
     } else if (bleedMode === 'generate') {
       // Smart bleed handling for images with existing bleed
       if (hasBuiltInBleed && existingBleedMm !== undefined && existingBleedMm > 0) {
@@ -364,9 +354,6 @@ self.onmessage = async (e: MessageEvent) => {
               imageBitmap.close();
               imageBitmap = trimmed;
             }
-            console.log('[Worker Fallback] Smart bleed - trimmed', trimAmount, 'mm to reach target', targetBleedMm, 'mm');
-          } else {
-            console.log('[Worker Fallback] Smart bleed - existing matches target exactly');
           }
           // Use 'existing' mode rendering path
           const result = await resizeWithoutBleed(imageBitmap, targetBleedMm, {
@@ -384,7 +371,6 @@ self.onmessage = async (e: MessageEvent) => {
             imageBitmap.close();
             imageBitmap = trimmed;
           }
-          console.log('[Worker Fallback] Smart bleed - target', targetBleedMm, 'mm > existing', existingBleedMm, 'mm - full regeneration');
         }
       } else if (hasBuiltInBleed) {
         // hasBuiltInBleed but no existingBleedMm specified - use calibrated MPC bleed trim
@@ -393,9 +379,6 @@ self.onmessage = async (e: MessageEvent) => {
           imageBitmap.close();
           imageBitmap = trimmed;
         }
-        console.log('[Worker Fallback] Generate mode - trimming with calibrated MPC bleed');
-      } else {
-        console.log('[Worker Fallback] Generate mode - no existing bleed to trim');
       }
     } else if (hasBuiltInBleed) {
       // Legacy fallback for undefined bleedMode with built in bleed - use calibrated trim
@@ -404,10 +387,6 @@ self.onmessage = async (e: MessageEvent) => {
         imageBitmap.close();
         imageBitmap = trimmed;
       }
-      console.log('[Worker Fallback] Legacy fallback - trimming with calibrated MPC bleed');
-    } else {
-      // Default: no trimming, will generate bleed
-      console.log('[Worker Fallback] Default - no trimming');
     }
 
     let result;
@@ -419,14 +398,12 @@ self.onmessage = async (e: MessageEvent) => {
         unit: 'mm', // existingBleedMm is always in mm
         dpi,
       });
-      console.log('[Worker Fallback] Using existing bleed - skipped bleed generation, existingBleedMm:', existingBleed);
     } else if (bleedMode === 'none') {
       // For 'none' mode, resize to card size without any bleed
       result = await resizeWithoutBleed(imageBitmap, 0, {
         unit: 'mm',
         dpi,
       });
-      console.log('[Worker Fallback] No bleed mode - resized to card size without bleed');
     } else {
       // For generate mode (and legacy), run bleed generation
       result = await addBleedEdge(imageBitmap, bleedEdgeWidth, {

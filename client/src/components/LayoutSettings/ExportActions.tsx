@@ -80,6 +80,7 @@ export function ExportActions({ cards }: Props) {
     try {
       // Get normalized settings at export time (consistent with display path)
       const pdfSettings = serializePdfSettingsForWorker();
+      const startTime = performance.now();
 
       await exportProxyPagesToPdf({
         cards: filteredAndSortedCards,
@@ -89,6 +90,24 @@ export function ExportActions({ cards }: Props) {
         pagesPerPdf: effectivePagesPerPdf,
         cancellationPromise,
       });
+
+      // Log PDF export summary
+      const elapsed = (performance.now() - startTime) / 1000;
+      const perPage = Math.max(1, pdfSettings.columns * (pdfSettings.rows ?? 1));
+      const totalPages = Math.ceil(filteredAndSortedCards.length / perPage);
+      const pad = (content: string) => content.padEnd(62);
+      const summary = `
+╔══════════════════════════════════════════════════════════════╗
+║${"PDF EXPORT SUMMARY".padStart(40).padEnd(62)}║
+╠══════════════════════════════════════════════════════════════╣
+║${pad(`  Total Time:        ${elapsed.toFixed(2).padStart(8)}s`)}║
+╠══════════════════════════════════════════════════════════════╣
+║${pad(`  Cards:             ${String(filteredAndSortedCards.length).padStart(8)}`)}║
+║${pad(`  Pages:             ${String(totalPages).padStart(8)}`)}║
+║${pad(`  DPI:               ${String(dpi).padStart(8)}`)}║
+║${pad(`  Page Size:         ${(pageWidth + "x" + pageHeight + " " + pageSizeUnit).padStart(8)}`)}║
+╚══════════════════════════════════════════════════════════════╝`;
+      console.log(summary);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === "Cancelled by user") {
         return; // User cancelled, do nothing

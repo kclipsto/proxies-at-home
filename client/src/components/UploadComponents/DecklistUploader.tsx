@@ -40,8 +40,6 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     // --- Fetch Logic ---
 
     const processCardFetch = async (infos: CardInfo[]) => {
-        console.log(`[Deck Text Import] Starting fetch for ${infos.length} cards`);
-
         setLoadingTask("Fetching cards");
         setLoadingMessage("Connecting to Scryfall...");
 
@@ -164,8 +162,6 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                         if (cardsAdded > 0) {
                             useSettingsStore.getState().setSortBy("manual");
                         }
-
-                        console.log(`[Deck Text Import] Added ${cardsAdded} cards, awaiting image processing...`);
 
                         if (importStats.getPendingCount() === 0) {
                             importStats.forceFinish();

@@ -60,16 +60,11 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            const fileCount = e.target.files.length;
-            const startTime = performance.now();
             const hasBuiltInBleed = uploadMode === "withBleed";
-            console.log(`[Image Upload] Starting upload of ${fileCount} images (bleed: ${hasBuiltInBleed})`);
 
             setLoadingTask("Processing Images");
             try {
                 await addUploadedFiles(e.target.files, { hasBuiltInBleed });
-                const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
-                console.log(`[Image Upload] Completed ${fileCount} images in ${elapsed}s`);
             } finally {
                 setLoadingTask(null);
             }

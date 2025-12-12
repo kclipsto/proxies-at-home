@@ -1,10 +1,13 @@
-import { Suspense, lazy, useEffect, useMemo, useCallback, useRef, useState } from "react";
+import { useEffect, useMemo, useCallback, useRef, useState } from "react";
 import { FileUp, Eye, Settings } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption } from "../../../shared/types";
 
 import { ResizeHandle } from "../components/ResizeHandle";
 import { ToastContainer } from "../components/ToastContainer";
+import { PageView } from "../components/PageView";
+import { PageSettingsControls } from "../components/PageSettingsControls";
+import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useCardEnrichment } from "../hooks/useCardEnrichment";
 import { useSettingsStore } from "../store";
@@ -15,18 +18,7 @@ import { importStats } from "../helpers/importStats";
 import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/cacheUtils";
 import { getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
 
-// Lazy load heavy components
-const PageView = lazy(() => import("../components/PageView").then(m => ({ default: m.PageView })));
-const PageSettingsControls = lazy(() => import("../components/PageSettingsControls").then(m => ({ default: m.PageSettingsControls })));
-const UploadSection = lazy(() => import("../components/UploadSection").then(m => ({ default: m.UploadSection })));
 
-function PageViewLoader() {
-  return (
-    <div className="w-1/2 flex-1 overflow-y-auto bg-gray-200 h-full p-6 flex justify-center items-center dark:bg-gray-800">
-      <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-400 border-t-transparent" />
-    </div>
-  );
-}
 
 // Stable empty arrays to prevent useEffect dependency changes
 const EMPTY_CARDS: CardOption[] = [];
@@ -407,39 +399,33 @@ export default function ProxyBuilderPage() {
 
         <div className="flex-1 overflow-hidden relative">
           <div className={activeMobileView === "upload" ? "block h-full" : "hidden"}>
-            <Suspense fallback={<PageViewLoader />}>
-              <UploadSection
-                isCollapsed={false}
-                cardCount={cardCount}
-                mobile={true}
-                onUploadComplete={() => setActiveMobileView("preview")}
-              />
-            </Suspense>
+            <UploadSection
+              isCollapsed={false}
+              cardCount={cardCount}
+              mobile={true}
+              onUploadComplete={() => setActiveMobileView("preview")}
+            />
           </div>
 
           <div className={activeMobileView === "preview" ? "block h-full" : "hidden"}>
-            <Suspense fallback={<PageViewLoader />}>
-              <PageView
-                loadingMap={loadingMap}
-                ensureProcessed={ensureProcessed}
-                cards={allCards}
-                images={allImages}
-                mobile={true}
-                active={activeMobileView === "preview"}
-              />
-            </Suspense>
+            <PageView
+              loadingMap={loadingMap}
+              ensureProcessed={ensureProcessed}
+              cards={allCards}
+              images={allImages}
+              mobile={true}
+              active={activeMobileView === "preview"}
+            />
             <ToastContainer />
           </div>
 
           <div className={activeMobileView === "settings" ? "block h-full" : "hidden"}>
-            <Suspense fallback={<PageViewLoader />}>
-              <PageSettingsControls
-                reprocessSelectedImages={reprocessSelectedImages}
-                cancelProcessing={cancelProcessing}
-                cards={allCards}
-                mobile={true}
-              />
-            </Suspense>
+            <PageSettingsControls
+              reprocessSelectedImages={reprocessSelectedImages}
+              cancelProcessing={cancelProcessing}
+              cards={allCards}
+              mobile={true}
+            />
           </div>
         </div>
       </div >
@@ -457,12 +443,10 @@ export default function ProxyBuilderPage() {
             minWidth: isUploadPanelCollapsed ? 60 : 320,
           }}
         >
-          <Suspense fallback={<PageViewLoader />}>
-            <UploadSection
-              isCollapsed={isUploadPanelCollapsed}
-              cardCount={cardCount}
-            />
-          </Suspense>
+          <UploadSection
+            isCollapsed={isUploadPanelCollapsed}
+            cardCount={cardCount}
+          />
         </div>
         <ResizeHandle
           isCollapsed={isUploadPanelCollapsed}
@@ -478,14 +462,12 @@ export default function ProxyBuilderPage() {
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-hidden relative h-full">
-          <Suspense fallback={<PageViewLoader />}>
-            <PageView
-              loadingMap={loadingMap}
-              ensureProcessed={ensureProcessed}
-              cards={allCards}
-              images={allImages}
-            />
-          </Suspense>
+          <PageView
+            loadingMap={loadingMap}
+            ensureProcessed={ensureProcessed}
+            cards={allCards}
+            images={allImages}
+          />
 
           <ToastContainer />
         </div>
@@ -508,13 +490,11 @@ export default function ProxyBuilderPage() {
             transition: "width 0.2s ease-in-out",
           }}
         >
-          <Suspense fallback={<PageViewLoader />}>
-            <PageSettingsControls
-              reprocessSelectedImages={reprocessSelectedImages}
-              cancelProcessing={cancelProcessing}
-              cards={allCards}
-            />
-          </Suspense>
+          <PageSettingsControls
+            reprocessSelectedImages={reprocessSelectedImages}
+            cancelProcessing={cancelProcessing}
+            cards={allCards}
+          />
         </div>
       </div>
 

@@ -360,7 +360,7 @@ export async function undoableUpdateCardBleedSettings(
     const cardName = cards.length === 1 ? cards[0]?.name || 'card' : `${cards.length} cards`;
 
     // Perform the update - always set all fields to allow resetting to undefined
-    await db.transaction("rw", db.cards, async () => {
+    await db.transaction("rw", db.cards, db.images, async () => {
         const changes: Partial<CardOption> = {
             hasBuiltInBleed: newSettings.hasBuiltInBleed,
             bleedMode: newSettings.bleedMode,
@@ -374,6 +374,17 @@ export async function undoableUpdateCardBleedSettings(
                 changes,
             }))
         );
+
+        // Invalidate image cache for affected cards to trigger regeneration
+        // Clear generatedBleedMode and generatedHasBuiltInBleed so ensureProcessed detects the change
+        for (const card of cards) {
+            if (card.imageId) {
+                await db.images.update(card.imageId, {
+                    generatedBleedMode: undefined,
+                    generatedHasBuiltInBleed: undefined,
+                });
+            }
+        }
     });
 
     // Record the action for undo
@@ -381,8 +392,8 @@ export async function undoableUpdateCardBleedSettings(
         type: "UPDATE_BLEED_SETTINGS",
         description: `Change bleed settings for "${cardName}"`,
         undo: async () => {
-            // Restore old settings for each card
-            await db.transaction("rw", db.cards, async () => {
+            // Restore old settings for each card and invalidate image cache
+            await db.transaction("rw", db.cards, db.images, async () => {
                 for (const [uuid, settings] of oldSettings) {
                     await db.cards.update(uuid, {
                         hasBuiltInBleed: settings.hasBuiltInBleed,
@@ -391,11 +402,20 @@ export async function undoableUpdateCardBleedSettings(
                         generateBleedMm: settings.generateBleedMm,
                     });
                 }
+                // Invalidate image cache to trigger regeneration
+                for (const card of cards) {
+                    if (card.imageId) {
+                        await db.images.update(card.imageId, {
+                            generatedBleedMode: undefined,
+                            generatedHasBuiltInBleed: undefined,
+                        });
+                    }
+                }
             });
         },
         redo: async () => {
-            // Re-apply new settings
-            await db.transaction("rw", db.cards, async () => {
+            // Re-apply new settings and invalidate image cache
+            await db.transaction("rw", db.cards, db.images, async () => {
                 const changes: Partial<CardOption> = {
                     hasBuiltInBleed: newSettings.hasBuiltInBleed,
                     bleedMode: newSettings.bleedMode,
@@ -409,6 +429,15 @@ export async function undoableUpdateCardBleedSettings(
                         changes,
                     }))
                 );
+                // Invalidate image cache to trigger regeneration
+                for (const card of cards) {
+                    if (card.imageId) {
+                        await db.images.update(card.imageId, {
+                            generatedBleedMode: undefined,
+                            generatedHasBuiltInBleed: undefined,
+                        });
+                    }
+                }
             });
         },
     });

@@ -24,9 +24,6 @@ export function MpcImportSection({ mobile, onUploadComplete }: Props) {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const startTime = performance.now();
-        console.log(`[MPC XML Import] Starting import of ${file.name}`);
-
         setLoadingTask("Processing Images");
         try {
             const text = await readText(file);
@@ -40,22 +37,15 @@ export function MpcImportSection({ mobile, onUploadComplete }: Props) {
                 onUploadComplete?.();
             }
 
-            const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
-
             if (result.success && result.count > 0) {
-                console.log(`[MPC XML Import] Completed ${result.count} cards in ${elapsed}s`);
                 useSettingsStore.getState().setSortBy("manual");
                 onUploadComplete?.();
             } else if (result.error) {
-                console.log(`[MPC XML Import] Failed after ${elapsed}s: ${result.error}`);
                 alert(result.error);
             } else {
-                console.log(`[MPC XML Import] No cards found after ${elapsed}s`);
                 alert("No cards found in the file.");
             }
-        } catch (err) {
-            const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
-            console.error(`[MPC XML Import] Error after ${elapsed}s:`, err);
+        } catch {
             alert("Failed to parse file.");
         } finally {
             setLoadingTask(null);

@@ -77,7 +77,6 @@ class ImportStatsTracker {
         this.importType = opts?.importType || 'unknown';
         this.cacheHitUuids.clear();
         this.cacheMissUuids.clear();
-        console.log(`[Import Stats] Started ${this.importType} import of ${totalCards} cards`);
 
         // Show processing toast
         useToastStore.getState().showProcessingToast();
