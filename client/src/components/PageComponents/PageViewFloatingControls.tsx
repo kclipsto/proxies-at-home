@@ -99,7 +99,7 @@ export function PageViewFloatingControls({ mobile, hasCards }: PageViewFloatingC
 
             {/* Mobile Undo/Redo Controls */}
             {mobile && (
-                <div className="fixed bottom-20 left-4 landscape:bottom-4 landscape:left-4 z-[9999]">
+                <div className="fixed bottom-20 left-4 landscape:bottom-4 landscape:left-24 z-[9999]">
                     <UndoRedoControls />
                 </div>
             )}

@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { archidektRouter } from "./routes/archidektRouter.js";
 import { imageRouter } from "./routes/imageRouter.js";
 import { streamRouter } from "./routes/streamRouter.js";
 
@@ -13,6 +14,7 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: "1mb" }));
+app.use("/api/archidekt", archidektRouter);
 app.use("/api/cards/images", imageRouter);
 app.use("/api/stream", streamRouter);
 

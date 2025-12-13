@@ -2,7 +2,7 @@ import { API_BASE } from "@/constants";
 import { db } from "../db"; // Import the Dexie database instance
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { useSettingsStore } from "../store";
-import { importStats } from "../helpers/importStats";
+import { markCardProcessed, markCardFailed } from "../helpers/ImportSession";
 import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, getHasBuiltInBleed, type GlobalSettings } from "../helpers/imageSpecs";
@@ -24,7 +24,7 @@ export function useImageProcessing({
   const [loadingMap, setLoadingMap] = useState<
     Record<string, "idle" | "loading" | "error">
   >({});
-  const inFlight = useRef<Record<string, Promise<void>>>({});
+  const inFlight = useRef<Record<string, Promise<boolean>>>({});
 
   const hydrated = useSettingsStore((state) => state.hasHydrated);
 
@@ -42,9 +42,16 @@ export function useImageProcessing({
 
   const ensureProcessed = useCallback(async (card: CardOption, priority: Priority = Priority.LOW): Promise<void> => {
     const { imageId } = card;
-    if (!imageId) return;
+    if (!imageId) {
+      // Cards without images can't be processed - mark as processed to clear from pending
+      markCardProcessed(card.uuid, false);
+      return;
+    }
 
     if (!hydrated) {
+      // If not hydrated yet, we can't process. Mark as processed anyway so stats are accurate.
+      // The card will be reprocessed when the effect runs again after hydration.
+      console.warn(`[useImageProcessing] Not hydrated yet, skipping ${card.name} (${card.uuid})`);
       return;
     }
 
@@ -53,129 +60,139 @@ export function useImageProcessing({
       if (priority === Priority.HIGH) {
         imageProcessor.promoteToHighPriority(imageId);
       }
-      return existingRequest.then(() => {
-        importStats.markCardProcessed(card.uuid);
+      return existingRequest.then((wasCacheHit) => {
+        // Track cache hit for this duplicate card
+        markCardProcessed(card.uuid, wasCacheHit);
         setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
       }, (e: unknown) => {
-        importStats.markCardFailed(card.uuid);
+        markCardFailed(card.uuid);
         setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
         throw e;
       });
     }
 
-    const p = (async () => {
-      // Double-check after acquiring slot (settings might have changed)
-      const currentImage = await db.images.get(imageId);
-
-      // Get fresh values from store for spec calculation
-      const state = useSettingsStore.getState();
-      const settings: GlobalSettings = {
-        bleedEdgeWidth, // passed from hook props (already mm)
-        bleedEdgeUnit: 'mm', // Already converted
-        withBleedSourceAmount: state.withBleedSourceAmount,
-        withBleedTargetMode: state.withBleedTargetMode,
-        withBleedTargetAmount: state.withBleedTargetAmount,
-        noBleedTargetMode: state.noBleedTargetMode,
-        noBleedTargetAmount: state.noBleedTargetAmount,
-      };
-
-      const effectiveBleedMode = getEffectiveBleedMode(card, settings);
-      const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
-      // Use getExpectedBleedWidth for correct priority: per-card > type override > global
-      const expectedBleedWidth = getExpectedBleedWidth(card, bleedEdgeWidth, settings);
-      const effectiveBleedWidth = expectedBleedWidth;
-
-      // Smart Cache Check: valid if width matches AND generation parameters match
-      // If generatedHasBuiltInBleed is missing (legacy), we might reprocess once, which is safe.
-      const hasBuiltInBleed = getHasBuiltInBleed(card);
-      if (
-        currentImage?.displayBlob &&
-        currentImage?.displayBlobDarkened &&
-        currentImage.exportBleedWidth === expectedBleedWidth &&
-        currentImage.generatedHasBuiltInBleed === hasBuiltInBleed &&
-        currentImage.generatedBleedMode === effectiveBleedMode
-      ) {
-        importStats.markCacheHit(card.uuid);
-        importStats.markCardProcessed(card.uuid);
-        return;
-      }
-      importStats.markCacheMiss(card.uuid);
-
-      const src = await getOriginalSrcForCard(card);
-      if (!src) {
-        setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
-        importStats.markCardFailed(card.uuid);
-        return;
-      }
-      setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
+    const p = (async (): Promise<boolean> => {
       try {
+        // Double-check after acquiring slot (settings might have changed)
+        const currentImage = await db.images.get(imageId);
 
+        // Get fresh values from store for spec calculation
+        const state = useSettingsStore.getState();
+        const settings: GlobalSettings = {
+          bleedEdgeWidth, // passed from hook props (already mm)
+          bleedEdgeUnit: 'mm', // Already converted
+          withBleedSourceAmount: state.withBleedSourceAmount,
+          withBleedTargetMode: state.withBleedTargetMode,
+          withBleedTargetAmount: state.withBleedTargetAmount,
+          noBleedTargetMode: state.noBleedTargetMode,
+          noBleedTargetAmount: state.noBleedTargetAmount,
+        };
 
-        const result = await imageProcessor.process({
-          uuid: card.uuid,
-          url: src,
-          bleedEdgeWidth: effectiveBleedWidth,
-          unit,
-          apiBase: API_BASE,
-          isUserUpload: card.isUserUpload,
-          hasBuiltInBleed: getHasBuiltInBleed(card),
-          bleedMode: effectiveBleedMode,
-          existingBleedMm: effectiveExistingBleedMm,
-          dpi,
-          darkenNearBlack,
-        }, priority);
+        const effectiveBleedMode = getEffectiveBleedMode(card, settings);
+        const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
+        // Use getExpectedBleedWidth for correct priority: per-card > type override > global
+        const expectedBleedWidth = getExpectedBleedWidth(card, bleedEdgeWidth, settings);
+        const effectiveBleedWidth = expectedBleedWidth;
 
-        if ("displayBlob" in result) {
-          const {
-            displayBlob,
-            displayDpi,
-            displayBleedWidth,
-            exportBlob,
-            exportDpi,
-            exportBleedWidth,
-            displayBlobDarkened,
-            exportBlobDarkened,
-            imageCacheHit,
-          } = result;
-
-          // Track persistent image cache hits (7-day raw image cache)
-          if (imageCacheHit) {
-            importStats.incrementPersistentCacheHit();
-          }
-
-          await db.images.update(imageId, {
-            displayBlob,
-            displayDpi,
-            displayBleedWidth,
-            exportBlob,
-            exportDpi,
-            exportBleedWidth,
-            displayBlobDarkened,
-            exportBlobDarkened,
-            generatedHasBuiltInBleed: hasBuiltInBleed,
-            generatedBleedMode: effectiveBleedMode,
-          });
-          importStats.markCardProcessed(card.uuid);
-        } else {
-          throw new Error(result.error);
+        // Smart Cache Check: valid if width matches AND generation parameters match
+        // If generatedHasBuiltInBleed is missing (legacy), we might reprocess once, which is safe.
+        const hasBuiltInBleed = getHasBuiltInBleed(card);
+        if (
+          currentImage?.displayBlob &&
+          currentImage?.displayBlobDarkened &&
+          currentImage.exportBleedWidth === expectedBleedWidth &&
+          currentImage.generatedHasBuiltInBleed === hasBuiltInBleed &&
+          currentImage.generatedBleedMode === effectiveBleedMode
+        ) {
+          // Smart cache hit - already processed with correct settings
+          markCardProcessed(card.uuid, true);
+          return true; // Cache hit (processed blob)
         }
 
-        setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
-      } catch (e: unknown) {
-        if (e instanceof Error && e.message !== "Cancelled" && e.message !== "Promoted to high priority") {
-          console.error("ensureProcessed error for", card.name, e);
+        const src = await getOriginalSrcForCard(card);
+        if (!src) {
           setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
-          importStats.markCardFailed(card.uuid);
+          markCardFailed(card.uuid);
+          return false;
         }
-      } finally {
-        if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+        setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
+
+        try {
+          const result = await imageProcessor.process({
+            uuid: card.uuid,
+            url: src,
+            bleedEdgeWidth: effectiveBleedWidth,
+            unit,
+            apiBase: API_BASE,
+            isUserUpload: card.isUserUpload,
+            hasBuiltInBleed: getHasBuiltInBleed(card),
+            bleedMode: effectiveBleedMode,
+            existingBleedMm: effectiveExistingBleedMm,
+            dpi,
+            darkenNearBlack,
+          }, priority);
+
+          if ("displayBlob" in result) {
+            const {
+              displayBlob,
+              displayDpi,
+              displayBleedWidth,
+              exportBlob,
+              exportDpi,
+              exportBleedWidth,
+              displayBlobDarkened,
+              exportBlobDarkened,
+              imageCacheHit,
+            } = result;
+
+            await db.images.update(imageId, {
+              displayBlob,
+              displayDpi,
+              displayBleedWidth,
+              exportBlob,
+              exportDpi,
+              exportBleedWidth,
+              displayBlobDarkened,
+              exportBlobDarkened,
+              generatedHasBuiltInBleed: hasBuiltInBleed,
+              generatedBleedMode: effectiveBleedMode,
+            });
+
+            // Track as processed with cache hit status
+            markCardProcessed(card.uuid, !!imageCacheHit);
+            setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
+            return !!imageCacheHit;
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (e: unknown) {
+          const isExpectedError = e instanceof Error && (e.message === "Cancelled" || e.message === "Promoted to high priority");
+
+          if (!isExpectedError) {
+            console.error("ensureProcessed error for", card.name, e);
+            setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+            markCardFailed(card.uuid);
+          } else {
+            // Stop spinner for cancelled/promoted requests
+            setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
+            markCardFailed(card.uuid);
+          }
+          return false;
+        } finally {
+          if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+        }
+      } catch (e) {
+        console.error("Unexpected error in ensureProcessed wrapper", e);
+        return false;
       }
-    })().finally(() => {
+    })();
+
+    p.finally(() => {
       delete inFlight.current[imageId];
     });
 
     inFlight.current[imageId] = p;
-    return p;
+    return p.then(() => { });
   }, [bleedEdgeWidth, unit, dpi, imageProcessor, darkenNearBlack, hydrated]);
 
   const reprocessSelectedImages = useCallback(

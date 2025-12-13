@@ -2,7 +2,7 @@ import { API_BASE } from "../constants";
 import { addRemoteImages } from "./dbUtils";
 import { undoableAddCards } from "./undoableActions";
 import { extractCardInfo } from "./CardInfoHelper";
-import { importStats } from "./importStats";
+import { createImportSession } from "./ImportSession";
 import type { CardOption } from "../../../shared/types";
 
 export type MpcItem = {
@@ -200,10 +200,6 @@ export async function processMpcImport(
   const totalItems = mpcData.length;
   const totalCards = mpcData.reduce((sum, item) => sum + item.qty, 0);
 
-  // Start import tracking
-  importStats.start(totalCards, undefined, { importType: 'mpc' });
-  importStats.markImageLoadStart();
-
   // First pass: Collect all images to batch add (with correct ref counts based on qty)
   const imagesToBatch: Array<{ imageUrls: string[]; count: number }> = [];
   const itemsWithUrls: Array<{ item: MpcItem; frontUrl?: string; backUrl?: string }> = [];
@@ -259,22 +255,19 @@ export async function processMpcImport(
     }
   });
 
-  importStats.markImageLoadEnd();
-
   if (cardsToAdd.length > 0) {
-
     const addedCards = await undoableAddCards(cardsToAdd);
     const cardUuids = addedCards.map(c => c.uuid);
-    // Start tracking stats, expecting enrichment to follow
-    importStats.start(cardsToAdd.length, cardUuids, { awaitEnrichment: true, importType: 'mpc' });
 
-    // Register pending cards (now that we have UUIDs)
-    importStats.registerPendingCards(cardUuids);
-
+    // Create import session with all known UUIDs
+    // awaitEnrichment: true because MPC imports need metadata fetching afterward
+    createImportSession({
+      totalCards: cardUuids.length,
+      cardUuids,
+      importType: 'mpc',
+      awaitEnrichment: true,
+    });
   }
-
-  // Note: importStats.finish() will be automatically called when all registered cards are processed
-
 
   return { success: true, count: cardsToAdd.length };
 }

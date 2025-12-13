@@ -1,7 +1,82 @@
 import { useSettingsStore } from "@/store/settings";
 import { Label, Select, Button } from "flowbite-react";
-import { ArrowDown, ArrowUp, X } from "lucide-react";
+import { ArrowDown, ArrowUp, X, ChevronDown } from "lucide-react";
 import { ManaIcon } from "@/components/ManaIcon";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/db";
+import { useMemo, useCallback } from "react";
+import { getPrimaryType } from "@/hooks/useFilteredAndSortedCards";
+
+// Collapsible section component with persisted state
+interface FilterSectionProps {
+    id: string;
+    title: string;
+    children: React.ReactNode;
+    defaultOpen?: boolean;
+    activeCount?: number;
+    onClear?: () => void;
+}
+
+function FilterSection({ id, title, children, defaultOpen = true, activeCount = 0, onClear }: FilterSectionProps) {
+    const collapsed = useSettingsStore((state) => state.filterSectionCollapsed[id] ?? !defaultOpen);
+    const setCollapsed = useSettingsStore((state) => state.setFilterSectionCollapsed);
+
+    const handleToggle = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        setCollapsed(id, !collapsed);
+    }, [id, collapsed, setCollapsed]);
+
+    const handleClear = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        onClear?.();
+    }, [onClear]);
+
+    return (
+        <div className="group">
+            <div className="flex items-center justify-between w-full py-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <span className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={handleToggle}
+                        className="cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                    >
+                        {title}
+                    </button>
+                    {activeCount > 0 && (
+                        <>
+                            <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                                {activeCount}
+                            </span>
+                            {onClear && (
+                                <button
+                                    type="button"
+                                    onClick={handleClear}
+                                    className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer active:translate-y-px"
+                                    title="Clear filters"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </>
+                    )}
+                </span>
+                <button
+                    type="button"
+                    onClick={handleToggle}
+                    className="cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${!collapsed ? 'rotate-180' : ''}`} />
+                </button>
+            </div>
+            {!collapsed && (
+                <div className="pt-2 pb-1">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 export function FilterSortSection() {
     const sortBy = useSettingsStore((state) => state.sortBy);
@@ -13,8 +88,44 @@ export function FilterSortSection() {
     const setFilterManaCost = useSettingsStore((state) => state.setFilterManaCost);
     const filterColors = useSettingsStore((state) => state.filterColors);
     const setFilterColors = useSettingsStore((state) => state.setFilterColors);
+    const filterTypes = useSettingsStore((state) => state.filterTypes);
+    const setFilterTypes = useSettingsStore((state) => state.setFilterTypes);
+    const filterCategories = useSettingsStore((state) => state.filterCategories);
+    const setFilterCategories = useSettingsStore((state) => state.setFilterCategories);
     const filterMatchType = useSettingsStore((state) => state.filterMatchType);
     const setFilterMatchType = useSettingsStore((state) => state.setFilterMatchType);
+
+    // Get all cards to extract available types and categories
+    const cardsFromDb = useLiveQuery(() => db.cards.toArray());
+
+    // Extract unique card types from loaded cards
+    const availableTypes = useMemo(() => {
+        if (!cardsFromDb) return [];
+        const types = new Set<string>();
+        for (const card of cardsFromDb) {
+            const primaryType = getPrimaryType(card.type_line);
+            if (primaryType) types.add(primaryType);
+        }
+        const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
+        return Array.from(types).sort((a, b) => typeOrder.indexOf(a) - typeOrder.indexOf(b));
+    }, [cardsFromDb]);
+
+    // Extract unique categories from loaded cards (Archidekt only)
+    const availableCategories = useMemo(() => {
+        if (!cardsFromDb) return [];
+        const categories = new Set<string>();
+        for (const card of cardsFromDb) {
+            if (card.category) categories.add(card.category);
+        }
+        // Sort with Commander first, then alphabetically
+        return Array.from(categories).sort((a, b) => {
+            if (a === "Commander") return -1;
+            if (b === "Commander") return 1;
+            if (a === "Mainboard") return -1;
+            if (b === "Mainboard") return 1;
+            return a.localeCompare(b);
+        });
+    }, [cardsFromDb]);
 
     const toggleManaCost = (cost: number) => {
         if (filterManaCost.includes(cost)) {
@@ -32,10 +143,30 @@ export function FilterSortSection() {
         }
     };
 
+    const toggleType = (type: string) => {
+        if (filterTypes.includes(type)) {
+            setFilterTypes(filterTypes.filter((t) => t !== type));
+        } else {
+            setFilterTypes([...filterTypes, type]);
+        }
+    };
+
+    const toggleCategory = (category: string) => {
+        if (filterCategories.includes(category)) {
+            setFilterCategories(filterCategories.filter((c) => c !== category));
+        } else {
+            setFilterCategories([...filterCategories, category]);
+        }
+    };
+
     const clearFilters = () => {
         setFilterManaCost([]);
         setFilterColors([]);
+        setFilterTypes([]);
+        setFilterCategories([]);
     };
+
+    const hasActiveFilters = filterManaCost.length > 0 || filterColors.length > 0 || filterTypes.length > 0 || filterCategories.length > 0;
 
     const manaCosts = [0, 1, 2, 3, 4, 5, 6, 7];
     const colors: { id: "W" | "U" | "B" | "R" | "G" | "C" | "M"; label: string }[] = [
@@ -49,7 +180,7 @@ export function FilterSortSection() {
     ];
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-3">
             {/* Sort Controls */}
             <div className="space-y-2">
                 <Label>Sort By</Label>
@@ -78,9 +209,48 @@ export function FilterSortSection() {
 
             <hr className="border-gray-200 dark:border-gray-600" />
 
+            {/* Card Types Filter */}
+            {availableTypes.length > 0 && (
+                <FilterSection id="cardTypes" title="Card Types" activeCount={filterTypes.length} onClear={() => setFilterTypes([])}>
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(70px,1fr))] gap-1.5">
+                        {availableTypes.map((type) => (
+                            <button
+                                key={type}
+                                onClick={() => toggleType(type)}
+                                className={`px-2.5 py-1 text-xs rounded-full transition-colors cursor-pointer select-none border
+                                    ${filterTypes.includes(type)
+                                        ? "bg-blue-600 text-white border-blue-700"
+                                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
+                            >
+                                {type}
+                            </button>
+                        ))}
+                    </div>
+                </FilterSection>
+            )}
+
+            {/* Deck Categories Filter (Archidekt only) */}
+            {availableCategories.length > 0 && (
+                <FilterSection id="deckCategories" title="Deck Categories" activeCount={filterCategories.length} onClear={() => setFilterCategories([])}>
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-1.5">
+                        {availableCategories.map((cat) => (
+                            <button
+                                key={cat}
+                                onClick={() => toggleCategory(cat)}
+                                className={`px-2.5 py-1 text-xs rounded-full transition-colors cursor-pointer select-none border
+                                    ${filterCategories.includes(cat)
+                                        ? "bg-purple-600 text-white border-purple-700"
+                                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+                </FilterSection>
+            )}
+
             {/* Mana Cost Filter */}
-            <div className="space-y-2">
-                <Label>Mana Value</Label>
+            <FilterSection id="manaValue" title="Mana Value" activeCount={filterManaCost.length} onClear={() => setFilterManaCost([])}>
                 <div className="flex flex-wrap gap-1 my-1">
                     {manaCosts.map((cost) => (
                         <div
@@ -97,11 +267,10 @@ export function FilterSortSection() {
                         </div>
                     ))}
                 </div>
-            </div>
+            </FilterSection>
 
             {/* Color Filter */}
-            <div className="space-y-2">
-                <Label>Colors</Label>
+            <FilterSection id="colors" title="Colors" activeCount={filterColors.length} onClear={() => setFilterColors([])}>
                 <div className="flex flex-wrap gap-2 my-1">
                     {colors.map((c) => (
                         <div
@@ -119,7 +288,7 @@ export function FilterSortSection() {
                         </div>
                     ))}
                 </div>
-            </div>
+            </FilterSection>
 
             {/* Match Type Toggle */}
             <div className="flex items-center justify-between">
@@ -147,21 +316,19 @@ export function FilterSortSection() {
             </div>
 
             {/* Clear Filters */}
-            {
-                (filterManaCost.length > 0 || filterColors.length > 0) && (
-                    <div className="pt-2">
-                        <Button
-                            size="sm"
-                            color="light"
-                            className="w-full"
-                            onClick={clearFilters}
-                        >
-                            <X className="w-4 h-4 mr-2" />
-                            Clear Filters
-                        </Button>
-                    </div>
-                )
-            }
+            {hasActiveFilters && (
+                <div className="pt-2">
+                    <Button
+                        size="sm"
+                        color="light"
+                        className="w-full"
+                        onClick={clearFilters}
+                    >
+                        <X className="w-4 h-4 mr-2" />
+                        Clear Filters
+                    </Button>
+                </div>
+            )}
         </div >
     );
 }

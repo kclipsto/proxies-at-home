@@ -24,6 +24,8 @@ export function usePageViewSettings() {
             sortBy: state.sortBy,
             filterManaCost: state.filterManaCost,
             filterColors: state.filterColors,
+            filterTypes: state.filterTypes,
+            filterCategories: state.filterCategories,
             cardPositionX: state.cardPositionX,
             cardPositionY: state.cardPositionY,
             withBleedTargetMode: state.withBleedTargetMode,
@@ -45,6 +47,8 @@ export function usePageViewSettings() {
         sortBy,
         filterManaCost,
         filterColors,
+        filterTypes,
+        filterCategories,
     } = settings;
 
     // Build source settings object for computeCardLayouts
@@ -60,7 +64,7 @@ export function usePageViewSettings() {
         : 0;
 
     const dndDisabled =
-        sortBy !== "manual" || filterManaCost.length > 0 || filterColors.length > 0;
+        sortBy !== "manual" || filterManaCost.length > 0 || filterColors.length > 0 || filterTypes.length > 0 || filterCategories.length > 0;
 
     return {
         ...settings,

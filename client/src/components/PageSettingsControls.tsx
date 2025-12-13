@@ -69,6 +69,23 @@ export function PageSettingsControls({
   const isCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
   const toggleSettingsPanel = useSettingsStore((state) => state.toggleSettingsPanel);
 
+  // Filter state for reactive badge
+  const filterManaCost = useSettingsStore((state) => state.filterManaCost);
+  const filterColors = useSettingsStore((state) => state.filterColors);
+  const filterTypes = useSettingsStore((state) => state.filterTypes);
+  const filterCategories = useSettingsStore((state) => state.filterCategories);
+  const setFilterManaCost = useSettingsStore((state) => state.setFilterManaCost);
+  const setFilterColors = useSettingsStore((state) => state.setFilterColors);
+  const setFilterTypes = useSettingsStore((state) => state.setFilterTypes);
+  const setFilterCategories = useSettingsStore((state) => state.setFilterCategories);
+  const totalFilters = filterManaCost.length + filterColors.length + filterTypes.length + filterCategories.length;
+  const clearAllFilters = () => {
+    setFilterManaCost([]);
+    setFilterColors([]);
+    setFilterTypes([]);
+    setFilterCategories([]);
+  };
+
   const isLandscape = useMediaQuery("(orientation: landscape)");
   const showMobileLandscapeLayout = mobile && isLandscape;
 
@@ -186,6 +203,8 @@ export function PageSettingsControls({
             onToggle={onToggle}
             icon={Filter}
             mobile={mobile}
+            badge={totalFilters}
+            onClearBadge={clearAllFilters}
           >
             <FilterSortSection />
           </SettingsPanel>
@@ -303,7 +322,7 @@ export function PageSettingsControls({
         </div>
       </div>
 
-      <div className={`flex-1 ${mobile ? "mobile-scrollbar-hide pb-20 landscape:pb-4" : ""}`}>
+      <div className={`flex-1 overflow-x-hidden ${mobile ? "mobile-scrollbar-hide pb-20 landscape:pb-4" : ""}`}>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -315,7 +334,7 @@ export function PageSettingsControls({
             strategy={showMobileLandscapeLayout ? rectSortingStrategy : verticalListSortingStrategy}
           >
             {showMobileLandscapeLayout ? (
-              <div className="flex flex-row gap-4 items-start p-4">
+              <div className="flex flex-row gap-4 items-start p-4 overflow-hidden">
                 <div className="flex flex-col flex-1 gap-4">
                   {settingsPanelState.order.filter((_, i) => i % 2 === 0).map((id) => renderSection(id))}
                 </div>
@@ -324,7 +343,7 @@ export function PageSettingsControls({
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col">
+              <div className="flex flex-col overflow-hidden">
                 {settingsPanelState.order.map((id) => renderSection(id))}
               </div>
             )}

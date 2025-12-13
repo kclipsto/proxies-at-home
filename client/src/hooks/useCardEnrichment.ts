@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "../db";
 import { API_BASE } from "../constants";
-import { importStats } from "../helpers/importStats";
+import { getCurrentSession } from "../helpers/ImportSession";
 import { useToastStore } from "../store/toast";
 import { getEnrichmentAbortController } from "../helpers/cancellationService";
 
@@ -81,11 +81,6 @@ export function useCardEnrichment() {
             // Show metadata toast
             useToastStore.getState().showMetadataToast();
 
-            // Track enrichment stats
-            if (importStats.isTracking()) {
-                importStats.markEnrichmentStart();
-            }
-
             // Get shared abort controller (can be cancelled by clearAllProcessing)
             const abortController = getEnrichmentAbortController();
 
@@ -120,7 +115,6 @@ export function useCardEnrichment() {
                                 // Touch cachedAt
                                 db.cardMetadataCache.update(cached.id, { cachedAt: Date.now() });
                                 cachedDataMap.set(card.uuid, cached.data as unknown as EnrichedCardData);
-                                importStats.incrementMetadataCacheHit();
                             } else {
                                 cardsToFetch.push(card);
                             }
@@ -184,8 +178,6 @@ export function useCardEnrichment() {
 
                     // Update each card in DB (Merging cached and fetched data)
                     await db.transaction("rw", db.cards, async () => {
-                        let batchEnrichedCount = 0;
-
                         // Pointer for fetched responses
                         let fetchIndex = 0;
 
@@ -213,7 +205,6 @@ export function useCardEnrichment() {
                                     enrichmentRetryCount: undefined,
                                     enrichmentNextRetryAt: undefined,
                                 });
-                                batchEnrichedCount++;
                             } else {
                                 // Card not found in enrichment response.
                                 const retryCount = (card.enrichmentRetryCount ?? 0) + 1;
@@ -224,7 +215,6 @@ export function useCardEnrichment() {
                                         needsEnrichment: false,
                                         enrichmentRetryCount: retryCount,
                                     });
-                                    importStats.incrementEnrichmentFailed();
                                 } else {
                                     // Schedule retry.
                                     const nextRetryAt = Date.now() + getRetryDelay(retryCount - 1);
@@ -235,7 +225,6 @@ export function useCardEnrichment() {
                                 }
                             }
                         }
-                        importStats.incrementCardsEnriched(batchEnrichedCount);
                     });
 
 
@@ -260,17 +249,14 @@ export function useCardEnrichment() {
                                     needsEnrichment: false,
                                     enrichmentRetryCount: retryCount,
                                 });
-                                importStats.incrementEnrichmentFailed();
                             }
                         }
                     });
                 }
             }
 
-            if (importStats.isTracking()) importStats.markEnrichmentEnd();
-
-            // Signal complete to trigger summary log.
-            importStats.markEnrichmentComplete();
+            // Mark enrichment complete for MPC imports that await it
+            getCurrentSession()?.markEnrichmentComplete();
 
             // Hide metadata toast
             useToastStore.getState().hideMetadataToast();
