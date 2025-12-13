@@ -4,7 +4,7 @@ export interface CardOption {
     order: number;
     imageId?: string | undefined;
     isUserUpload: boolean;
-    hasBakedBleed?: boolean | undefined;
+    hasBuiltInBleed?: boolean | undefined;
     set?: string | undefined;
     number?: string | undefined;
     lang?: string | undefined;

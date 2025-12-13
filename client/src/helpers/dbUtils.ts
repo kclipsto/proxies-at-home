@@ -324,19 +324,8 @@ export async function changeCardArtwork(
   newImageUrls?: string[],
   cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>
 ): Promise<void> {
-  console.log("[changeCardArtwork] Called with:", {
-    oldImageId,
-    newImageId,
-    cardName: cardToUpdate.name,
-    applyToAll,
-    newName,
-    hasNewImageUrls: !!newImageUrls,
-    cardMetadata,
-  });
-
   await db.transaction("rw", db.cards, db.images, async () => {
     if (oldImageId === newImageId && !newName && !newImageUrls && !cardMetadata) {
-      console.log("[changeCardArtwork] No changes needed - early return");
       return;
     }
 
@@ -365,9 +354,9 @@ export async function changeCardArtwork(
     const changes: Partial<CardOption> = {
       imageId: newImageId,
       isUserUpload: newImageIsCustom,
-      // Reset baked bleed flag because we are switching to a specific image
-      // (usually Scryfall) which we assume does NOT have baked bleed.
-      hasBakedBleed: false,
+      // Reset built in bleed flag because we are switching to a specific image
+      // (usually Scryfall) which we assume does NOT have built in bleed.
+      hasBuiltInBleed: false,
       // Reset enrichment flags since user manually selected this
       needsEnrichment: false,
       enrichmentRetryCount: undefined,
@@ -380,8 +369,6 @@ export async function changeCardArtwork(
     if (cardMetadata) {
       Object.assign(changes, cardMetadata);
     }
-
-    console.log("[changeCardArtwork] Applying changes to", cardsToUpdate.length, "cards:", changes);
 
     await db.cards.bulkUpdate(
       cardsToUpdate.map((c) => ({

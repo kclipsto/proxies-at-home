@@ -31,20 +31,22 @@ type Store = {
   setBleedEdge: (value: boolean) => void;
   bleedEdgeUnit: 'mm' | 'in';
   setBleedEdgeUnit: (value: 'mm' | 'in') => void;
-  // MPC Images bleed settings
-  mpcBleedMode: 'trim-regenerate' | 'use-existing' | 'none';
-  setMpcBleedMode: (value: 'trim-regenerate' | 'use-existing' | 'none') => void;
-  mpcExistingBleed: number;
-  setMpcExistingBleed: (value: number) => void;
-  mpcExistingBleedUnit: 'mm' | 'in';
-  setMpcExistingBleedUnit: (value: 'mm' | 'in') => void;
-  // Other uploads bleed settings
-  uploadBleedMode: 'generate' | 'existing' | 'none';
-  setUploadBleedMode: (value: 'generate' | 'existing' | 'none') => void;
-  uploadExistingBleed: number;
-  setUploadExistingBleed: (value: number) => void;
-  uploadExistingBleedUnit: 'mm' | 'in';
-  setUploadExistingBleedUnit: (value: 'mm' | 'in') => void;
+  // Images with bleed already built in (e.g., MPC Autofill exports)
+  // --- Bleed Settings (New Source/Target Architecture) ---
+  // Images WITH built-in bleed (e.g., MPC Autofill exports)
+  withBleedSourceAmount: number;
+  setWithBleedSourceAmount: (value: number) => void;
+  withBleedTargetMode: 'global' | 'manual' | 'none';
+  setWithBleedTargetMode: (value: 'global' | 'manual' | 'none') => void;
+  withBleedTargetAmount: number;
+  setWithBleedTargetAmount: (value: number) => void;
+
+  // Images WITHOUT bleed built in (regular uploads, Scryfall)
+  // noBleedSourceAmount is implicitly 0
+  noBleedTargetMode: 'global' | 'manual' | 'none';
+  setNoBleedTargetMode: (value: 'global' | 'manual' | 'none') => void;
+  noBleedTargetAmount: number;
+  setNoBleedTargetAmount: (value: number) => void;
   darkenNearBlack: boolean;
   setDarkenNearBlack: (value: boolean) => void;
   guideColor: string;
@@ -119,14 +121,19 @@ const defaultPageSettings = {
   bleedEdgeWidth: 1,
   bleedEdge: true,
   bleedEdgeUnit: "mm" as "mm" | "in",
-  // MPC Images bleed settings
-  mpcBleedMode: "trim-regenerate" as "trim-regenerate" | "use-existing" | "none",
-  mpcExistingBleed: 3,  // ~1/8 inch default
-  mpcExistingBleedUnit: "mm" as "mm" | "in",
-  // Other uploads bleed settings
-  uploadBleedMode: "generate" as "generate" | "existing" | "none",
-  uploadExistingBleed: 0,
-  uploadExistingBleedUnit: "mm" as "mm" | "in",
+  // --- Bleed Settings (New Source/Target Architecture) ---
+  // 1. Source Bleed: What the image has
+  // 2. Target Bleed: What the output should have
+
+  // Images WITH built-in bleed (e.g. MPC)
+  withBleedSourceAmount: 3.175, // Default 1/8" for MPC/Uploads with bleed
+  withBleedTargetMode: 'global' as 'global' | 'manual' | 'none', // 'global' | 'manual' | 'none'
+  withBleedTargetAmount: 3.175, // Default to 1/8"
+
+  // Images WITHOUT built-in bleed (e.g. Scryfall)
+  // noBleedSourceAmount is implicitly 0
+  noBleedTargetMode: 'global' as 'global' | 'manual' | 'none', // 'global' | 'manual' | 'none'
+  noBleedTargetAmount: 1,
   darkenNearBlack: true,
   guideColor: "#39FF14",
   guideWidth: 1,
@@ -273,31 +280,29 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("bleedEdgeUnit", state.bleedEdgeUnit);
         return { bleedEdgeUnit: value };
       }),
-      // MPC Images bleed setters
-      setMpcBleedMode: (value) => set((state) => {
-        recordSettingChange("mpcBleedMode", state.mpcBleedMode);
-        return { mpcBleedMode: value };
+      // Images with bleed setters
+      // Images with bleed setters (New Source/Target)
+      setWithBleedSourceAmount: (value) => set((state) => {
+        recordSettingChange("withBleedSourceAmount", state.withBleedSourceAmount);
+        return { withBleedSourceAmount: value };
       }),
-      setMpcExistingBleed: (value) => set((state) => {
-        recordSettingChange("mpcExistingBleed", state.mpcExistingBleed);
-        return { mpcExistingBleed: value };
+      setWithBleedTargetMode: (value) => set((state) => {
+        recordSettingChange("withBleedTargetMode", state.withBleedTargetMode);
+        return { withBleedTargetMode: value };
       }),
-      setMpcExistingBleedUnit: (value) => set((state) => {
-        recordSettingChange("mpcExistingBleedUnit", state.mpcExistingBleedUnit);
-        return { mpcExistingBleedUnit: value };
+      setWithBleedTargetAmount: (value) => set((state) => {
+        recordSettingChange("withBleedTargetAmount", state.withBleedTargetAmount);
+        return { withBleedTargetAmount: value };
       }),
-      // Other uploads bleed setters
-      setUploadBleedMode: (value) => set((state) => {
-        recordSettingChange("uploadBleedMode", state.uploadBleedMode);
-        return { uploadBleedMode: value };
+
+      // Images without bleed setters
+      setNoBleedTargetMode: (value) => set((state) => {
+        recordSettingChange("noBleedTargetMode", state.noBleedTargetMode);
+        return { noBleedTargetMode: value };
       }),
-      setUploadExistingBleed: (value) => set((state) => {
-        recordSettingChange("uploadExistingBleed", state.uploadExistingBleed);
-        return { uploadExistingBleed: value };
-      }),
-      setUploadExistingBleedUnit: (value) => set((state) => {
-        recordSettingChange("uploadExistingBleedUnit", state.uploadExistingBleedUnit);
-        return { uploadExistingBleedUnit: value };
+      setNoBleedTargetAmount: (value) => set((state) => {
+        recordSettingChange("noBleedTargetAmount", state.noBleedTargetAmount);
+        return { noBleedTargetAmount: value };
       }),
       setDarkenNearBlack: (value) => set((state) => {
         recordSettingChange("darkenNearBlack", state.darkenNearBlack);
@@ -473,7 +478,7 @@ export const useSettingsStore = create<Store>()(
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 6, // Increment version for perCardGuideStyle
+      version: 8, // Increment version for Source/Target bleed
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -511,6 +516,42 @@ export const useSettingsStore = create<Store>()(
             ...(persistedState as Partial<Store>),
             perCardGuideStyle: 'corners',
           };
+        }
+
+        if (version < 8) {
+          // Migration from legacy bleed settings to Source/Target
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const old = persistedState as any;
+          const newState = {
+            ...defaultPageSettings,
+            ...(persistedState as Partial<Store>),
+          };
+
+          // With Bleed Migration
+          newState.withBleedSourceAmount = old.withBleedAmount ?? 3.175;
+
+          if (old.overrideWithBleedGenerate) {
+            newState.withBleedTargetMode = 'manual';
+            newState.withBleedTargetAmount = old.withBleedGenerateAmount ?? 3.175;
+          } else if (old.withBleedMode === 'none') {
+            newState.withBleedTargetMode = 'none';
+          } else {
+            // 'generate' or 'use-existing' (which was basically just "don't generate extra" if matched)
+            // Default to global
+            newState.withBleedTargetMode = 'global';
+          }
+
+          // No Bleed Migration
+          if (old.overrideNoBleedGenerate) {
+            newState.noBleedTargetMode = 'manual';
+            newState.noBleedTargetAmount = old.noBleedGenerateAmount ?? 3.175;
+          } else if (old.noBleedMode === 'none') {
+            newState.noBleedTargetMode = 'none';
+          } else {
+            newState.noBleedTargetMode = 'global';
+          }
+
+          return newState;
         }
 
         return persistedState as Partial<Store>;

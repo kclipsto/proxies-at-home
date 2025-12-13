@@ -1,241 +1,181 @@
-import { Button, Select } from "flowbite-react";
+import { Button, Checkbox, Label } from "flowbite-react";
 import { useEffect, useState } from "react";
 import { useArtworkModalStore } from "@/store/artworkModal";
-import { useSettingsStore } from "@/store";
+import { useSettingsStore } from "@/store/settings";
 import { useSelectionStore } from "@/store/selection";
 import { undoableUpdateCardBleedSettings } from "@/helpers/undoableActions";
-import { db } from "../db";
-import { NumberInput } from "./NumberInput";
+import { BleedModeControl } from "@/components/BleedModeControl";
+import { getHasBuiltInBleed } from "@/helpers/imageSpecs";
+import { AutoTooltip } from "./AutoTooltip";
 
 export function ArtworkBleedSettings() {
     const modalCard = useArtworkModalStore((state) => state.card);
     const closeModal = useArtworkModalStore((state) => state.closeModal);
 
-    // Get global bleed settings for display
+    // Get global settings for display labels
     const globalBleedWidth = useSettingsStore((state) => state.bleedEdgeWidth);
-    const globalBleedUnit = useSettingsStore((state) => state.bleedEdgeUnit);
 
-    // Per-card bleed settings state
-    const [cardBleedMode, setCardBleedMode] = useState<'default' | 'generate' | 'existing' | 'none'>('default');
-    const [cardExistingBleed, setCardExistingBleed] = useState<number>(0);
-    const [cardExistingBleedUnit, setCardExistingBleedUnit] = useState<'mm' | 'in'>('mm');
-    const [cardGenerateBleed, setCardGenerateBleed] = useState<number>(1);
-    const [cardGenerateBleedUnit, setCardGenerateBleedUnit] = useState<'mm' | 'in'>('mm');
-    const [useGlobalBleed, setUseGlobalBleed] = useState<boolean>(true); // When generate mode, use global or custom
+    // --- Local State ---
+    // 1. Source Bleed
+    const globalSourceAmount = useSettingsStore((state) => state.withBleedSourceAmount);
+    const [hasBleedBuiltIn, setHasBleedBuiltIn] = useState<boolean>(false);
+    const [sourceMode, setSourceMode] = useState<'default' | 'manual'>('default');
+    const [providedBleedAmount, setProvidedBleedAmount] = useState<number>(3.175);
 
-    // Initialize per-card bleed settings from card when component mounts
+    // 2. Target Bleed
+    // 'default' = inherit from Type Settings
+    // 'manual' = override specific amount
+    // 'none' = force 0mm
+    const [targetMode, setTargetMode] = useState<'default' | 'manual' | 'none'>('default');
+    const [manualTargetAmount, setManualTargetAmount] = useState<number>(3.175);
+
+    // Initialize from card
     useEffect(() => {
         if (modalCard) {
-            setCardBleedMode(modalCard.bleedMode ?? 'default');
-            setCardExistingBleed(modalCard.existingBleedMm ?? 0);
-            // Initialize generate bleed settings
-            if (modalCard.generateBleedMm !== undefined) {
-                setUseGlobalBleed(false);
-                setCardGenerateBleed(modalCard.generateBleedMm);
+            setHasBleedBuiltIn(getHasBuiltInBleed(modalCard));
+
+            if (modalCard.existingBleedMm !== undefined) {
+                setSourceMode('manual');
+                setProvidedBleedAmount(modalCard.existingBleedMm);
             } else {
-                setUseGlobalBleed(true);
+                setSourceMode('default');
+                setProvidedBleedAmount(globalSourceAmount);
+            }
+
+            // Determine Target Mode state from card props
+            if (modalCard.bleedMode === 'none') {
+                setTargetMode('none');
+            } else if (modalCard.generateBleedMm !== undefined) {
+                setTargetMode('manual');
+                setManualTargetAmount(modalCard.generateBleedMm);
+            } else {
+                setTargetMode('default');
+                // Default manual amount to global for convenience if they switch
+                setManualTargetAmount(globalBleedWidth);
             }
         }
-    }, [modalCard]);
+    }, [modalCard, globalBleedWidth, globalSourceAmount]);
 
     if (!modalCard) return null;
 
+    const handleSave = async () => {
+        let bleedMode: 'generate' | 'none' | undefined;
+        let existingBleedMm: number | undefined;
+        let generateBleedMm: number | undefined;
+
+        // 1. Source Logic
+        if (hasBleedBuiltIn) {
+            if (sourceMode === 'manual') {
+                existingBleedMm = providedBleedAmount;
+            } else {
+                existingBleedMm = undefined; // Use global default
+            }
+        } else {
+            existingBleedMm = undefined; // No built in bleed -> no existing amount needed
+        }
+
+        // 2. Target Logic
+        if (targetMode === 'none') {
+            bleedMode = 'none';
+            generateBleedMm = undefined;
+        } else if (targetMode === 'manual') {
+            bleedMode = 'generate'; // Force generate mode when manually overriding
+            generateBleedMm = manualTargetAmount;
+        } else {
+            // Default
+            bleedMode = undefined; // Let type settings decide
+            generateBleedMm = undefined;
+        }
+
+        const selectedCards = useSelectionStore.getState().selectedCards;
+        const cardUuids = selectedCards.size > 1 && selectedCards.has(modalCard.uuid)
+            ? Array.from(selectedCards)
+            : [modalCard.uuid];
+
+        await undoableUpdateCardBleedSettings(
+            cardUuids,
+            {
+                hasBuiltInBleed: hasBleedBuiltIn,
+                bleedMode,
+                existingBleedMm,
+                generateBleedMm
+            }
+        );
+
+        closeModal();
+    };
+
     return (
-        <div className="p-6 space-y-6">
+        <div className="p-4 space-y-4">
             <div>
-                <h3 className="text-lg font-medium mb-4 dark:text-white">Bleed Settings</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Override the global bleed settings for this card.
-                </p>
+                <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-medium dark:text-white">Bleed Settings</h3>
+                    <AutoTooltip
+                        content="Configure how bleed edges are handled for this card."
+                        className="w-5 h-5 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer"
+                    />
+                </div>
 
-                <div className="space-y-3">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                            type="radio"
-                            name="card-bleed-mode"
-                            checked={cardBleedMode === 'default'}
-                            onChange={() => setCardBleedMode('default')}
-                            className="text-blue-600"
+                {/* 1. Source Settings */}
+                <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="has-bleed-built-in"
+                            checked={hasBleedBuiltIn}
+                            onChange={(e) => setHasBleedBuiltIn(e.target.checked)}
+                            className="mt-0.5"
                         />
-                        <span className="dark:text-gray-300">Use Default (from global settings)</span>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                            type="radio"
-                            name="card-bleed-mode"
-                            checked={cardBleedMode === 'generate'}
-                            onChange={() => setCardBleedMode('generate')}
-                            className="text-blue-600"
-                        />
-                        <span className="dark:text-gray-300">Generate Bleed</span>
-                    </label>
+                        <div className="flex items-center gap-2 flex-1">
+                            <Label htmlFor="has-bleed-built-in" className="cursor-pointer font-medium dark:text-white">
+                                Built-in Bleed
+                            </Label>
+                            <AutoTooltip content="Check this if the image already includes bleed edges (e.g., from MPC Autofill)" />
+                        </div>
+                    </div>
 
-                    {/* Sub-options for Generate Bleed */}
-                    {cardBleedMode === 'generate' && (
-                        <div className="ml-7 pl-4 border-l-2 border-gray-200 dark:border-gray-600 space-y-2">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="radio"
-                                    name="generate-bleed-source"
-                                    checked={useGlobalBleed}
-                                    onChange={() => setUseGlobalBleed(true)}
-                                    className="text-blue-600"
-                                />
-                                <span className="text-sm dark:text-gray-300">
-                                    Use Global ({globalBleedWidth} {globalBleedUnit})
-                                </span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="radio"
-                                    name="generate-bleed-source"
-                                    checked={!useGlobalBleed}
-                                    onChange={() => setUseGlobalBleed(false)}
-                                    className="text-blue-600"
-                                />
-                                <span className="text-sm dark:text-gray-300">Use Custom</span>
-                            </label>
-                            {!useGlobalBleed && (
-                                <div className="flex items-center gap-2 mt-2">
-                                    <NumberInput
-                                        className="w-20"
-                                        step={0.1}
-                                        min={0}
-                                        disabled={false}
-                                        value={cardGenerateBleed}
-                                        onChange={(e) => setCardGenerateBleed(Math.max(0, parseFloat(e.target.value) || 0))}
-                                    />
-                                    <Select
-                                        sizing="md"
-                                        value={cardGenerateBleedUnit}
-                                        onChange={(e) => {
-                                            const newUnit = e.target.value as 'mm' | 'in';
-                                            if (newUnit !== cardGenerateBleedUnit) {
-                                                // Convert value when switching units
-                                                const converted = newUnit === 'in'
-                                                    ? cardGenerateBleed / 25.4
-                                                    : cardGenerateBleed * 25.4;
-                                                setCardGenerateBleed(Math.round(converted * 1000) / 1000);
-                                            }
-                                            setCardGenerateBleedUnit(newUnit);
-                                        }}
-                                        className="w-16"
-                                    >
-                                        <option value="mm">mm</option>
-                                        <option value="in">in</option>
-                                    </Select>
-                                </div>
-                            )}
+
+
+                    {hasBleedBuiltIn && (
+                        <div className="ml-8 mt-2 space-y-2">
+                            <BleedModeControl
+                                idPrefix="source"
+                                groupName="source-mode"
+                                mode={sourceMode}
+                                onModeChange={setSourceMode}
+                                defaultLabel={`Use Type Default`}
+                                amount={providedBleedAmount}
+                                onAmountChange={setProvidedBleedAmount}
+                                showNone={false}
+                                valueDefault="default"
+                            />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <span className="font-medium">Tip:</span> Setting to 0mm will ignore the built-in bleed and allow bleed generation at any desired amount.
+                            </p>
                         </div>
                     )}
+                </div>
 
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                            type="radio"
-                            name="card-bleed-mode"
-                            checked={cardBleedMode === 'existing'}
-                            onChange={() => setCardBleedMode('existing')}
-                            className="text-blue-600"
-                        />
-                        <span className="dark:text-gray-300">Use Existing Bleed</span>
-                    </label>
-
-                    {/* Sub-options for Existing Bleed */}
-                    {cardBleedMode === 'existing' && (
-                        <div className="ml-7 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm dark:text-gray-300">Amount:</span>
-                                <NumberInput
-                                    className="w-20"
-                                    step={0.1}
-                                    min={0}
-                                    value={cardExistingBleed}
-                                    onChange={(e) => setCardExistingBleed(Math.max(0, parseFloat(e.target.value) || 0))}
-                                />
-                                <Select
-                                    sizing="md"
-                                    value={cardExistingBleedUnit}
-                                    onChange={(e) => {
-                                        const newUnit = e.target.value as 'mm' | 'in';
-                                        if (newUnit !== cardExistingBleedUnit) {
-                                            // Convert value when switching units
-                                            const converted = newUnit === 'in'
-                                                ? cardExistingBleed / 25.4
-                                                : cardExistingBleed * 25.4;
-                                            setCardExistingBleed(Math.round(converted * 1000) / 1000);
-                                        }
-                                        setCardExistingBleedUnit(newUnit);
-                                    }}
-                                    className="w-16"
-                                >
-                                    <option value="mm">mm</option>
-                                    <option value="in">in</option>
-                                </Select>
-                            </div>
-                        </div>
-                    )}
-
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                            type="radio"
-                            name="card-bleed-mode"
-                            checked={cardBleedMode === 'none'}
-                            onChange={() => setCardBleedMode('none')}
-                            className="text-blue-600"
-                        />
-                        <span className="dark:text-gray-300">No Bleed</span>
-                    </label>
+                {/* 2. Target Settings */}
+                <div className="space-y-2">
+                    <h4 className="font-medium dark:text-white">Bleed Width</h4>
+                    <BleedModeControl
+                        idPrefix="target"
+                        groupName="target-mode"
+                        mode={targetMode}
+                        onModeChange={setTargetMode}
+                        defaultLabel={`Use ${hasBleedBuiltIn ? "Type Default" : "Global Bleed Width"}`}
+                        amount={manualTargetAmount}
+                        onAmountChange={setManualTargetAmount}
+                        valueDefault="default"
+                    />
                 </div>
             </div>
 
             <div className="pt-4 border-t border-gray-200 dark:border-gray-600">
-                <Button
-                    color="blue"
-                    className="w-full"
-                    onClick={async () => {
-                        const bleedMode = cardBleedMode === 'default' ? undefined : cardBleedMode;
-                        const existingBleedMm = cardBleedMode === 'existing'
-                            ? (cardExistingBleedUnit === 'in' ? cardExistingBleed * 25.4 : cardExistingBleed)
-                            : undefined;
-                        // For generate mode: custom value in mm, or undefined to use global
-                        const generateBleedMm = (cardBleedMode === 'generate' && !useGlobalBleed)
-                            ? (cardGenerateBleedUnit === 'in' ? cardGenerateBleed * 25.4 : cardGenerateBleed)
-                            : undefined;
-
-                        // Get all selected cards - if multiple are selected, apply to all
-                        const selectedCards = useSelectionStore.getState().selectedCards;
-                        const cardUuids = selectedCards.size > 1 && selectedCards.has(modalCard.uuid)
-                            ? Array.from(selectedCards)
-                            : [modalCard.uuid];
-
-                        // Update all selected cards' bleed settings (with undo support)
-                        await undoableUpdateCardBleedSettings(cardUuids, {
-                            bleedMode,
-                            existingBleedMm,
-                            generateBleedMm,
-                        });
-
-                        // Get imageIds for all affected cards and invalidate their blobs
-                        const affectedCards = await db.cards.where('uuid').anyOf(cardUuids).toArray();
-                        const imageIds = affectedCards
-                            .map(c => c.imageId)
-                            .filter((id): id is string => !!id);
-
-                        for (const imageId of imageIds) {
-                            await db.images.update(imageId, {
-                                displayBlob: undefined,
-                                exportBlob: undefined,
-                                displayBlobDarkened: undefined,
-                                exportBlobDarkened: undefined,
-                            });
-                        }
-
-                        closeModal();
-                    }}
-                >
+                <Button color="blue" className="w-full" onClick={handleSave}>
                     Save Settings
                 </Button>
             </div>
-        </div>
+        </div >
     );
 }

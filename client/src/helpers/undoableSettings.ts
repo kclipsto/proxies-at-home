@@ -31,12 +31,11 @@ export type UndoableSettingKey =
     | "filterColors"
     | "filterMatchType"
     | "bleedEdgeUnit"
-    | "mpcBleedMode"
-    | "mpcExistingBleed"
-    | "mpcExistingBleedUnit"
-    | "uploadBleedMode"
-    | "uploadExistingBleed"
-    | "uploadExistingBleedUnit";
+    | "withBleedSourceAmount"
+    | "withBleedTargetMode"
+    | "withBleedTargetAmount"
+    | "noBleedTargetMode"
+    | "noBleedTargetAmount";
 
 // Human-readable descriptions for each setting
 const settingDescriptions: Record<UndoableSettingKey, string> = {
@@ -63,12 +62,11 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     filterColors: "color filter",
     filterMatchType: "filter match type",
     bleedEdgeUnit: "bleed unit",
-    mpcBleedMode: "MPC bleed mode",
-    mpcExistingBleed: "MPC existing bleed",
-    mpcExistingBleedUnit: "MPC bleed unit",
-    uploadBleedMode: "upload bleed mode",
-    uploadExistingBleed: "upload existing bleed",
-    uploadExistingBleedUnit: "upload bleed unit",
+    withBleedSourceAmount: "provided bleed amount",
+    withBleedTargetMode: "bleed generation mode",
+    withBleedTargetAmount: "target bleed width",
+    noBleedTargetMode: "bleed generation mode",
+    noBleedTargetAmount: "target bleed width",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -6,7 +6,6 @@ import { useArtworkModalStore } from '@/store/artworkModal';
 import { useSettingsStore } from '@/store/settings';
 import { useSelectionStore } from '@/store/selection';
 import { undoableUpdateCardBleedSettings } from '@/helpers/undoableActions';
-import { db } from '../db';
 import type { Mock } from 'vitest';
 
 // Mock dependencies
@@ -14,15 +13,12 @@ vi.mock('@/store/artworkModal');
 vi.mock('@/store/settings');
 vi.mock('@/store/selection');
 vi.mock('@/helpers/undoableActions');
-vi.mock('../db');
 
 describe('ArtworkBleedSettings', () => {
     const mockCloseModal = vi.fn();
     const mockCard = {
         uuid: 'test-uuid',
         bleedMode: 'default',
-        existingBleedMm: 0,
-        generateBleedMm: 1,
         imageId: 'test-image-id',
     };
 
@@ -38,33 +34,31 @@ describe('ArtworkBleedSettings', () => {
             return selector({
                 bleedEdgeWidth: 3,
                 bleedEdgeUnit: 'mm',
+                withBleedSourceAmount: 3.175,
             });
         });
         (useSelectionStore as unknown as Mock).mockImplementation((state) => state);
         (useSelectionStore.getState as unknown as Mock).mockReturnValue({
             selectedCards: new Set(['test-uuid']),
         });
-        (db.cards.where as unknown as Mock).mockReturnValue({
-            anyOf: vi.fn().mockReturnValue({
-                toArray: vi.fn().mockResolvedValue([{ imageId: 'test-image-id' }]),
-            }),
-        });
     });
 
     it('renders correctly with default settings', () => {
         render(<ArtworkBleedSettings />);
         expect(screen.getByText('Bleed Settings')).toBeInTheDocument();
-        expect(screen.getByLabelText('Use Default (from global settings)')).toBeChecked();
+        // The target BleedModeControl uses 'Use Global Bleed Width' as default label
+        expect(screen.getByLabelText('Use Global Bleed Width')).toBeChecked();
     });
 
     it('updates local state when changing bleed mode', () => {
         render(<ArtworkBleedSettings />);
-        const generateRadio = screen.getByLabelText('Generate Bleed');
-        fireEvent.click(generateRadio);
-        expect(generateRadio).toBeChecked();
+        // BleedModeControl uses 'Override' for manual mode
+        const overrideRadio = screen.getByLabelText('Override');
+        fireEvent.click(overrideRadio);
+        expect(overrideRadio).toBeChecked();
     });
 
-    it('calls undoableUpdateCardBleedSettings and updates DB on save', async () => {
+    it('calls undoableUpdateCardBleedSettings on save', async () => {
         render(<ArtworkBleedSettings />);
 
         // Change to "No Bleed"
@@ -79,10 +73,6 @@ describe('ArtworkBleedSettings', () => {
             expect(undoableUpdateCardBleedSettings).toHaveBeenCalledWith(
                 ['test-uuid'],
                 expect.objectContaining({ bleedMode: 'none' })
-            );
-            expect(db.images.update).toHaveBeenCalledWith(
-                'test-image-id',
-                expect.objectContaining({ displayBlob: undefined })
             );
             expect(mockCloseModal).toHaveBeenCalled();
         });

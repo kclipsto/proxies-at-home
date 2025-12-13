@@ -253,7 +253,7 @@ export async function processMpcImport(
         number: cardInfo.number,
         imageId: frontImageId || "",
         isUserUpload: true,
-        hasBakedBleed: true,
+        hasBuiltInBleed: true,
         needsEnrichment: true,
       });
     }

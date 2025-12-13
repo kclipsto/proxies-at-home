@@ -5,7 +5,7 @@ import { useSettingsStore } from "../store";
 import { importStats } from "../helpers/importStats";
 import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
-import { getEffectiveBleedMode, getEffectiveExistingBleedMm, type GlobalSettings } from "../helpers/imageSpecs";
+import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, getHasBuiltInBleed, type GlobalSettings } from "../helpers/imageSpecs";
 
 export function useImageProcessing({
   unit,
@@ -18,7 +18,7 @@ export function useImageProcessing({
 }) {
   const dpi = useSettingsStore((state) => state.dpi);
   const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
-  // Note: Source-type bleed settings (mpcBleedMode, uploadBleedMode, etc.) are read
+  // Note: Source-type bleed settings (withBleedMode, noBleedMode, etc.) are read
   // directly from useSettingsStore.getState() in usage to avoid stale closures
 
   const [loadingMap, setLoadingMap] = useState<
@@ -71,30 +71,29 @@ export function useImageProcessing({
       const state = useSettingsStore.getState();
       const settings: GlobalSettings = {
         bleedEdgeWidth, // passed from hook props (already mm)
-        mpcBleedMode: state.mpcBleedMode,
-        mpcExistingBleed: state.mpcExistingBleed,
-        mpcExistingBleedUnit: state.mpcExistingBleedUnit,
-        uploadBleedMode: state.uploadBleedMode,
-        uploadExistingBleed: state.uploadExistingBleed,
-        uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+        bleedEdgeUnit: 'mm', // Already converted
+        withBleedSourceAmount: state.withBleedSourceAmount,
+        withBleedTargetMode: state.withBleedTargetMode,
+        withBleedTargetAmount: state.withBleedTargetAmount,
+        noBleedTargetMode: state.noBleedTargetMode,
+        noBleedTargetAmount: state.noBleedTargetAmount,
       };
 
-      // Compute expected bleed width based on card's effective mode
-      const effectiveMode = getEffectiveBleedMode(card, settings);
-      let expectedBleedWidth: number;
-      if (effectiveMode === 'none') {
-        expectedBleedWidth = 0;
-      } else if (effectiveMode === 'existing') {
-        expectedBleedWidth = getEffectiveExistingBleedMm(card, settings) ?? bleedEdgeWidth;
-      } else {
-        // Generate mode: use card's custom generateBleedMm if set, otherwise global
-        expectedBleedWidth = card.generateBleedMm ?? bleedEdgeWidth;
-      }
+      const effectiveBleedMode = getEffectiveBleedMode(card, settings);
+      const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
+      // Use getExpectedBleedWidth for correct priority: per-card > type override > global
+      const expectedBleedWidth = getExpectedBleedWidth(card, bleedEdgeWidth, settings);
+      const effectiveBleedWidth = expectedBleedWidth;
 
+      // Smart Cache Check: valid if width matches AND generation parameters match
+      // If generatedHasBuiltInBleed is missing (legacy), we might reprocess once, which is safe.
+      const hasBuiltInBleed = getHasBuiltInBleed(card);
       if (
         currentImage?.displayBlob &&
         currentImage?.displayBlobDarkened &&
-        currentImage.exportBleedWidth === expectedBleedWidth
+        currentImage.exportBleedWidth === expectedBleedWidth &&
+        currentImage.generatedHasBuiltInBleed === hasBuiltInBleed &&
+        currentImage.generatedBleedMode === effectiveBleedMode
       ) {
         importStats.markCacheHit(card.uuid);
         importStats.markCardProcessed(card.uuid);
@@ -110,14 +109,6 @@ export function useImageProcessing({
       }
       setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
       try {
-        const effectiveBleedMode = getEffectiveBleedMode(card, settings);
-        const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
-
-        // Compute effective bleed width for generate mode
-        const effectiveBleedWidth = effectiveBleedMode === 'generate' && card.generateBleedMm !== undefined
-          ? card.generateBleedMm
-          : bleedEdgeWidth;
-
 
 
         const result = await imageProcessor.process({
@@ -127,7 +118,7 @@ export function useImageProcessing({
           unit,
           apiBase: API_BASE,
           isUserUpload: card.isUserUpload,
-          hasBakedBleed: card.hasBakedBleed,
+          hasBuiltInBleed: getHasBuiltInBleed(card),
           bleedMode: effectiveBleedMode,
           existingBleedMm: effectiveExistingBleedMm,
           dpi,
@@ -161,6 +152,8 @@ export function useImageProcessing({
             exportBleedWidth,
             displayBlobDarkened,
             exportBlobDarkened,
+            generatedHasBuiltInBleed: hasBuiltInBleed,
+            generatedBleedMode: effectiveBleedMode,
           });
           importStats.markCardProcessed(card.uuid);
         } else {
@@ -213,21 +206,23 @@ export function useImageProcessing({
           const state = useSettingsStore.getState();
           const settings: GlobalSettings = {
             bleedEdgeWidth: newBleedWidth,
-            mpcBleedMode: state.mpcBleedMode,
-            mpcExistingBleed: state.mpcExistingBleed,
-            mpcExistingBleedUnit: state.mpcExistingBleedUnit,
-            uploadBleedMode: state.uploadBleedMode,
-            uploadExistingBleed: state.uploadExistingBleed,
-            uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+            bleedEdgeUnit: 'mm', // Already converted
+            withBleedSourceAmount: state.withBleedSourceAmount,
+            withBleedTargetMode: state.withBleedTargetMode,
+            withBleedTargetAmount: state.withBleedTargetAmount,
+            noBleedTargetMode: state.noBleedTargetMode,
+            noBleedTargetAmount: state.noBleedTargetAmount,
           };
 
           // Get effective bleed mode from settings (same as ensureProcessed)
           const effectiveBleedMode = getEffectiveBleedMode(card, settings);
           const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
 
-          const effectiveBleedWidth = effectiveBleedMode === 'generate' && card.generateBleedMm !== undefined
-            ? card.generateBleedMm
-            : newBleedWidth;
+          // Use getExpectedBleedWidth for correct priority: per-card > type override > global
+          const effectiveBleedWidth = getExpectedBleedWidth(card, newBleedWidth, settings);
+
+
+
 
 
 
@@ -238,7 +233,7 @@ export function useImageProcessing({
             unit,
             apiBase: API_BASE,
             isUserUpload: card.isUserUpload,
-            hasBakedBleed: card.hasBakedBleed,
+            hasBuiltInBleed: getHasBuiltInBleed(card),
             bleedMode: effectiveBleedMode,
             existingBleedMm: effectiveExistingBleedMm,
             dpi,
@@ -268,6 +263,8 @@ export function useImageProcessing({
               exportBleedWidth,
               displayBlobDarkened,
               exportBlobDarkened,
+              generatedHasBuiltInBleed: getHasBuiltInBleed(card),
+              generatedBleedMode: effectiveBleedMode,
             });
           } else {
             throw new Error(result.error);

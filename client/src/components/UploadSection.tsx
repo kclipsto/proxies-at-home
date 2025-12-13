@@ -6,7 +6,7 @@ import {
   HR,
   Select,
 } from "flowbite-react";
-import { ExternalLink, HelpCircle, Download, MousePointerClick, Move, Copy, Upload } from "lucide-react";
+import { ExternalLink, Download, MousePointerClick, Move, Copy, Upload } from "lucide-react";
 import { AutoTooltip } from "./AutoTooltip";
 import { PullToRefresh } from "./PullToRefresh";
 import { DecklistUploader } from "./UploadComponents/DecklistUploader";
@@ -80,13 +80,11 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
             </div>
 
-            {/* Language Selector - Moved here for Landscape */}
-            <div className={`space-y-1 hidden ${mobile ? 'landscape:block' : ''}`}>
+            {/* Language Selector - Hidden in Landscape (moved to left col), Visible in Portrait */}
+            <div className={`space-y-1 ${mobile ? 'landscape:hidden' : ''}`}>
               <div className="flex items-center justify-between">
                 <h6 className="font-medium dark:text-white">Language</h6>
-                <AutoTooltip content="Used for Scryfall lookups" mobile={mobile}>
-                  <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-                </AutoTooltip>
+                <AutoTooltip content="Used for Scryfall lookups" mobile={mobile} tooltipClassName="w-max" />
               </div>
 
               <Select

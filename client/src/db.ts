@@ -16,6 +16,10 @@ export interface Image {
   exportDpi?: number;
   exportBleedWidth?: number;
 
+  // Generation Metadata (for invalidating cache on setting changes)
+  generatedHasBuiltInBleed?: boolean;
+  generatedBleedMode?: string;
+
   // Darkened versions for instant toggle
   displayBlobDarkened?: Blob;
   exportBlobDarkened?: Blob;

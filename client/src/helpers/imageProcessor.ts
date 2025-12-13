@@ -10,7 +10,7 @@ interface WorkerMessage {
   unit: "mm" | "in";
   apiBase: string;
   isUserUpload: boolean;
-  hasBakedBleed?: boolean;
+  hasBuiltInBleed?: boolean;
   bleedMode?: 'generate' | 'existing' | 'none';  // Per-card bleed override
   existingBleedMm?: number;  // Amount when bleedMode is 'existing'
   dpi: number;

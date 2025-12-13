@@ -2,6 +2,7 @@ import { API_BASE } from "@/constants";
 import type { CardOption } from "../../../shared/types";
 import { PDFDocument } from "pdf-lib";
 import { AsyncLock } from "./AsyncLock";
+import type { WorkerPdfSettings } from "./serializeSettingsForWorker";
 
 /**
  * Worker event types for coordinator pattern
@@ -29,66 +30,44 @@ function* pageGenerator(
 export async function exportProxyPagesToPdf({
   cards,
   imagesById,
-  bleedEdge,
-  bleedEdgeWidthMm,
-  guideColor,
-  guideWidthCssPx,
-  pageSizeUnit,
-  pageWidth,
-  pageHeight,
-  columns,
-  rows,
-  cardSpacingMm,
-  cardPositionX,
-  cardPositionY,
-  dpi,
+  pdfSettings,
   onProgress,
   pagesPerPdf,
   cancellationPromise,
-  darkenNearBlack,
-  cutLineStyle,
-  perCardGuideStyle,
-  guidePlacement,
-  mpcBleedMode,
-  mpcExistingBleed,
-  mpcExistingBleedUnit,
-  uploadBleedMode,
-  uploadExistingBleed,
-  uploadExistingBleedUnit,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
-  bleedEdge: boolean;
-  bleedEdgeWidthMm: number;
-  guideColor: string;
-  guideWidthCssPx: number;
-  pageOrientation: "portrait" | "landscape";
-  pageSizeUnit: "mm" | "in";
-  pageWidth: number;
-  pageHeight: number;
-  columns: number;
-  rows: number;
-  cardSpacingMm: number;
-  cardPositionX: number;
-  cardPositionY: number;
-  dpi: number;
+  pdfSettings: WorkerPdfSettings;
   onProgress?: (progress: number) => void;
   pagesPerPdf: number;
   cancellationPromise: Promise<void>;
-  darkenNearBlack: boolean;
-  cutLineStyle: 'none' | 'edges' | 'full';
-  perCardGuideStyle: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
-  guidePlacement: 'inside' | 'outside';
-  mpcBleedMode: 'use-existing' | 'trim-regenerate' | 'none';
-  mpcExistingBleed: number;
-  mpcExistingBleedUnit: 'mm' | 'in';
-  uploadBleedMode: 'generate' | 'existing' | 'none';
-  uploadExistingBleed: number;
-  uploadExistingBleedUnit: 'mm' | 'in';
 }): Promise<void> {
   if (!cards || !cards.length) {
     return;
   }
+
+  // Extract settings from the unified object
+  const {
+    bleedEdge,
+    bleedEdgeWidthMm,
+    sourceSettings,
+    withBleedSourceAmount,
+    darkenNearBlack,
+    dpi,
+    pageWidth,
+    pageHeight,
+    pageSizeUnit,
+    columns,
+    rows,
+    cardSpacingMm,
+    cardPositionX,
+    cardPositionY,
+    guideColor,
+    guideWidthCssPx,
+    cutLineStyle,
+    perCardGuideStyle,
+    guidePlacement,
+  } = pdfSettings;
 
   const perPage = Math.max(1, columns * rows);
   const totalImages = cards.length;
@@ -249,12 +228,9 @@ export async function exportProxyPagesToPdf({
                       cutLineStyle,
                       perCardGuideStyle,
                       guidePlacement,
-                      mpcBleedMode,
-                      mpcExistingBleed,
-                      mpcExistingBleedUnit,
-                      uploadBleedMode,
-                      uploadExistingBleed,
-                      uploadExistingBleedUnit,
+                      // Pass normalized source settings directly (no legacy conversion)
+                      sourceSettings,
+                      withBleedSourceAmount,
                     };
 
                     idleWorker.worker.postMessage({

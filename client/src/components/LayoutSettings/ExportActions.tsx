@@ -5,8 +5,7 @@ import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 import { Button } from "flowbite-react";
 import { db } from "../../db";
-
-
+import { serializePdfSettingsForWorker } from "@/helpers/serializeSettingsForWorker";
 import { useFilteredAndSortedCards } from "@/hooks/useFilteredAndSortedCards";
 
 import type { CardOption } from "../../../../shared/types";
@@ -21,33 +20,11 @@ export function ExportActions({ cards }: Props) {
 
   const { filteredAndSortedCards } = useFilteredAndSortedCards(cards);
 
-  const pageOrientation = useSettingsStore((state) => state.pageOrientation);
+  // Settings needed for dimensions calculation
   const pageSizeUnit = useSettingsStore((state) => state.pageSizeUnit);
   const pageWidth = useSettingsStore((state) => state.pageWidth);
   const pageHeight = useSettingsStore((state) => state.pageHeight);
-  const columns = useSettingsStore((state) => state.columns);
-  const rows = useSettingsStore((state) => state.rows);
-  const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
-  const bleedEdgeUnit = useSettingsStore((state) => state.bleedEdgeUnit);
-  const bleedEdge = useSettingsStore((state) => state.bleedEdge);
-  // Convert to mm for processing (stored value may be in inches)
-  const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
-  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
-  const guideColor = useSettingsStore((state) => state.guideColor);
-  const guideWidth = useSettingsStore((state) => state.guideWidth);
-  const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
-  const cardPositionX = useSettingsStore((state) => state.cardPositionX);
-  const cardPositionY = useSettingsStore((state) => state.cardPositionY);
   const dpi = useSettingsStore((state) => state.dpi);
-  const cutLineStyle = useSettingsStore((state) => state.cutLineStyle);
-  const perCardGuideStyle = useSettingsStore((state) => state.perCardGuideStyle);
-  const guidePlacement = useSettingsStore((state) => state.guidePlacement);
-  const mpcBleedMode = useSettingsStore((state) => state.mpcBleedMode);
-  const mpcExistingBleed = useSettingsStore((state) => state.mpcExistingBleed);
-  const mpcExistingBleedUnit = useSettingsStore((state) => state.mpcExistingBleedUnit);
-  const uploadBleedMode = useSettingsStore((state) => state.uploadBleedMode);
-  const uploadExistingBleed = useSettingsStore((state) => state.uploadExistingBleed);
-  const uploadExistingBleedUnit = useSettingsStore((state) => state.uploadExistingBleedUnit);
 
   const setOnCancel = useLoadingStore((state) => state.setOnCancel);
 
@@ -101,37 +78,36 @@ export function ExportActions({ cards }: Props) {
     setOnCancel(onCancel);
 
     try {
+      // Get normalized settings at export time (consistent with display path)
+      const pdfSettings = serializePdfSettingsForWorker();
+      const startTime = performance.now();
+
       await exportProxyPagesToPdf({
         cards: filteredAndSortedCards,
         imagesById,
-        bleedEdge,
-        bleedEdgeWidthMm: bleedEdgeWidthMm,
-        guideColor,
-        guideWidthCssPx: guideWidth,
-        pageOrientation,
-        pageSizeUnit,
-        pageWidth,
-        pageHeight,
-        columns,
-        rows,
-        cardSpacingMm,
-        cardPositionX,
-        cardPositionY,
-        dpi,
+        pdfSettings,
         onProgress: setProgress,
         pagesPerPdf: effectivePagesPerPdf,
         cancellationPromise,
-        darkenNearBlack,
-        cutLineStyle,
-        perCardGuideStyle,
-        guidePlacement,
-        mpcBleedMode,
-        mpcExistingBleed,
-        mpcExistingBleedUnit,
-        uploadBleedMode,
-        uploadExistingBleed,
-        uploadExistingBleedUnit,
       });
+
+      // Log PDF export summary
+      const elapsed = (performance.now() - startTime) / 1000;
+      const perPage = Math.max(1, pdfSettings.columns * (pdfSettings.rows ?? 1));
+      const totalPages = Math.ceil(filteredAndSortedCards.length / perPage);
+      const pad = (content: string) => content.padEnd(62);
+      const summary = `
+╔══════════════════════════════════════════════════════════════╗
+║${"PDF EXPORT SUMMARY".padStart(40).padEnd(62)}║
+╠══════════════════════════════════════════════════════════════╣
+║${pad(`  Total Time:        ${elapsed.toFixed(2).padStart(8)}s`)}║
+╠══════════════════════════════════════════════════════════════╣
+║${pad(`  Cards:             ${String(filteredAndSortedCards.length).padStart(8)}`)}║
+║${pad(`  Pages:             ${String(totalPages).padStart(8)}`)}║
+║${pad(`  DPI:               ${String(dpi).padStart(8)}`)}║
+║${pad(`  Page Size:         ${(pageWidth + "x" + pageHeight + " " + pageSizeUnit).padStart(8)}`)}║
+╚══════════════════════════════════════════════════════════════╝`;
+      console.log(summary);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === "Cancelled by user") {
         return; // User cancelled, do nothing

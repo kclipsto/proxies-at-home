@@ -25,8 +25,6 @@ export function resetEnrichmentAbortController(): void {
  * - Toast notifications
  */
 export function cancelAllProcessing(): void {
-    console.log("[Cancellation] Cancelling all processing...");
-
     // Cancel image processing
     ImageProcessor.getInstance().cancelAll();
 
@@ -36,6 +34,4 @@ export function cancelAllProcessing(): void {
 
     // Clear all toasts
     useToastStore.getState().clearToasts();
-
-    console.log("[Cancellation] All processing cancelled");
 }

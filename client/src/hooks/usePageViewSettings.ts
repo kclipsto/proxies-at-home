@@ -26,12 +26,10 @@ export function usePageViewSettings() {
             filterColors: state.filterColors,
             cardPositionX: state.cardPositionX,
             cardPositionY: state.cardPositionY,
-            mpcBleedMode: state.mpcBleedMode,
-            mpcExistingBleed: state.mpcExistingBleed,
-            mpcExistingBleedUnit: state.mpcExistingBleedUnit,
-            uploadBleedMode: state.uploadBleedMode,
-            uploadExistingBleed: state.uploadExistingBleed,
-            uploadExistingBleedUnit: state.uploadExistingBleedUnit,
+            withBleedTargetMode: state.withBleedTargetMode,
+            withBleedTargetAmount: state.withBleedTargetAmount,
+            noBleedTargetMode: state.noBleedTargetMode,
+            noBleedTargetAmount: state.noBleedTargetAmount,
             cardSpacingMm: state.cardSpacingMm,
         }))
     );
@@ -40,12 +38,10 @@ export function usePageViewSettings() {
         bleedEdge,
         bleedEdgeUnit,
         bleedEdgeWidth,
-        mpcBleedMode,
-        mpcExistingBleed,
-        mpcExistingBleedUnit,
-        uploadBleedMode,
-        uploadExistingBleed,
-        uploadExistingBleedUnit,
+        withBleedTargetMode,
+        withBleedTargetAmount,
+        noBleedTargetMode,
+        noBleedTargetAmount,
         sortBy,
         filterManaCost,
         filterColors,
@@ -53,13 +49,11 @@ export function usePageViewSettings() {
 
     // Build source settings object for computeCardLayouts
     const sourceSettings: SourceTypeSettings = useMemo(() => ({
-        mpcBleedMode,
-        mpcExistingBleed,
-        mpcExistingBleedUnit,
-        uploadBleedMode,
-        uploadExistingBleed,
-        uploadExistingBleedUnit,
-    }), [mpcBleedMode, mpcExistingBleed, mpcExistingBleedUnit, uploadBleedMode, uploadExistingBleed, uploadExistingBleedUnit]);
+        withBleedTargetMode,
+        withBleedTargetAmount,
+        noBleedTargetMode,
+        noBleedTargetAmount,
+    }), [withBleedTargetMode, withBleedTargetAmount, noBleedTargetMode, noBleedTargetAmount]);
 
     const effectiveBleedWidth = bleedEdge
         ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth)

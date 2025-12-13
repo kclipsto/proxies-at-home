@@ -1,9 +1,9 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Radio, Select, TextInput, Tooltip } from "flowbite-react";
+import { Label, Radio, Select, TextInput } from "flowbite-react";
 import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
-import { HelpCircle } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
+import { AutoTooltip } from "../../AutoTooltip";
 
 export function GuidesSection() {
     const guideColor = useSettingsStore((state) => state.guideColor);
@@ -124,9 +124,7 @@ export function GuidesSection() {
             <div>
                 <div className="mb-2 flex items-center gap-2">
                     <Label htmlFor="guidePlacement">Guide Placement</Label>
-                    <Tooltip content="Controls which side of the cut line the guides appear on. Defaults to inside if there's not enough bleed or spacing.">
-                        <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
-                    </Tooltip>
+                    <AutoTooltip content="Controls which side of the cut line the guides appear on. Defaults to inside if there's not enough bleed or spacing." />
                 </div>
                 <div className="flex items-center gap-4">
                     <label className={`flex items-center gap-2 ${canUseOutside ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
