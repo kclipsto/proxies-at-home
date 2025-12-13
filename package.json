@@ -1,27 +1,76 @@
 {
   "name": "mtg-proxy-builder",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.0.1",
+  "description": "A powerful MTG proxy builder and printing tool.",
+  "main": "electron/dist/main.js",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\""
+    "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "lint": "eslint .",
+    "electron:dev": "concurrently \"npm run dev --prefix client\" \"npm run build --prefix server && tsc -p electron/tsconfig.json && wait-on http://localhost:5173 && cross-env NODE_ENV=development electron electron/dist/main.js\"",
+    "electron:build": "npm run build --prefix client && npm run build --prefix server && tsc -p electron/tsconfig.json && electron-builder"
   },
   "devDependencies": {
     "@babel/preset-typescript": "^7.28.5",
     "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^39.2.5",
+    "electron-builder": "^25.1.8",
     "jest": "^30.2.0",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.proxiesathome.app",
+    "productName": "Proxxied",
+    "asar": false,
+    "directories": {
+      "output": "dist-app"
+    },
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "publish": {
+      "provider": "github",
+      "owner": "nathanmilot",
+      "repo": "proxies-at-home"
+    },
+    "files": [
+      "electron/dist/**/*",
+      "electron/package.json",
+      "client/dist/**/*",
+      "server/dist/**/*",
+      "server/package.json",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "client/public/pwa-512x512.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "client/public/pwa-512x512.png"
+    }
   },
   "keywords": [],
-  "author": "",
+  "author": "Nathan <nathan@example.com>",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@babel/preset-env": "^7.28.5",
+    "axios": "^1.11.0",
     "axios-retry": "^4.5.0",
     "bottleneck": "^2.19.5",
     "canvas": "^3.2.0",
+    "cheerio": "^1.1.2",
+    "cors": "^2.8.5",
+    "electron-updater": "^6.6.2",
+    "express": "^5.1.0",
+    "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2"
   }
 }

@@ -1,4 +1,4 @@
-
+import logo from "/logo.svg";
 import fullLogo from "@/assets/fullLogo.png";
 import { LANGUAGE_OPTIONS } from "@/constants";
 import { useSettingsStore } from "@/store/settings";
@@ -43,7 +43,7 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
             }}
             className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
-            <img src="/logo.svg" className="w-8 h-8" alt="Proxxied Logo" />
+            <img src={logo} className="w-8 h-8" alt="Proxxied Logo" />
           </button>
         </AutoTooltip>
       </div>

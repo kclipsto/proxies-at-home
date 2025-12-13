@@ -10,3 +10,35 @@ interface ImportMeta {
 
 declare module 'swiper/css';
 declare module 'swiper/css/effect-coverflow';
+
+interface UpdateInfo {
+  version: string;
+  files: Array<{ url: string; sha512: string; size: number }>;
+  path: string;
+  sha512: string;
+  releaseName?: string;
+  releaseDate: string;
+  releaseNotes?: string | Array<unknown>;
+}
+
+interface ProgressInfo {
+  total: number;
+  delta: number;
+  transferred: number;
+  percent: number;
+  bytesPerSecond: number;
+}
+
+type UpdateStatus = 'checking' | 'available' | 'not-available' | 'error' | 'downloading' | 'downloaded';
+
+type UpdateEventInfo = UpdateInfo | ProgressInfo | string | null;
+
+interface Window {
+  electronAPI?: {
+    serverUrl: () => Promise<string>;
+    onUpdateStatus: (callback: (status: UpdateStatus, info?: UpdateEventInfo) => void) => void;
+    checkForUpdates: () => Promise<void>;
+    downloadUpdate: () => Promise<void>;
+    installUpdate: () => Promise<void>;
+  };
+}
