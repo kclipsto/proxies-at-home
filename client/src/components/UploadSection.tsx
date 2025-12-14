@@ -7,7 +7,7 @@ import {
 import { ExternalLink, Download, MousePointerClick, Move, Copy, Upload, Layers } from "lucide-react";
 import { AutoTooltip } from "./AutoTooltip";
 import { PullToRefresh } from "./PullToRefresh";
-import { ArchidektImporter } from "./UploadComponents/ArchidektImporter";
+import { DeckBuilderImporter } from "./UploadComponents/DeckBuilderImporter";
 import { DecklistUploader } from "./UploadComponents/DecklistUploader";
 import { FileUploader } from "./UploadComponents/FileUploader";
 import { MpcImportSection } from "./UploadComponents/MpcImportSection";
@@ -70,9 +70,9 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
               <FileUploader mobile={mobile} onUploadComplete={onUploadComplete} />
               <MpcImportSection mobile={mobile} onUploadComplete={onUploadComplete} />
 
-              {/* Archidekt Deck Importer - in landscape, show here below MPC */}
+              {/* Deck Builder Importer - in landscape, show here below MPC */}
               <div className={`hidden ${mobile ? 'landscape:block' : ''}`}>
-                <ArchidektImporter mobile={mobile} onUploadComplete={onUploadComplete} />
+                <DeckBuilderImporter mobile={mobile} onUploadComplete={onUploadComplete} />
               </div>
             </div>
           </div>
@@ -84,9 +84,9 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
 
           <HR className={`my-0 dark:bg-gray-500 ${mobile ? 'landscape:hidden' : ''}`} />
 
-          {/* Archidekt Deck Importer - in portrait, show here */}
+          {/* Deck Builder Importer - in portrait, show here */}
           <div className={`${mobile ? 'landscape:hidden' : ''}`}>
-            <ArchidektImporter mobile={mobile} onUploadComplete={onUploadComplete} />
+            <DeckBuilderImporter mobile={mobile} onUploadComplete={onUploadComplete} />
           </div>
 
           <HR className={`my-0  dark:bg-gray-500 ${mobile ? 'landscape:hidden' : ''}`} />
@@ -141,7 +141,16 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
                 >
                   Archidekt
                 </a>
-                {" "}to filter by deck categories (Commander, Sideboard, etc.)
+                {" "}or{" "}
+                <a
+                  href="https://moxfield.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-purple-600 dark:hover:text-purple-400"
+                >
+                  Moxfield
+                </a>
+                {" "}to filter by deck categories
               </span>
             </div>
           </div>
