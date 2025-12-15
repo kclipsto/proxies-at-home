@@ -30,10 +30,11 @@ export function AddCardBack({ onUploadComplete }: Props) {
 
     return (
         <Button
-            color="gray"
             size="lg"
             onClick={handleAddCardBack}
-            className="w-full"
+            className="w-full hover:bg-gray-400 bg-gray-300 
+            text-black dark:bg-gray-600 dark:text-white focus:ring-gray-600 
+            dark:focus:ring-gray-400 dark:hover:bg-gray-500"
         >
             Add Card Back
         </Button>
