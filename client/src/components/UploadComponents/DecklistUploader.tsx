@@ -14,6 +14,7 @@ import { useLoadingStore } from "@/store/loading";
 import type { CardInfo, CardOption, ScryfallCard } from "../../../../shared/types";
 import { AutoTooltip } from "../AutoTooltip";
 import { AdvancedSearch } from "../AdvancedSearch";
+import { AddCardBack } from "./AddCardBack";
 
 type Props = {
     mobile?: boolean;
@@ -297,6 +298,8 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                     Advanced Search
                 </Button>
             </div>
+
+            <AddCardBack onUploadComplete={onUploadComplete} />
 
             {/* Advanced Search Modal */}
             {isAdvancedSearchOpen && (
