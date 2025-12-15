@@ -151,10 +151,13 @@ describe('CardInfoHelper', () => {
       expect(cardKey(info)).toBe('counterspell|a25|');
     });
 
-    it('should be case-insensitive', () => {
-      const info1 = { name: 'Sol Ring', quantity: 1, set: 'CMM', number: '432' };
-      const info2 = { name: 'sol ring', quantity: 1, set: 'cmm', number: '432' };
-      expect(cardKey(info1)).toBe(cardKey(info2));
-    });
   });
+
+  it('should be case-insensitive', () => {
+    const info1 = { name: 'Sol Ring', quantity: 1, set: 'CMM', number: '432' };
+    const info2 = { name: 'sol ring', quantity: 1, set: 'cmm', number: '432' };
+    expect(cardKey(info1)).toBe(cardKey(info2));
+  });
+
+
 });

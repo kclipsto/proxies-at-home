@@ -15,11 +15,13 @@ export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
 
   const caretTail = /\s*\^[^^]*\^\s*$/;
   const bracketTail = /\s*\[[^\]]*]\s*$/;
+  const starTail = /\s*[★]\s*$/;
   let changed = true;
   while (changed) {
     const before = s;
     s = s.replace(caretTail, "").trim();
     s = s.replace(bracketTail, "").trim();
+    s = s.replace(starTail, "").trim();
     changed = s !== before;
   }
 
@@ -37,7 +39,7 @@ export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
 
   // Check for {Number} only format (e.g. Name {123}) - User requested to drop number
   const numBracketsOnly = /\s*\{([a-z0-9]+)\}\s*$/i;
-  const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([0-9]+[a-z]?)?\s*$/i;
+  const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([a-z0-9-]+)?\s*$/i;
   const setColonTail = /\s*(?:set:|s:)([a-z0-9]+)\s*$/i;
   const numColonTail = /\s*(?:num:|cn:)([a-z0-9]+)\s*$/i;
 

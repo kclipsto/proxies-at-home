@@ -1,6 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import React from "react";
+import { X } from "lucide-react";
 
 type Props = {
     id: string;
@@ -10,9 +11,11 @@ type Props = {
     children: React.ReactNode;
     icon: React.ElementType;
     mobile?: boolean;
+    badge?: number;
+    onClearBadge?: () => void;
 };
 
-export function SettingsPanel({ id, title, isOpen, onToggle, children, icon: Icon, mobile }: Props) {
+export function SettingsPanel({ id, title, isOpen, onToggle, children, icon: Icon, mobile, badge, onClearBadge }: Props) {
     const {
         attributes,
         listeners,
@@ -27,6 +30,11 @@ export function SettingsPanel({ id, title, isOpen, onToggle, children, icon: Ico
         transition,
         zIndex: isDragging ? 10 : 1,
         opacity: isDragging ? 0.5 : 1,
+    };
+
+    const handleClearBadge = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onClearBadge?.();
     };
 
     return (
@@ -45,6 +53,23 @@ export function SettingsPanel({ id, title, isOpen, onToggle, children, icon: Ico
             >
                 <Icon className="size-5" />
                 {title}
+                {badge !== undefined && badge > 0 && (
+                    <>
+                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                            {badge}
+                        </span>
+                        {onClearBadge && (
+                            <button
+                                type="button"
+                                onClick={handleClearBadge}
+                                className="p-0.5 rounded hover:bg-gray-400 dark:hover:bg-gray-600 active:translate-y-px cursor-pointer"
+                                title="Clear all filters"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                    </>
+                )}
             </div>
 
 
@@ -52,3 +77,4 @@ export function SettingsPanel({ id, title, isOpen, onToggle, children, icon: Ico
         </div >
     );
 }
+

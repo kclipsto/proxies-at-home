@@ -55,11 +55,24 @@ const getRarityValue = (c: CardOption) => {
     return 0;
 };
 
+// Extract primary type from type_line (e.g., "Legendary Creature - Human Wizard" -> "Creature")
+const PRIMARY_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
+
+export const getPrimaryType = (typeLine: string | undefined): string | undefined => {
+    if (!typeLine) return undefined;
+    for (const type of PRIMARY_TYPES) {
+        if (typeLine.includes(type)) return type;
+    }
+    return undefined;
+};
+
 export function useFilteredAndSortedCards(cards: CardOption[] = []) {
     const sortBy = useSettingsStore((state) => state.sortBy);
     const sortOrder = useSettingsStore((state) => state.sortOrder);
     const filterManaCost = useSettingsStore((state) => state.filterManaCost);
     const filterColors = useSettingsStore((state) => state.filterColors);
+    const filterTypes = useSettingsStore((state) => state.filterTypes);
+    const filterCategories = useSettingsStore((state) => state.filterCategories);
     const filterMatchType = useSettingsStore((state) => state.filterMatchType);
 
     // Step 1: Filter cards (separate memo for better granularity)
@@ -114,8 +127,23 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
             });
         }
 
+        // Filter by card types
+        if (filterTypes.length > 0) {
+            result = result.filter((c) => {
+                const primaryType = getPrimaryType(c.type_line);
+                return primaryType && filterTypes.includes(primaryType);
+            });
+        }
+
+        // Filter by deck categories (Archidekt)
+        if (filterCategories.length > 0) {
+            result = result.filter((c) => {
+                return c.category && filterCategories.includes(c.category);
+            });
+        }
+
         return result;
-    }, [cards, filterManaCost, filterColors, filterMatchType]);
+    }, [cards, filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType]);
 
     // Step 2: Sort filtered cards (separate memo - only reruns when sort settings or filtered cards change)
     const filteredAndSortedCards = useMemo(() => {

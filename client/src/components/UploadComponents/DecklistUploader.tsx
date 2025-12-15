@@ -1,17 +1,13 @@
 import { useRef, useState } from "react";
-import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { createPortal } from "react-dom";
 import { Button, Select, Textarea } from "flowbite-react";
 import { ExternalLink, HelpCircle } from "lucide-react";
-import { API_BASE, LANGUAGE_OPTIONS } from "@/constants";
-import { cardKey, parseDeckToInfos } from "@/helpers/CardInfoHelper";
-import { addCards, addRemoteImage } from "@/helpers/dbUtils";
-import { undoableAddCards } from "@/helpers/undoableActions";
-import { importStats } from "@/helpers/importStats";
-import { db } from "../../db"; // Adjusted import path
+import { LANGUAGE_OPTIONS } from "@/constants";
+import { parseDeckToInfos } from "@/helpers/CardInfoHelper";
+import { streamCards, type CardInfo } from "@/helpers/streamCards";
+import { db } from "../../db";
 import { useCardsStore, useSettingsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
-import type { CardInfo, CardOption, ScryfallCard } from "../../../../shared/types";
 import { AutoTooltip } from "../AutoTooltip";
 import { AdvancedSearch } from "../AdvancedSearch";
 
@@ -49,151 +45,36 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             fetchController.current.abort();
         }
         fetchController.current = new AbortController();
-        const signal = fetchController.current.signal;
 
-        let totalCards = 0;
-        for (const info of infos) {
-            totalCards += info.quantity ?? 1;
+        if (infos.length === 0) {
+            alert("No valid cards found to import. Please check your input.");
+            setLoadingTask(null);
+            return;
         }
 
-        importStats.start(totalCards, undefined, { importType: 'scryfall' });
-        importStats.markImageLoadStart();
-
         try {
-            const quantityByKey = new Map<string, { info: CardInfo; quantity: number }>();
-            for (const info of infos) {
-                const k = cardKey(info);
-                const existing = quantityByKey.get(k);
-                if (existing) {
-                    existing.quantity += info.quantity ?? 1;
-                } else {
-                    quantityByKey.set(k, { info, quantity: info.quantity ?? 1 });
-                }
-            }
-
-            const uniqueInfos = Array.from(quantityByKey.values()).map(v => v.info);
-            let cardsAdded = 0;
-            const addedCardUuids: string[] = [];
-
-            await fetchEventSource(`${API_BASE}/api/stream/cards`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    cardQueries: uniqueInfos,
-                    language: globalLanguage,
-                }),
-                signal,
-                onopen: async (res) => {
-                    if (!res.ok) {
-                        const errorText = await res.text();
-                        throw new Error(
-                            `Failed to fetch cards: ${res.status} ${res.statusText} - ${errorText}`
-                        );
-                    }
-                },
-                onmessage: async (ev) => {
-                    if (ev.event === "progress") {
-                        const progress = JSON.parse(ev.data);
-                        setLoadingMessage(`(${progress.processed} / ${progress.total})`);
-                    } else if (ev.event === "card-error") {
-                        const { query } = JSON.parse(ev.data) as { query: CardInfo };
-                        const quantity = quantityByKey.get(cardKey(query))?.quantity ?? 1;
-
-                        const placeholderCards = Array.from({ length: quantity }, () => ({
-                            name: query.name,
-                            set: query.set,
-                            number: query.number,
-                            isUserUpload: false,
-                            imageId: undefined,
-                        }));
-
-                        const added = await addCards(placeholderCards);
-                        cardsAdded += added.length;
-                        if (cardsAdded === added.length) setLoadingTask(null);
-
-                        importStats.incrementImagesFailed();
-                    } else if (ev.event === "card-found") {
-                        const card = JSON.parse(ev.data) as ScryfallCard;
-                        if (!card?.name) return;
-
-                        const exactKey = cardKey({ name: card.name, set: card.set, number: card.number });
-                        const setOnlyKey = card.set ? cardKey({ name: card.name, set: card.set }) : null;
-                        const nameOnlyKey = cardKey({ name: card.name });
-
-                        const entry = quantityByKey.get(exactKey)
-                            || (setOnlyKey && quantityByKey.get(setOnlyKey))
-                            || quantityByKey.get(nameOnlyKey);
-
-                        const quantity = entry?.quantity ?? 1;
-
-                        const imageId = await addRemoteImage(card.imageUrls ?? [], quantity, card.prints);
-
-                        const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
-                        for (let i = 0; i < quantity; i++) {
-                            cardsToAdd.push({
-                                name: card.name,
-                                set: card.set,
-                                number: card.number,
-                                lang: card.lang,
-                                isUserUpload: false,
-                                imageId,
-                                colors: card.colors,
-                                cmc: card.cmc,
-                                type_line: card.type_line,
-                                rarity: card.rarity,
-                                mana_cost: card.mana_cost,
-                            });
-                        }
-
-                        if (cardsToAdd.length > 0) {
-                            const added = await undoableAddCards(cardsToAdd);
-                            cardsAdded += added.length;
-                            const newUuids = added.map(c => c.uuid);
-                            addedCardUuids.push(...newUuids);
-                            importStats.registerPendingCards(newUuids);
-
-                            if (cardsAdded === added.length) {
-                                setLoadingTask(null);
-                            }
-                        }
-                    } else if (ev.event === "done") {
-                        importStats.markImageLoadEnd();
-
-                        if (cardsAdded > 0) {
-                            useSettingsStore.getState().setSortBy("manual");
-                        }
-
-                        if (importStats.getPendingCount() === 0) {
-                            importStats.forceFinish();
-                        }
-
-                        setDeckText("");
-                        onUploadComplete?.();
-                    }
-                },
-                onclose: () => {
-                    setLoadingTask(null);
-                    fetchController.current = null;
-                },
-                onerror: (err) => {
-                    setLoadingTask(null);
-                    if (err.name !== "AbortError") {
-                        alert("An error occurred while fetching cards. Please try again.");
-                    }
-                    fetchController.current = null;
-                    throw err;
+            await streamCards({
+                cardInfos: infos,
+                language: globalLanguage,
+                importType: 'scryfall',
+                signal: fetchController.current.signal,
+                onProgress: (processed, total) => setLoadingMessage(`(${processed} / ${total})`),
+                onFirstCard: () => setLoadingTask(null),
+                onComplete: () => {
+                    setDeckText("");
+                    onUploadComplete?.();
                 },
             });
         } catch (err: unknown) {
-            if (err instanceof Error) {
-                if (err.name !== "AbortError") {
-                    setLoadingTask(null);
-                    alert(err.message || "Something went wrong while fetching cards.");
-                }
-            } else {
+            if (err instanceof Error && err.name !== "AbortError") {
+                setLoadingTask(null);
+                alert(err.message || "Something went wrong while fetching cards.");
+            } else if (!(err instanceof Error)) {
                 setLoadingTask(null);
                 alert("An unknown error occurred while fetching cards.");
             }
+        } finally {
+            fetchController.current = null;
         }
     };
 
@@ -271,7 +152,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             </div>
 
             <div className="flex flex-col gap-3">
-                <Button color="blue" size="lg" onClick={handleSubmit}>
+                <Button color="blue" size="lg" onClick={handleSubmit} disabled={!deckText.trim()}>
                     Fetch Cards
                 </Button>
                 <Button
@@ -311,7 +192,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             <div className={`space-y-1 ${mobile ? 'landscape:hidden' : ''}`}>
                 <div className="flex items-center justify-between">
                     <h6 className="font-medium dark:text-white">Language</h6>
-                    <AutoTooltip content="Used for Scryfall lookups" mobile={mobile}>
+                    <AutoTooltip content="Used for Scryfall lookups" mobile={mobile} tooltipClassName="w-[80%]">
                         <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
                     </AutoTooltip>
                 </div>
