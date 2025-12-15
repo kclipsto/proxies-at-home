@@ -123,12 +123,31 @@ export interface ParsedArchidektCard {
 export function extractCardsFromDeck(deck: ArchidektDeck): ParsedArchidektCard[] {
     const cards: ParsedArchidektCard[] = [];
 
+    // Card types that should be filtered via Type filter, not Category
+    const cardTypes = new Set([
+        "creature", "land", "artifact", "enchantment", "instant", "sorcery",
+        "planeswalker", "battle", "kindred", "tribal"
+    ]);
+
+    // Deck organizational categories (not card types)
+    const deckCategories = new Set([
+        "commander", "mainboard", "sideboard", "maybeboard", "companion",
+        "considering", "acquire", "trade", "tokens"
+    ]);
+
     for (const deckCard of deck.cards) {
-        // Determine primary category (prefer Commander > Mainboard > first category)
-        let primaryCategory = deckCard.categories[0] || "Mainboard";
-        if (deckCard.categories.includes("Commander")) {
+        // Filter out card type categories, keeping only deck organizational categories
+        const validCategories = deckCard.categories.filter(cat => {
+            const lower = cat.toLowerCase();
+            // Keep if it's a known deck category OR if it's not a known card type (custom category)
+            return deckCategories.has(lower) || !cardTypes.has(lower);
+        });
+
+        // Determine primary category (prefer Commander > Mainboard > first valid category)
+        let primaryCategory = validCategories[0] || "Mainboard";
+        if (validCategories.some(c => c.toLowerCase() === "commander")) {
             primaryCategory = "Commander";
-        } else if (deckCard.categories.includes("Mainboard")) {
+        } else if (validCategories.some(c => c.toLowerCase() === "mainboard")) {
             primaryCategory = "Mainboard";
         }
 

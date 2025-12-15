@@ -1,4 +1,4 @@
-export type ImportType = 'archidekt' | 'scryfall' | 'mpc' | 'unknown';
+export type ImportType = 'archidekt' | 'moxfield' | 'scryfall' | 'mpc' | 'unknown';
 
 export interface ImportSessionConfig {
     totalCards?: number;
