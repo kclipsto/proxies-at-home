@@ -9,12 +9,12 @@ import { PageView } from "../components/PageView";
 import { PageSettingsControls } from "../components/PageSettingsControls";
 import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
+import { useProcessingMonitor } from "../hooks/useProcessingMonitor";
 import { useCardEnrichment } from "../hooks/useCardEnrichment";
 import { useSettingsStore } from "../store";
 import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
-import { importStats } from "../helpers/importStats";
 import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/cacheUtils";
 import { getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
 
@@ -42,6 +42,9 @@ export default function ProxyBuilderPage() {
   const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
   const toggleSettingsPanel = useSettingsStore((state) => state.toggleSettingsPanel);
   const imageProcessor = useMemo(() => ImageProcessor.getInstance(), []);
+
+  // Monitor worker activity to show/hide processing toast at the right time
+  useProcessingMonitor(imageProcessor);
 
   const isUploadPanelCollapsed = useSettingsStore((state) => state.isUploadPanelCollapsed);
   const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
@@ -201,7 +204,6 @@ export default function ProxyBuilderPage() {
       const imagesById = new Map(allImages.map((img) => [img.id, img]));
 
       const unprocessedCards = [];
-      const tracking = importStats.isTracking();
 
       const state = useSettingsStore.getState();
       const settings: GlobalSettings = {
@@ -233,11 +235,8 @@ export default function ProxyBuilderPage() {
 
         if (!isProcessed) {
           unprocessedCards.push(card);
-        } else if (tracking) {
-          // If tracking import, report cache hits immediately
-          importStats.markCacheHit(card.uuid);
-          importStats.markCardProcessed(card.uuid);
         }
+        // Note: Don't call markCacheHit/markCardProcessed here - ensureProcessed handles cache tracking
       }
 
       if (unprocessedCards.length > 0) {

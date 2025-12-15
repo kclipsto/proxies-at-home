@@ -29,6 +29,8 @@ export type UndoableSettingKey =
     | "sortOrder"
     | "filterManaCost"
     | "filterColors"
+    | "filterTypes"
+    | "filterCategories"
     | "filterMatchType"
     | "bleedEdgeUnit"
     | "withBleedSourceAmount"
@@ -60,6 +62,8 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     sortOrder: "sort order",
     filterManaCost: "mana cost filter",
     filterColors: "color filter",
+    filterTypes: "type filter",
+    filterCategories: "category filter",
     filterMatchType: "filter match type",
     bleedEdgeUnit: "bleed unit",
     withBleedSourceAmount: "provided bleed amount",

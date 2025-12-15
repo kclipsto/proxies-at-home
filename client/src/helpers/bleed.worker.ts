@@ -361,7 +361,7 @@ self.onmessage = async (e: MessageEvent) => {
             dpi,
           });
           imageBitmap.close();
-          self.postMessage({ uuid, ...result });
+          self.postMessage({ uuid, imageCacheHit: cacheHit, ...result });
           return; // Early return - no generation needed
         } else {
           // Target is more than existing - trim all existing bleed and regenerate at full target

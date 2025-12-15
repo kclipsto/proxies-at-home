@@ -52,6 +52,8 @@ interface Task {
   priority: Priority;
 }
 
+export type ActivityCallback = (isActive: boolean) => void;
+
 export class ImageProcessor {
   static getInstance() {
     if (!ImageProcessor.instance) {
@@ -67,6 +69,10 @@ export class ImageProcessor {
   // Separate queues for priorities
   private highPriorityQueue: Task[] = [];
   private lowPriorityQueue: Task[] = [];
+
+  // Activity tracking for toast notifications
+  private activeTaskCount = 0;
+  private activityCallbacks: Set<ActivityCallback> = new Set();
 
   // Helper to get all tasks for cancellation
   private get allTasks(): Task[] {
@@ -89,6 +95,38 @@ export class ImageProcessor {
     });
     this.allWorkers.add(worker);
     return worker;
+  }
+
+  /**
+   * Subscribe to activity state changes.
+   * Callback fires with true when first task starts processing,
+   * and false when all tasks complete.
+   * @returns Unsubscribe function
+   */
+  onActivityChange(callback: ActivityCallback): () => void {
+    this.activityCallbacks.add(callback);
+    // Immediately notify of current state
+    callback(this.activeTaskCount > 0);
+    return () => this.activityCallbacks.delete(callback);
+  }
+
+  private notifyActivityChange(isActive: boolean) {
+    this.activityCallbacks.forEach(cb => cb(isActive));
+  }
+
+  private taskStarted() {
+    const wasIdle = this.activeTaskCount === 0;
+    this.activeTaskCount++;
+    if (wasIdle) {
+      this.notifyActivityChange(true);
+    }
+  }
+
+  private taskCompleted() {
+    this.activeTaskCount = Math.max(0, this.activeTaskCount - 1);
+    if (this.activeTaskCount === 0) {
+      this.notifyActivityChange(false);
+    }
   }
 
   private terminateWorker(worker: Worker) {
@@ -146,12 +184,17 @@ export class ImageProcessor {
     if (worker) {
       const currentTask = task; // Capture for closure
 
+      // Track that a task has started processing
+      this.taskStarted();
+
       worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+        this.taskCompleted();
         this.returnWorkerToPool(worker!);
         currentTask.resolve(e.data);
       };
 
       worker.onerror = (e: ErrorEvent) => {
+        this.taskCompleted();
         console.error("Worker error, terminating:", e);
         this.terminateWorker(worker!);
         currentTask.reject(e);
@@ -204,39 +247,36 @@ export class ImageProcessor {
     }
   }
 
-  destroy() {
-    this.highPriorityQueue = [];
-    this.lowPriorityQueue = [];
+  private terminateAllWorkers() {
     this.idleWorkers.forEach(({ worker, timeoutId }) => {
       if (timeoutId) clearTimeout(timeoutId);
       worker.terminate();
     });
     this.idleWorkers = [];
-    this.allWorkers.forEach((worker) => {
-      worker.terminate();
-    });
+    this.allWorkers.forEach(worker => worker.terminate());
     this.allWorkers.clear();
+  }
+
+  destroy() {
+    this.highPriorityQueue = [];
+    this.lowPriorityQueue = [];
+    this.terminateAllWorkers();
     ImageProcessor.instances.delete(this);
   }
 
   cancelAll() {
-    // Reject all pending tasks
-    this.allTasks.forEach((task) => {
+    this.allTasks.forEach(task => {
       task.reject(new Error("Cancelled") as unknown as ErrorEvent);
     });
     this.highPriorityQueue = [];
     this.lowPriorityQueue = [];
 
-    // Terminate all workers immediately
-    this.idleWorkers.forEach(({ worker, timeoutId }) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      worker.terminate();
-    });
-    this.idleWorkers = [];
-    this.allWorkers.forEach((worker) => {
-      worker.terminate();
-    });
-    this.allWorkers.clear();
+    if (this.activeTaskCount > 0) {
+      this.activeTaskCount = 0;
+      this.notifyActivityChange(false);
+    }
+
+    this.terminateAllWorkers();
   }
 
   static destroyAll() {

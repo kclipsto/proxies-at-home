@@ -17,6 +17,7 @@ export interface CardOption {
   cmc?: number;
   type_line?: string;
   rarity?: string;
+  category?: string; // Archidekt deck category (Commander, Mainboard, Sideboard, etc.)
   // Enrichment tracking
   needsEnrichment?: boolean;
   enrichmentRetryCount?: number;
@@ -52,4 +53,5 @@ export type CardInfo = {
   number?: string | undefined;
   quantity?: number | undefined;
   language?: string | undefined;
+  category?: string | undefined; // Archidekt deck category
 };

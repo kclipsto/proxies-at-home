@@ -97,6 +97,12 @@ type Store = {
   setFilterManaCost: (value: number[]) => void;
   filterColors: string[];
   setFilterColors: (value: string[]) => void;
+  filterTypes: string[];
+  setFilterTypes: (value: string[]) => void;
+  filterCategories: string[];
+  setFilterCategories: (value: string[]) => void;
+  filterSectionCollapsed: Record<string, boolean>;
+  setFilterSectionCollapsed: (section: string, collapsed: boolean) => void;
   filterMatchType: "partial" | "exact";
   setFilterMatchType: (value: "partial" | "exact") => void;
   decklistSortAlpha: boolean;
@@ -158,6 +164,9 @@ const defaultPageSettings = {
   sortOrder: "asc" as "asc" | "desc",
   filterManaCost: [] as number[],
   filterColors: [] as string[],
+  filterTypes: [] as string[],
+  filterCategories: [] as string[],
+  filterSectionCollapsed: {} as Record<string, boolean>,
   filterMatchType: "partial" as "partial" | "exact",
   decklistSortAlpha: false,
   showProcessingToasts: true,
@@ -417,6 +426,20 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("filterColors", state.filterColors);
         return { filterColors: value };
       }),
+      filterTypes: [],
+      setFilterTypes: (value) => set((state) => {
+        recordSettingChange("filterTypes", state.filterTypes);
+        return { filterTypes: value };
+      }),
+      filterCategories: [],
+      setFilterCategories: (value) => set((state) => {
+        recordSettingChange("filterCategories", state.filterCategories);
+        return { filterCategories: value };
+      }),
+      filterSectionCollapsed: {},
+      setFilterSectionCollapsed: (section, collapsed) => set((state) => ({
+        filterSectionCollapsed: { ...state.filterSectionCollapsed, [section]: collapsed }
+      })),
       filterMatchType: "partial",
       setFilterMatchType: (value) => set((state) => {
         recordSettingChange("filterMatchType", state.filterMatchType);
