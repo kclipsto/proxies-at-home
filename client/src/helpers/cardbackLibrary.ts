@@ -1,0 +1,225 @@
+/**
+ * Cardback Library
+ * 
+ * Provides a unified source for all available cardback images:
+ * - Built-in (from assets)
+ * - User-uploaded
+ * - MPC-imported
+ * 
+ * Cardbacks are stored in their own table (db.cardbacks) which persists
+ * across card clearing operations. Only explicit deletion removes cardbacks.
+ */
+
+import cardBack from '../assets/cardBack.png';
+import proxxiedBack from '../assets/proxxied-card-back.png';
+import classicDotsBack from '../assets/Classic Dots.png';
+import { db, type Cardback } from '../db';
+
+export interface CardbackOption {
+    id: string;
+    name: string;
+    imageUrl: string;  // For display (blob URL or asset path)
+    source: 'builtin' | 'uploaded';
+    hasBuiltInBleed?: boolean;  // True if cardback has bleed built in
+}
+
+/**
+ * Built-in cardbacks from assets
+ */
+export const BUILTIN_CARDBACKS: CardbackOption[] = [
+    {
+        id: 'cardback_builtin_mtg',
+        name: 'Rose',
+        imageUrl: cardBack,
+        source: 'builtin',
+        hasBuiltInBleed: false,  // Standard MTG back, no bleed
+    },
+    {
+        id: 'cardback_builtin_proxxied',
+        name: 'Proxxied',
+        imageUrl: proxxiedBack,
+        source: 'builtin',
+        hasBuiltInBleed: true,  // Has 1/8" bleed built in
+    },
+    {
+        id: 'cardback_builtin_classic_dots',
+        name: 'Classic Dots',
+        imageUrl: classicDotsBack,
+        source: 'builtin',
+        hasBuiltInBleed: true,  // Has 1/8" bleed built in
+    },
+    {
+        id: 'cardback_builtin_blank',
+        name: 'Blank (No Back)',
+        imageUrl: '',  // No image - renders as plain white without cut guides
+        source: 'builtin',
+        hasBuiltInBleed: true,  // No guides needed
+    },
+];
+
+/**
+ * Track whether builtin cardbacks have been ensured during this session.
+ * This avoids redundant database operations on every getAllCardbacks call.
+ */
+let builtinCardbacksEnsured = false;
+
+/**
+ * Resets the builtin cardbacks flag so they will be re-initialized on next use.
+ * Generally not needed since cardbacks table persists, but kept for edge cases.
+ */
+export function resetBuiltinCardbacksFlag(): void {
+    builtinCardbacksEnsured = false;
+}
+
+/**
+ * Checks if a cardback id belongs to a builtin cardback.
+ */
+export function isBuiltinCardbackId(id: string): boolean {
+    return id.startsWith('cardback_builtin_');
+}
+
+/**
+ * Checks if an imageId belongs to the cardbacks table (not images table).
+ * All cardback IDs start with 'cardback_'.
+ */
+export function isCardbackId(id: string): boolean {
+    return id.startsWith('cardback_');
+}
+
+/**
+ * Ensures builtin cardbacks are stored in the cardbacks table.
+ * This allows them to be used for creating linked back cards.
+ */
+export async function ensureBuiltinCardbacksInDb(): Promise<void> {
+    // Skip if already ensured in this session
+    if (builtinCardbacksEnsured) return;
+
+    for (const cardback of BUILTIN_CARDBACKS) {
+        // Check if already in database
+        const existing = await db.cardbacks.get(cardback.id);
+
+        // Skip if it exists AND has originalBlob (properly set up)
+        if (existing?.originalBlob) continue;
+
+        try {
+            // Handle blank cardback specially - no image to fetch
+            if (cardback.id === 'cardback_builtin_blank') {
+                await db.cardbacks.put({
+                    id: cardback.id,
+                    sourceUrl: '',
+                    hasBuiltInBleed: true,
+                });
+                continue;
+            }
+
+            // Fetch the asset and convert to blob
+            const response = await fetch(cardback.imageUrl);
+            const blob = await response.blob();
+
+            // Store in database with originalBlob so it goes through bleed processing
+            await db.cardbacks.put({
+                id: cardback.id,
+                sourceUrl: cardback.imageUrl,
+                originalBlob: blob,
+                hasBuiltInBleed: cardback.hasBuiltInBleed,
+                // Clear processed blobs to force reprocessing
+                displayBlob: undefined,
+                displayBlobDarkened: undefined,
+                exportBlob: undefined,
+                exportBlobDarkened: undefined,
+            });
+        } catch (error) {
+            console.error(`Failed to store builtin cardback ${cardback.id}:`, error);
+        }
+    }
+
+    // Mark as ensured so we don't run this again
+    builtinCardbacksEnsured = true;
+}
+
+/**
+ * Get all available cardbacks from the cardbacks table.
+ * Returns built-in cardbacks plus any user-uploaded or MPC-imported cardbacks.
+ */
+export async function getAllCardbacks(): Promise<CardbackOption[]> {
+    // Ensure builtin cardbacks are in the database
+    await ensureBuiltinCardbacksInDb();
+
+    // Fetch all cardbacks from database
+    const cardbackImages = await db.cardbacks.toArray();
+
+    // Map database cardbacks to CardbackOption
+    const cardbackOptions: CardbackOption[] = cardbackImages.map(img => {
+        // Check if this is a builtin cardback
+        const builtinInfo = BUILTIN_CARDBACKS.find(b => b.id === img.id);
+
+        // Name priority: builtin name > custom displayName > last segment of sourceUrl > default
+        const name = builtinInfo?.name
+            || img.displayName
+            || img.sourceUrl?.split('/').pop()
+            || 'Uploaded Cardback';
+
+        // hasBuiltInBleed priority: image record override > builtin default > fallback false for uploaded
+        const hasBuiltInBleed = img.hasBuiltInBleed ?? builtinInfo?.hasBuiltInBleed ?? false;
+
+        return {
+            id: img.id,
+            name,
+            // Priority: displayBlob (processed) > originalBlob (unprocessed) > sourceUrl
+            imageUrl: img.displayBlob
+                ? URL.createObjectURL(img.displayBlob)
+                : img.originalBlob
+                    ? URL.createObjectURL(img.originalBlob)
+                    : img.sourceUrl || '',
+            source: builtinInfo ? 'builtin' : 'uploaded',
+            hasBuiltInBleed,
+        };
+    });
+
+    // Sort: builtins first in defined order, then user-uploaded alphabetically
+    const priorityOrder = ['cardback_builtin_mtg', 'cardback_builtin_proxxied', 'cardback_builtin_blank', 'cardback_builtin_classic_dots'];
+    return cardbackOptions.sort((a, b) => {
+        const aIndex = priorityOrder.indexOf(a.id);
+        const bIndex = priorityOrder.indexOf(b.id);
+
+        // Both are priority items - sort by priority order
+        if (aIndex !== -1 && bIndex !== -1) {
+            return aIndex - bIndex;
+        }
+        // Only a is priority - a comes first
+        if (aIndex !== -1) return -1;
+        // Only b is priority - b comes first
+        if (bIndex !== -1) return 1;
+        // Neither is priority - sort alphabetically
+        return a.name.localeCompare(b.name);
+    });
+}
+
+/**
+ * Adds a cardback to the cardbacks table.
+ * Used for user uploads and MPC imports.
+ */
+export async function addCardback(cardback: Cardback): Promise<void> {
+    await db.cardbacks.put(cardback);
+}
+
+/**
+ * Updates a cardback in the cardbacks table.
+ */
+export async function updateCardback(id: string, updates: Partial<Cardback>): Promise<void> {
+    await db.cardbacks.update(id, updates);
+}
+
+/**
+ * Deletes a cardback from the cardbacks table.
+ */
+export async function deleteCardback(id: string): Promise<void> {
+    await db.cardbacks.delete(id);
+}
+
+/**
+ * Gets a cardback by ID from the cardbacks table.
+ */
+export async function getCardback(id: string): Promise<Cardback | undefined> {
+    return await db.cardbacks.get(id);
+}

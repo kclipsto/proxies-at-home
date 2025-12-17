@@ -3,7 +3,7 @@ import { useSettingsStore } from "./settings";
 
 export interface Toast {
     id: string;
-    type: "processing" | "metadata";
+    type: "processing" | "metadata" | "success";
     message: string;
     dismissible: boolean;
 }
@@ -18,6 +18,7 @@ type ToastStore = {
     hideProcessingToast: () => void;
     showMetadataToast: () => void;
     hideMetadataToast: () => void;
+    showSuccessToast: (cardName: string) => void;
 };
 
 export const useToastStore = create<ToastStore>((set, get) => ({
@@ -82,4 +83,20 @@ export const useToastStore = create<ToastStore>((set, get) => ({
             toasts: state.toasts.filter((t) => t.type !== "metadata"),
         }));
     },
+
+    showSuccessToast: (cardName: string) => {
+        const { toasts, addToast, removeToast } = get();
+        // Remove any existing success toasts to prevent stacking
+        toasts.filter(t => t.type === "success").forEach(t => removeToast(t.id));
+        const id = addToast({
+            type: "success",
+            message: `Added ${cardName}`,
+            dismissible: false,
+        });
+        // Auto-dismiss after 2 seconds
+        setTimeout(() => {
+            removeToast(id);
+        }, 2000);
+    },
 }));
+

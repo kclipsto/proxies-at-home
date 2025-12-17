@@ -3,6 +3,7 @@ import { CardView } from "../SortableCard";
 import { baseCardWidthMm, baseCardHeightMm, getCardTargetBleed, type SourceTypeSettings } from "../../helpers/layout";
 import type { CardOption } from "../../../../shared/types";
 import type { MutableRefObject } from "react";
+import { useSelectionStore } from "../../store/selection";
 
 interface ContextMenuState {
     visible: boolean;
@@ -22,10 +23,12 @@ interface PageViewDragOverlayProps {
         ghostIds: Set<string>;
     }>;
     localCards: CardOption[];
+    backCardMap: Map<string, CardOption>;
     sourceSettings: SourceTypeSettings;
     effectiveBleedWidth: number;
     processedImageUrls: Record<string, string>;
     mobile?: boolean;
+    scale?: number;
     setContextMenu: (menu: ContextMenuState) => void;
 }
 
@@ -34,12 +37,16 @@ export function PageViewDragOverlay({
     activeId,
     multiDragState,
     localCards,
+    backCardMap,
     sourceSettings,
     effectiveBleedWidth,
     processedImageUrls,
     mobile,
+    scale = 1,
     setContextMenu,
 }: PageViewDragOverlayProps) {
+    // Subscribe directly to flippedCards to avoid triggering parent re-renders
+    const flippedCards = useSelectionStore((state) => state.flippedCards);
     return (
         <DragOverlay zIndex={40}>
             {droppedId ? null : (activeId ? (() => {
@@ -65,11 +72,16 @@ export function PageViewDragOverlay({
                     return (
                         <div className="relative">
                             {previewCards.map((card, i) => {
+                                // Check if card is flipped - if so, use back card for image and bleed
+                                const isCardFlipped = flippedCards.has(card.uuid);
+                                const backCard = backCardMap.get(card.uuid);
+                                const displayCard = isCardFlipped && backCard ? backCard : card;
+
                                 // Compute per-card bleed
-                                const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
+                                const bleedMm = getCardTargetBleed(displayCard, sourceSettings, effectiveBleedWidth);
                                 const cardWidthMm = baseCardWidthMm + bleedMm * 2;
                                 const cardHeightMm = baseCardHeightMm + bleedMm * 2;
-                                const processedUrl = processedImageUrls[card.imageId!] || "";
+                                const processedUrl = processedImageUrls[displayCard.imageId!] || "";
 
                                 return (
                                     <div
@@ -82,7 +94,7 @@ export function PageViewDragOverlay({
                                         }}
                                     >
                                         <CardView
-                                            card={card}
+                                            card={displayCard}
                                             index={0}
                                             globalIndex={0}
                                             imageSrc={processedUrl}
@@ -93,6 +105,12 @@ export function PageViewDragOverlay({
                                             setContextMenu={setContextMenu}
                                             disabled={true}
                                             mobile={mobile}
+                                            style={{
+                                                width: `${cardWidthMm}mm`,
+                                                height: `${cardHeightMm}mm`,
+                                                transform: `scale(${scale})`,
+                                                transformOrigin: 'top left',
+                                            }}
                                             isOverlay={true}
                                         />
                                         {/* Badge for total count if > 1, show on top card */}
@@ -110,17 +128,25 @@ export function PageViewDragOverlay({
 
                 const card = localCards.find(c => c.uuid === activeId)!;
                 if (!card) return null;
-                // Compute per-card bleed for the dragged card using source settings
-                const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
+
+                // Check if card is flipped - if so, use back card for image and bleed
+                const isFlipped = flippedCards.has(card.uuid);
+                const backCard = backCardMap.get(card.uuid);
+                const displayCard = isFlipped && backCard ? backCard : card;
+
+                // Use the same bleed calculation as computeCardLayouts - getCardTargetBleed handles all cases
+                const bleedMm = getCardTargetBleed(displayCard, sourceSettings, effectiveBleedWidth);
                 const cardWidthMm = baseCardWidthMm + bleedMm * 2;
                 const cardHeightMm = baseCardHeightMm + bleedMm * 2;
 
+                const imageUrl = processedImageUrls[displayCard.imageId!] || "";
+
                 return (
                     <CardView
-                        card={card}
+                        card={displayCard}
                         index={0} // Index doesn't matter for overlay
                         globalIndex={0} // Global index doesn't matter for overlay
-                        imageSrc={processedImageUrls[card.imageId!] || ""}
+                        imageSrc={imageUrl}
                         totalCardWidth={cardWidthMm}
                         totalCardHeight={cardHeightMm}
                         guideOffset={`${bleedMm}mm`}
@@ -129,8 +155,10 @@ export function PageViewDragOverlay({
                         disabled={true} // Disable interactions on overlay
                         mobile={mobile}
                         style={{
-                            // The modifier handles centering
-                            transformOrigin: 'center',
+                            width: `${cardWidthMm}mm`,
+                            height: `${cardHeightMm}mm`,
+                            transform: `scale(${scale})`,
+                            transformOrigin: 'top left',
                         }}
                         isOverlay={true}
                     />

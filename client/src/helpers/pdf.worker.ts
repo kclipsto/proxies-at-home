@@ -35,7 +35,10 @@ function createFullPageGuidesCanvas(
     colOffsets: number[], rowOffsets: number[],
     contentWidthPx: number, contentHeightPx: number,
     spacingPx: number, guideWidthPx: number,
-    cutLineStyle: 'none' | 'edges' | 'full'
+    cutLineStyle: 'none' | 'edges' | 'full',
+    rightAlignRows: boolean = false,
+    totalCards: number = 0,
+    blankIndices: Set<number> = new Set()
 ): OffscreenCanvas | null {
     if (cutLineStyle === 'none' || guideWidthPx <= 0 || cardLayouts.length === 0) return null;
 
@@ -46,14 +49,29 @@ function createFullPageGuidesCanvas(
     const xCuts = new Set<number>();
     const yCuts = new Set<number>();
 
-    // For each card, calculate its cut positions
+    // For each card, calculate its cut positions (skip blank cards)
     cardLayouts.forEach((layout, idx) => {
+        // Skip blank cards - they don't contribute to cut guides
+        if (blankIndices.has(idx)) return;
+
         const col = idx % columns;
         const row = Math.floor(idx / columns);
 
         if (col >= colWidths.length || row >= rowHeights.length) return;
 
-        const slotX = startX + colOffsets[col];
+        // Calculate right-align offset for incomplete rows (same logic as card rendering)
+        let rightAlignOffsetPx = 0;
+        if (rightAlignRows && totalCards > 0) {
+            const cardsInThisRow = Math.min(columns, totalCards - row * columns);
+            if (cardsInThisRow < columns) {
+                const missingColumns = columns - cardsInThisRow;
+                for (let c = 0; c < missingColumns; c++) {
+                    rightAlignOffsetPx += colWidths[c] + spacingPx;
+                }
+            }
+        }
+
+        const slotX = startX + colOffsets[col] + rightAlignOffsetPx;
         const slotY = startY + rowOffsets[row];
         const slotWidth = colWidths[col];
         const slotHeight = rowHeights[row];
@@ -124,7 +142,7 @@ function scaleGuideWidthForDPI(screenPx: number, screenPPI = 96, targetDPI: numb
 // MTG card corner radius: 2.5mm
 const CARD_CORNER_RADIUS_MM = 2.5;
 
-type GuideStyle = 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
+type GuideStyle = 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
 
 /**
  * Create a reusable guide overlay canvas that can be stamped onto each card
@@ -161,8 +179,14 @@ function createGuideCanvas(
     // REMOVED CLAMP to prevent outside guides from invading content area when bleed is small
     const offset = placement === 'outside' ? -w : 0;
 
-    if (style === 'corners') {
+    if (style === 'corners' || style === 'dashed-corners') {
         const len = MM_TO_PX(2, dpi);
+        const isDashed = style === 'dashed-corners';
+        if (isDashed) {
+            const dashLen = MM_TO_PX(1, dpi);
+            ctx.setLineDash([dashLen, dashLen]);
+            ctx.lineWidth = w;
+        }
         // TL
         ctx.fillRect(gx + offset, gy + offset, w, len);
         ctx.fillRect(gx + offset, gy + offset, len, w);
@@ -175,8 +199,13 @@ function createGuideCanvas(
         // BR
         ctx.fillRect(gx + contentW - len - offset, gy + contentH - w - offset, len, w);
         ctx.fillRect(gx + contentW - w - offset, gy + contentH - len - offset, w, len);
-    } else if (style === 'rounded-corners') {
+    } else if (style === 'rounded-corners' || style === 'dashed-rounded-corners') {
         const r = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
+        const isDashed = style === 'dashed-rounded-corners';
+        if (isDashed) {
+            const dashLen = MM_TO_PX(1, dpi);
+            ctx.setLineDash([dashLen, dashLen]);
+        }
         // For rounded corners, the offset logic is slightly different because we draw arcs
         // The arc path is at radius + halfWidth
         // If outside: we want inner edge at radius, so path is at radius + halfWidth (offset = 0 relative to corner center)
@@ -250,7 +279,9 @@ self.onmessage = async (event: MessageEvent) => {
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
             imagesById, API_BASE, darkenNearBlack, cutLineStyle, perCardGuideStyle, guidePlacement,
             // Receive pre-normalized source settings directly (no legacy conversion)
-            sourceSettings, withBleedSourceAmount
+            sourceSettings, withBleedSourceAmount,
+            // Right-align incomplete rows (for backs export)
+            rightAlignRows
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -315,10 +346,18 @@ self.onmessage = async (event: MessageEvent) => {
 
         // Create and draw full page guides (behind cards)
         // Uses per-card layouts to compute cut positions for mixed bleed sizes
+        // Skip blank cards (they don't contribute to cut guides)
+        const blankIndices = new Set<number>();
+        pageCards.forEach((card: CardOption, idx: number) => {
+            if (card.imageId === 'cardback_builtin_blank') {
+                blankIndices.add(idx);
+            }
+        });
         const fullPageGuidesCanvas = createFullPageGuidesCanvas(
             pageWidthPx, pageHeightPx, startX, startY, columns,
             layouts, colWidths, rowHeights, colOffsets, rowOffsets,
-            contentWidthInPx, contentHeightInPx, spacingPx, scaledGuideWidth, cutLineStyle
+            contentWidthInPx, contentHeightInPx, spacingPx, scaledGuideWidth, cutLineStyle,
+            rightAlignRows, pageCards.length, blankIndices
         );
         if (fullPageGuidesCanvas) {
             ctx.drawImage(fullPageGuidesCanvas, 0, 0);
@@ -336,6 +375,7 @@ self.onmessage = async (event: MessageEvent) => {
             imageCardWidthPx: number;
             imageCardHeightPx: number;
             bleedPx: number;
+            isBlank: boolean;  // True for cardback_builtin_blank cards (no guides)
         };
 
         // PHASE 1: Prepare all cards in PARALLEL
@@ -346,8 +386,22 @@ self.onmessage = async (event: MessageEvent) => {
             const slotWidth = colWidths[col];
             const slotHeight = rowHeights[row];
 
+            // Calculate right-align offset for incomplete rows
+            // For incomplete final row, shift cards to the right by (columns - cardsInRow) slots
+            let rightAlignOffsetPx = 0;
+            if (rightAlignRows) {
+                const cardsInThisRow = Math.min(columns, pageCards.length - row * columns);
+                if (cardsInThisRow < columns) {
+                    const missingColumns = columns - cardsInThisRow;
+                    // Calculate offset: sum of missing column widths + spacing
+                    for (let c = 0; c < missingColumns; c++) {
+                        rightAlignOffsetPx += colWidths[c] + spacingPx;
+                    }
+                }
+            }
+
             // Card position at top-left of slot, centered within if smaller
-            const slotX = startX + colOffsets[col];
+            const slotX = startX + colOffsets[col] + rightAlignOffsetPx;
             const slotY = startY + rowOffsets[row];
             const centerOffsetInSlotX = (slotWidth - cardLayout.cardWidthPx) / 2;
             const centerOffsetInSlotY = (slotHeight - cardLayout.cardHeightPx) / 2;
@@ -400,7 +454,17 @@ self.onmessage = async (event: MessageEvent) => {
                     }
 
                     try {
-                        if (!src) {
+                        if (card.imageId === 'cardback_builtin_blank') {
+                            // Blank back card - clean white fill, no guides or placeholders
+                            const cardBleedPx = cardLayout.bleedPx;
+                            const cardWidthWithBleed = contentWidthInPx + 2 * cardBleedPx;
+                            const cardHeightWithBleed = contentHeightInPx + 2 * cardBleedPx;
+                            const blankCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
+                            const cardCtx = blankCanvas.getContext('2d')!;
+                            cardCtx.fillStyle = 'white';
+                            cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
+                            finalCardCanvas = blankCanvas;
+                        } else if (!src) {
                             // Placeholder for missing images
                             const cardBleedPx = cardLayout.bleedPx;
                             const cardWidthWithBleed = contentWidthInPx + 2 * cardBleedPx;
@@ -476,28 +540,32 @@ self.onmessage = async (event: MessageEvent) => {
                 imageCardWidthPx,
                 imageCardHeightPx,
                 bleedPx: cardLayout.bleedPx,
+                isBlank: card.imageId === 'cardback_builtin_blank',
             };
         }));
 
         // PHASE 2: Draw all cards SEQUENTIALLY (canvas context not thread-safe)
         let imagesProcessed = 0;
         for (const prepared of preparedCards) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(prepared.x, prepared.y, prepared.cardWidthPx, prepared.cardHeightPx);
-            ctx.clip();
-            ctx.drawImage(prepared.canvas, prepared.x + prepared.centerOffsetX, prepared.y + prepared.centerOffsetY, prepared.imageCardWidthPx, prepared.imageCardHeightPx);
-            ctx.restore();
+            // Skip drawing blank cards entirely (leave transparent/page background)
+            if (!prepared.isBlank) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(prepared.x, prepared.y, prepared.cardWidthPx, prepared.cardHeightPx);
+                ctx.clip();
+                ctx.drawImage(prepared.canvas, prepared.x + prepared.centerOffsetX, prepared.y + prepared.centerOffsetY, prepared.imageCardWidthPx, prepared.imageCardHeightPx);
+                ctx.restore();
 
-            if (prepared.canvas instanceof ImageBitmap) {
-                prepared.canvas.close();
-            }
+                if (prepared.canvas instanceof ImageBitmap) {
+                    prepared.canvas.close();
+                }
 
-            // Stamp per-card guide overlay
-            if (perCardGuideCanvas) {
-                const guideOffsetX = prepared.bleedPx - bleedPxForGuide;
-                const guideOffsetY = prepared.bleedPx - bleedPxForGuide;
-                ctx.drawImage(perCardGuideCanvas, prepared.x + guideOffsetX, prepared.y + guideOffsetY);
+                // Stamp per-card guide overlay (skip for blank cards)
+                if (perCardGuideCanvas) {
+                    const guideOffsetX = prepared.bleedPx - bleedPxForGuide;
+                    const guideOffsetY = prepared.bleedPx - bleedPxForGuide;
+                    ctx.drawImage(perCardGuideCanvas, prepared.x + guideOffsetX, prepared.y + guideOffsetY);
+                }
             }
 
             imagesProcessed++;

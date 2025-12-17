@@ -23,7 +23,6 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     const enrichmentController = useRef<AbortController | null>(null);
 
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
-    const setLoadingMessage = useLoadingStore((state) => state.setLoadingMessage);
 
     const globalLanguage = useSettingsStore((s) => s.globalLanguage ?? "en");
     const setGlobalLanguage = useSettingsStore((s) => s.setGlobalLanguage ?? (() => { }));
@@ -36,9 +35,6 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     // --- Fetch Logic ---
 
     const processCardFetch = async (infos: CardInfo[]) => {
-        setLoadingTask("Fetching cards");
-        setLoadingMessage("Connecting to Scryfall...");
-
         onUploadComplete?.();
 
         if (fetchController.current) {
@@ -48,18 +44,16 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
 
         if (infos.length === 0) {
             alert("No valid cards found to import. Please check your input.");
-            setLoadingTask(null);
             return;
         }
 
         try {
+            // No loading modal - processing toast will show via useImageProcessing
             await streamCards({
                 cardInfos: infos,
                 language: globalLanguage,
                 importType: 'scryfall',
                 signal: fetchController.current.signal,
-                onProgress: (processed, total) => setLoadingMessage(`(${processed} / ${total})`),
-                onFirstCard: () => setLoadingTask(null),
                 onComplete: () => {
                     setDeckText("");
                     onUploadComplete?.();
@@ -67,10 +61,8 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             });
         } catch (err: unknown) {
             if (err instanceof Error && err.name !== "AbortError") {
-                setLoadingTask(null);
                 alert(err.message || "Something went wrong while fetching cards.");
             } else if (!(err instanceof Error)) {
-                setLoadingTask(null);
                 alert("An unknown error occurred while fetching cards.");
             }
         } finally {
@@ -148,6 +140,12 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                     placeholder={`1x Sol Ring\n2x Counterspell\nFor specific art include set / CN\neg. Strionic Resonator (lcc)\nor Repurposing Bay (dft) 380`}
                     value={deckText}
                     onChange={(e) => setDeckText(e.target.value)}
+                    onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && deckText.trim()) {
+                            e.preventDefault();
+                            handleSubmit();
+                        }
+                    }}
                 />
             </div>
 
@@ -185,6 +183,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                     isOpen={isAdvancedSearchOpen}
                     onClose={() => setIsAdvancedSearchOpen(false)}
                     onSelectCard={handleAddCard}
+                    keepOpenOnAdd={true}
                 />
             )}
 

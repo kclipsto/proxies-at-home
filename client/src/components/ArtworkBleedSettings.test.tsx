@@ -44,14 +44,14 @@ describe('ArtworkBleedSettings', () => {
     });
 
     it('renders correctly with default settings', () => {
-        render(<ArtworkBleedSettings />);
+        render(<ArtworkBleedSettings selectedFace="front" />);
         expect(screen.getByText('Bleed Settings')).toBeInTheDocument();
         // The target BleedModeControl uses 'Use Global Bleed Width' as default label
         expect(screen.getByLabelText('Use Global Bleed Width')).toBeChecked();
     });
 
     it('updates local state when changing bleed mode', () => {
-        render(<ArtworkBleedSettings />);
+        render(<ArtworkBleedSettings selectedFace="front" />);
         // BleedModeControl uses 'Override' for manual mode
         const overrideRadio = screen.getByLabelText('Override');
         fireEvent.click(overrideRadio);
@@ -59,7 +59,7 @@ describe('ArtworkBleedSettings', () => {
     });
 
     it('calls undoableUpdateCardBleedSettings on save', async () => {
-        render(<ArtworkBleedSettings />);
+        render(<ArtworkBleedSettings selectedFace="front" />);
 
         // Change to "No Bleed"
         const noBleedRadio = screen.getByLabelText('No Bleed');

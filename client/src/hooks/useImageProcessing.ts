@@ -1,11 +1,49 @@
 import { API_BASE } from "@/constants";
-import { db } from "../db"; // Import the Dexie database instance
+import { db, type Image, type Cardback } from "../db"; // Import the Dexie database instance
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { useSettingsStore } from "../store";
 import { markCardProcessed, markCardFailed } from "../helpers/ImportSession";
 import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, getHasBuiltInBleed, type GlobalSettings } from "../helpers/imageSpecs";
+import { isCardbackId } from "../helpers/cardbackLibrary";
+
+/** Creates a GlobalSettings object from the current store state */
+function getGlobalSettings(bleedWidth: number): GlobalSettings {
+  const state = useSettingsStore.getState();
+  return {
+    bleedEdgeWidth: bleedWidth,
+    bleedEdgeUnit: 'mm',
+    withBleedSourceAmount: state.withBleedSourceAmount,
+    withBleedTargetMode: state.withBleedTargetMode,
+    withBleedTargetAmount: state.withBleedTargetAmount,
+    noBleedTargetMode: state.noBleedTargetMode,
+    noBleedTargetAmount: state.noBleedTargetAmount,
+  };
+}
+
+/**
+ * Gets the image or cardback record for a card.
+ * Uses the imageId prefix to determine which table to query.
+ */
+async function getImageOrCardback(_card: CardOption, imageId: string): Promise<Image | Cardback | undefined> {
+  if (isCardbackId(imageId)) {
+    return await db.cardbacks.get(imageId);
+  }
+  return await db.images.get(imageId);
+}
+
+/**
+ * Updates the image or cardback record for a card.
+ * Uses the imageId prefix to determine which table to update.
+ */
+async function updateImageOrCardback(_card: CardOption, imageId: string, updates: Partial<Image | Cardback>): Promise<void> {
+  if (isCardbackId(imageId)) {
+    await db.cardbacks.update(imageId, updates);
+  } else {
+    await db.images.update(imageId, updates);
+  }
+}
 
 export function useImageProcessing({
   unit,
@@ -21,10 +59,14 @@ export function useImageProcessing({
   // Note: Source-type bleed settings (withBleedMode, noBleedMode, etc.) are read
   // directly from useSettingsStore.getState() in usage to avoid stale closures
 
-  const [loadingMap, setLoadingMap] = useState<
+  // Key by imageId for deduplication - multiple cards can share same image
+  const [imageLoadingMap, setImageLoadingMap] = useState<
     Record<string, "idle" | "loading" | "error">
   >({});
   const inFlight = useRef<Record<string, Promise<boolean>>>({});
+  // Track images that have been successfully processed in this session
+  // to avoid repeated processing attempts
+  const processedImageIds = useRef<Set<string>>(new Set());
 
   const hydrated = useSettingsStore((state) => state.hasHydrated);
 
@@ -33,7 +75,7 @@ export function useImageProcessing({
   ): Promise<string | undefined> {
     if (!card.imageId) return undefined;
 
-    const imageRecord = await db.images.get(card.imageId);
+    const imageRecord = await getImageOrCardback(card, card.imageId);
     if (imageRecord?.originalBlob) {
       return URL.createObjectURL(imageRecord.originalBlob);
     }
@@ -42,17 +84,40 @@ export function useImageProcessing({
 
   const ensureProcessed = useCallback(async (card: CardOption, priority: Priority = Priority.LOW): Promise<void> => {
     const { imageId } = card;
+    // console.log('[PerfTrace] ensureProcessed called for', card.uuid, 'imageId:', imageId, 'priority:', priority);
+
     if (!imageId) {
       // Cards without images can't be processed - mark as processed to clear from pending
       markCardProcessed(card.uuid, false);
       return;
     }
 
+    // Special case: blank cardback has no image to process - just mark as done
+    if (imageId === 'cardback_builtin_blank') {
+      markCardProcessed(card.uuid, false);
+      processedImageIds.current.add(imageId);
+      return;
+    }
+
     if (!hydrated) {
       // If not hydrated yet, we can't process. Mark as processed anyway so stats are accurate.
       // The card will be reprocessed when the effect runs again after hydration.
-      console.warn(`[useImageProcessing] Not hydrated yet, skipping ${card.name} (${card.uuid})`);
       return;
+    }
+
+    // Fast path: skip if this image was already processed successfully
+    // But first check if the image's settings were invalidated (generatedHasBuiltInBleed cleared)
+    if (processedImageIds.current.has(imageId)) {
+      // Check if settings were invalidated by looking at the image record
+      const cachedImage = await getImageOrCardback(card, imageId);
+      const settingsInvalidated = cachedImage?.generatedHasBuiltInBleed === undefined;
+      if (!settingsInvalidated) {
+        // console.log('[PerfTrace] ensureProcessed: Already processed in session (fast path)', card.uuid);
+        markCardProcessed(card.uuid, true);
+        return;
+      }
+      // Settings were invalidated, remove from cache and continue to reprocess
+      processedImageIds.current.delete(imageId);
     }
 
     const existingRequest = inFlight.current[imageId];
@@ -63,10 +128,10 @@ export function useImageProcessing({
       return existingRequest.then((wasCacheHit) => {
         // Track cache hit for this duplicate card
         markCardProcessed(card.uuid, wasCacheHit);
-        setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
+        // Loading state is already set by imageId - no need to update again
       }, (e: unknown) => {
         markCardFailed(card.uuid);
-        setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+        // Error state is already set by imageId - no need to update again
         throw e;
       });
     }
@@ -74,19 +139,9 @@ export function useImageProcessing({
     const p = (async (): Promise<boolean> => {
       try {
         // Double-check after acquiring slot (settings might have changed)
-        const currentImage = await db.images.get(imageId);
+        const currentImage = await getImageOrCardback(card, imageId);
 
-        // Get fresh values from store for spec calculation
-        const state = useSettingsStore.getState();
-        const settings: GlobalSettings = {
-          bleedEdgeWidth, // passed from hook props (already mm)
-          bleedEdgeUnit: 'mm', // Already converted
-          withBleedSourceAmount: state.withBleedSourceAmount,
-          withBleedTargetMode: state.withBleedTargetMode,
-          withBleedTargetAmount: state.withBleedTargetAmount,
-          noBleedTargetMode: state.noBleedTargetMode,
-          noBleedTargetAmount: state.noBleedTargetAmount,
-        };
+        const settings = getGlobalSettings(bleedEdgeWidth);
 
         const effectiveBleedMode = getEffectiveBleedMode(card, settings);
         const effectiveExistingBleedMm = getEffectiveExistingBleedMm(card, settings);
@@ -96,6 +151,7 @@ export function useImageProcessing({
 
         // Smart Cache Check: valid if width matches AND generation parameters match
         // If generatedHasBuiltInBleed is missing (legacy), we might reprocess once, which is safe.
+        // Always use card.hasBuiltInBleed - each back card stores its own settings
         const hasBuiltInBleed = getHasBuiltInBleed(card);
         if (
           currentImage?.displayBlob &&
@@ -105,17 +161,18 @@ export function useImageProcessing({
           currentImage.generatedBleedMode === effectiveBleedMode
         ) {
           // Smart cache hit - already processed with correct settings
+          processedImageIds.current.add(imageId);
           markCardProcessed(card.uuid, true);
           return true; // Cache hit (processed blob)
         }
 
         const src = await getOriginalSrcForCard(card);
         if (!src) {
-          setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+          setImageLoadingMap((m) => ({ ...m, [imageId]: "error" }));
           markCardFailed(card.uuid);
           return false;
         }
-        setLoadingMap((m) => ({ ...m, [card.uuid]: "loading" }));
+        setImageLoadingMap((m) => ({ ...m, [imageId]: "loading" }));
 
         try {
           const result = await imageProcessor.process({
@@ -125,7 +182,7 @@ export function useImageProcessing({
             unit,
             apiBase: API_BASE,
             isUserUpload: card.isUserUpload,
-            hasBuiltInBleed: getHasBuiltInBleed(card),
+            hasBuiltInBleed,
             bleedMode: effectiveBleedMode,
             existingBleedMm: effectiveExistingBleedMm,
             dpi,
@@ -145,7 +202,7 @@ export function useImageProcessing({
               imageCacheHit,
             } = result;
 
-            await db.images.update(imageId, {
+            await updateImageOrCardback(card, imageId, {
               displayBlob,
               displayDpi,
               displayBleedWidth,
@@ -158,9 +215,12 @@ export function useImageProcessing({
               generatedBleedMode: effectiveBleedMode,
             });
 
+            // Mark as processed for this session
+            processedImageIds.current.add(imageId);
+
             // Track as processed with cache hit status
             markCardProcessed(card.uuid, !!imageCacheHit);
-            setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
+            setImageLoadingMap((m) => ({ ...m, [imageId]: "idle" }));
             return !!imageCacheHit;
           } else {
             throw new Error(result.error);
@@ -170,11 +230,11 @@ export function useImageProcessing({
 
           if (!isExpectedError) {
             console.error("ensureProcessed error for", card.name, e);
-            setLoadingMap((m) => ({ ...m, [card.uuid]: "error" }));
+            setImageLoadingMap((m) => ({ ...m, [imageId]: "error" }));
             markCardFailed(card.uuid);
           } else {
             // Stop spinner for cancelled/promoted requests
-            setLoadingMap((m) => ({ ...m, [card.uuid]: "idle" }));
+            setImageLoadingMap((m) => ({ ...m, [imageId]: "idle" }));
             markCardFailed(card.uuid);
           }
           return false;
@@ -210,26 +270,25 @@ export function useImageProcessing({
       const promises = cards.map(async (card) => {
         if (!card.imageId) return;
 
-        const imageRecord = await db.images.get(card.imageId);
+        const imageRecord = await getImageOrCardback(card, card.imageId);
         if (!imageRecord) return;
 
-        const src = imageRecord.originalBlob
-          ? URL.createObjectURL(imageRecord.originalBlob)
-          : imageRecord.sourceUrl;
+        // Get image source: prefer originalBlob, fall back to sourceUrl only if it's a valid URL
+        let src: string | undefined;
+        if (imageRecord.originalBlob) {
+          src = URL.createObjectURL(imageRecord.originalBlob);
+        } else if (imageRecord.sourceUrl && (
+          imageRecord.sourceUrl.startsWith('http://') ||
+          imageRecord.sourceUrl.startsWith('https://') ||
+          imageRecord.sourceUrl.startsWith('blob:') ||
+          imageRecord.sourceUrl.startsWith('/')
+        )) {
+          src = imageRecord.sourceUrl;
+        }
 
         if (!src) return;
         try {
-          // Get fresh values from store for spec calculation
-          const state = useSettingsStore.getState();
-          const settings: GlobalSettings = {
-            bleedEdgeWidth: newBleedWidth,
-            bleedEdgeUnit: 'mm', // Already converted
-            withBleedSourceAmount: state.withBleedSourceAmount,
-            withBleedTargetMode: state.withBleedTargetMode,
-            withBleedTargetAmount: state.withBleedTargetAmount,
-            noBleedTargetMode: state.noBleedTargetMode,
-            noBleedTargetAmount: state.noBleedTargetAmount,
-          };
+          const settings = getGlobalSettings(newBleedWidth);
 
           // Get effective bleed mode from settings (same as ensureProcessed)
           const effectiveBleedMode = getEffectiveBleedMode(card, settings);
@@ -237,11 +296,6 @@ export function useImageProcessing({
 
           // Use getExpectedBleedWidth for correct priority: per-card > type override > global
           const effectiveBleedWidth = getExpectedBleedWidth(card, newBleedWidth, settings);
-
-
-
-
-
 
           const result = await imageProcessor.process({
             uuid: card.uuid,
@@ -271,7 +325,7 @@ export function useImageProcessing({
               exportBlobDarkened,
             } = result;
 
-            await db.images.update(card.imageId, {
+            await updateImageOrCardback(card, card.imageId, {
               displayBlob,
               displayDpi,
               displayBleedWidth,
@@ -301,8 +355,13 @@ export function useImageProcessing({
   const cancelProcessing = useCallback(() => {
     imageProcessor.cancelAll();
     inFlight.current = {};
-    setLoadingMap({});
+    setImageLoadingMap({});
   }, [imageProcessor]);
 
-  return { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing };
+  // Helper to look up loading state by imageId (for consumers)
+  const getLoadingState = useCallback((imageId: string | undefined): "idle" | "loading" | "error" => {
+    return imageId ? imageLoadingMap[imageId] ?? "idle" : "idle";
+  }, [imageLoadingMap]);
+
+  return { getLoadingState, ensureProcessed, reprocessSelectedImages, cancelProcessing };
 }

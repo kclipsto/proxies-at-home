@@ -31,6 +31,29 @@ export interface Image {
   prints?: PrintInfo[];
 }
 
+// Cardback library images (separate from card images)
+// Note: Cardbacks don't need refCount - they're only deleted explicitly via UI
+export interface Cardback {
+  id: string;
+  originalBlob?: Blob;
+
+  // Processed versions
+  displayBlob?: Blob;
+  displayBlobDarkened?: Blob;
+  exportBlob?: Blob;
+  exportBlobDarkened?: Blob;
+  exportBleedWidth?: number;
+
+  // Generation metadata
+  generatedHasBuiltInBleed?: boolean;
+  generatedBleedMode?: string;
+
+  // Source and display
+  sourceUrl?: string;
+  displayName?: string;
+  hasBuiltInBleed?: boolean;
+}
+
 
 export type Json =
   | string
@@ -62,6 +85,9 @@ export class ProxxiedDexie extends Dexie {
   // 'cardImages' table to store image blobs
   // '&uuid' makes 'uuid' a unique index and primary key
   images!: Table<Image, string>;
+
+  // Cardbacks table - persists across card clears
+  cardbacks!: Table<Cardback, string>;
 
   settings!: Table<Setting, string>;
 
@@ -102,6 +128,23 @@ export class ProxxiedDexie extends Dexie {
     this.version(5).stores({
       cards: '&uuid, imageId, order, name, needsEnrichment',
       images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+    });
+    // Version 6: Add DFC support - linked card indexes
+    this.version(6).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+    });
+    // Version 7: Add separate cardbacks table (persists across card clears)
+    this.version(7).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
       settings: '&id',
       imageCache: '&url, cachedAt',
       cardMetadataCache: 'id, name, set, number, cachedAt',

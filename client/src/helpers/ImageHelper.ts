@@ -41,3 +41,23 @@ export function pngToNormal(pngUrl: string) {
 export async function fetchWithRetry(url: string, retries = 3, baseDelay = 250): Promise<Response> {
   return fetchWithRetryBase(url, retries, baseDelay);
 }
+
+/**
+ * Parse an image ID from a URL.
+ * - Scryfall URLs: strips query params (e.g., "https://cards.scryfall.io/.../front.jpg?1234" → "https://cards.scryfall.io/.../front.jpg")
+ * - MPC/Drive URLs: extracts the ID from "id=" parameter (e.g., "...?id=abc123" → "abc123")
+ * - Other URLs: returns as-is
+ */
+export function parseImageIdFromUrl(url: string): string {
+  if (!url) return url;
+
+  if (url.includes("scryfall")) {
+    return url.split("?")[0];
+  }
+
+  if (url.includes("id=")) {
+    return url.split("id=")[1] || url;
+  }
+
+  return url;
+}

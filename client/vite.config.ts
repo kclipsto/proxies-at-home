@@ -55,6 +55,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+        // Built-in cardback images are 2-3MB each; allow them to be precached
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
       },
     }),
   ],

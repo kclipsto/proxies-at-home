@@ -7,6 +7,11 @@ interface SelectionState {
     selectedCards: Set<string>;
 
     /**
+     * Set of flipped card UUIDs (for showing back face).
+     */
+    flippedCards: Set<string>;
+
+    /**
      * Last clicked card index for shift+click range selection.
      */
     lastClickedIndex: number | null;
@@ -60,10 +65,21 @@ interface SelectionState {
      * Get array of selected card UUIDs.
      */
     getSelectedArray: () => string[];
+
+    /**
+     * Toggle flip state for a card. If cards are selected, flips all selected cards.
+     */
+    toggleFlip: (uuid: string) => void;
+
+    /**
+     * Check if a card is flipped.
+     */
+    isFlipped: (uuid: string) => boolean;
 }
 
 export const useSelectionStore = create<SelectionState>((set, get) => ({
     selectedCards: new Set(),
+    flippedCards: new Set(),
     lastClickedIndex: null,
     isMultiSelectMode: false,
 
@@ -127,5 +143,64 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
     setMultiSelectMode: (enabled) => set({ isMultiSelectMode: enabled }),
 
     getSelectedArray: () => Array.from(get().selectedCards),
+
+    toggleFlip: (uuid) => {
+        const state = get();
+        const newFlipped = new Set(state.flippedCards);
+        const uuidsToUpdate: string[] = [];
+
+        // If this card is selected and there are multiple selections, flip all selected
+        if (state.selectedCards.has(uuid) && state.selectedCards.size > 1) {
+            // Determine target state based on clicked card
+            const shouldFlip = !state.flippedCards.has(uuid);
+
+            state.selectedCards.forEach((selectedUuid) => {
+                if (shouldFlip) {
+                    newFlipped.add(selectedUuid);
+                } else {
+                    newFlipped.delete(selectedUuid);
+                }
+                uuidsToUpdate.push(selectedUuid);
+            });
+
+            // Persist to database (fire and forget)
+            import('../db').then(({ db }) => {
+                db.cards.bulkUpdate(
+                    uuidsToUpdate.map(id => ({ key: id, changes: { isFlipped: shouldFlip } }))
+                );
+            });
+        } else {
+            // Single card flip
+            const isCurrentlyFlipped = newFlipped.has(uuid);
+            if (isCurrentlyFlipped) {
+                newFlipped.delete(uuid);
+            } else {
+                newFlipped.add(uuid);
+            }
+
+            // Persist to database (fire and forget)
+            import('../db').then(({ db }) => {
+                db.cards.update(uuid, { isFlipped: !isCurrentlyFlipped });
+            });
+        }
+
+        set({ flippedCards: newFlipped });
+    },
+
+    isFlipped: (uuid) => get().flippedCards.has(uuid),
 }));
+
+/**
+ * Initialize flip state from database.
+ * Call this during app initialization to restore flip state.
+ */
+export async function initializeFlipState() {
+    const { db } = await import('../db');
+    const flippedCards = await db.cards
+        .filter(c => c.isFlipped === true)
+        .toArray();
+
+    const flippedSet = new Set(flippedCards.map(c => c.uuid));
+    useSelectionStore.setState({ flippedCards: flippedSet });
+}
 

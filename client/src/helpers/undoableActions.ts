@@ -13,8 +13,12 @@ import {
     addRemoteImage,
     changeCardArtwork,
     rebalanceCardOrders,
+    createLinkedBackCard,
+    createLinkedBackCardsBulk,
 } from "./dbUtils";
 import { useUndoRedoStore } from "@/store/undoRedo";
+import { useSettingsStore } from "@/store/settings";
+import { BUILTIN_CARDBACKS, isCardbackId } from "./cardbackLibrary";
 
 /**
  * Deletes a card with undo support.
@@ -104,20 +108,54 @@ export async function undoableDuplicateCard(uuid: string): Promise<string | unde
 /**
  * Adds cards with undo support.
  * Tracks all added card UUIDs so they can be deleted on undo.
+ * @param cardsData The card data to add
+ * @param options.startOrder Explicit starting order for the first card. If provided, cards will be ordered sequentially from this value.
  */
 export async function undoableAddCards(
-    cardsData: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }>
+    cardsData: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }>,
+    options?: { startOrder?: number }
 ): Promise<CardOption[]> {
     if (cardsData.length === 0) return [];
 
     // Perform the addition
-    const addedCards = await addCards(cardsData);
+    const addedCards = await addCards(cardsData, options);
 
     if (addedCards.length === 0) return [];
 
     // Capture added card UUIDs and image info
     const addedUuids = addedCards.map((c) => c.uuid);
     const addedImageIds = [...new Set(addedCards.map((c) => c.imageId).filter(Boolean))] as string[];
+
+    // Capture source URLs for images before any undo might delete them
+    // This is needed because redo needs to re-fetch images using their original URLs
+    const imageSourceUrls = new Map<string, string>();
+    const existingImages = await db.images.bulkGet(addedImageIds);
+    for (let i = 0; i < addedImageIds.length; i++) {
+        const image = existingImages[i];
+        const imageId = addedImageIds[i];
+        if (image?.sourceUrl) {
+            imageSourceUrls.set(imageId, image.sourceUrl);
+        } else if (image?.imageUrls?.[0]) {
+            imageSourceUrls.set(imageId, image.imageUrls[0]);
+        }
+    }
+
+    // Create linked back cards for all added front cards (cards without linkedFrontId)
+    const frontCards = addedCards.filter(c => !c.linkedFrontId);
+    const defaultCardbackId = useSettingsStore.getState().defaultCardbackId;
+    const defaultCardback = BUILTIN_CARDBACKS.find(cb => cb.id === defaultCardbackId);
+    const defaultCardbackName = defaultCardback?.name || 'Default';
+    const hasBuiltInBleed = defaultCardback?.hasBuiltInBleed ?? false;
+
+    // Create linked back cards for all added front cards using bulk operation
+    const linkedBackUuids = await createLinkedBackCardsBulk(
+        frontCards.map(frontCard => ({
+            frontUuid: frontCard.uuid,
+            backImageId: defaultCardbackId,
+            backName: defaultCardbackName,
+            options: { hasBuiltInBleed, usesDefaultCardback: true },
+        }))
+    );
 
     // Record the action for undo
     useUndoRedoStore.getState().pushAction({
@@ -126,40 +164,101 @@ export async function undoableAddCards(
             ? `Add "${addedCards[0].name}"`
             : `Add ${addedCards.length} cards`,
         undo: async () => {
-            // Delete all added cards
-            await db.transaction("rw", db.cards, db.images, async () => {
-                for (const uuid of addedUuids) {
-                    const card = await db.cards.get(uuid);
-                    if (card) {
-                        await db.cards.delete(uuid);
-                        // Decrement image ref
-                        if (card.imageId) {
-                            const image = await db.images.get(card.imageId);
-                            if (image) {
-                                if (image.refCount > 1) {
-                                    await db.images.update(card.imageId, { refCount: image.refCount - 1 });
-                                } else {
-                                    await db.images.delete(card.imageId);
-                                }
-                            }
+            // Delete all added cards AND their linked back cards using bulk operations
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+                // Gather all cards to delete
+                const allUuidsToDelete = [...linkedBackUuids, ...addedUuids];
+                const allCards = await db.cards.bulkGet(allUuidsToDelete);
+
+                // Collect image refs to decrement (cardbacks don't need ref counting)
+                const imageRefDecrements = new Map<string, number>();
+                const imagesToDelete: string[] = [];
+
+                for (const card of allCards) {
+                    if (card?.imageId) {
+                        // Only track refs for non-cardback images
+                        if (!isCardbackId(card.imageId)) {
+                            imageRefDecrements.set(card.imageId, (imageRefDecrements.get(card.imageId) || 0) + 1);
                         }
                     }
+                }
+
+                // Update regular images (cardbacks don't need ref counting)
+                const imageIds = Array.from(imageRefDecrements.keys());
+                const images = await db.images.bulkGet(imageIds);
+                const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+
+                for (let i = 0; i < imageIds.length; i++) {
+                    const image = images[i];
+                    const imageId = imageIds[i];
+                    const decrement = imageRefDecrements.get(imageId) || 0;
+
+                    if (image) {
+                        const newRefCount = image.refCount - decrement;
+                        if (newRefCount > 0) {
+                            imageUpdates.push({ key: imageId, changes: { refCount: newRefCount } });
+                        } else {
+                            imagesToDelete.push(imageId);
+                        }
+                    }
+                }
+
+                // Perform bulk operations
+                if (allUuidsToDelete.length > 0) {
+                    await db.cards.bulkDelete(allUuidsToDelete);
+                }
+                if (imageUpdates.length > 0) {
+                    await db.images.bulkUpdate(imageUpdates);
+                }
+                if (imagesToDelete.length > 0) {
+                    await db.images.bulkDelete(imagesToDelete);
                 }
             });
         },
         redo: async () => {
-            // Re-add cards with original data but new UUIDs
-            // We need to restore the image refs first
-            for (const imageId of addedImageIds) {
-                const existingImage = await db.images.get(imageId);
-                if (existingImage) {
-                    await db.images.update(imageId, { refCount: existingImage.refCount + 1 });
+            // Re-add cards with original data
+            // Restore image refs using bulk operations
+            const existingImages = await db.images.bulkGet(addedImageIds);
+            const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+            const missingImageIds: string[] = [];
+
+            for (let i = 0; i < addedImageIds.length; i++) {
+                const image = existingImages[i];
+                const imageId = addedImageIds[i];
+                if (image) {
+                    imageUpdates.push({ key: imageId, changes: { refCount: image.refCount + 1 } });
                 } else {
-                    // Image was deleted, try to recreate from card data
+                    missingImageIds.push(imageId);
+                }
+            }
+
+            if (imageUpdates.length > 0) {
+                await db.images.bulkUpdate(imageUpdates);
+            }
+
+            // Recreate missing images using their original source URLs
+            for (const imageId of missingImageIds) {
+                const sourceUrl = imageSourceUrls.get(imageId);
+                if (sourceUrl) {
+                    // Use the captured source URL to properly re-fetch the image
+                    await addRemoteImage([sourceUrl], 1);
+                } else {
+                    // Fallback: try using imageId as URL (works for Scryfall images)
                     await addRemoteImage([imageId], 1);
                 }
             }
-            await addCards(cardsData);
+
+            const redoAddedCards = await addCards(cardsData);
+            // Re-create linked back cards for front cards using bulk
+            const redoFrontCards = redoAddedCards.filter(c => !c.linkedFrontId);
+            await createLinkedBackCardsBulk(
+                redoFrontCards.map(frontCard => ({
+                    frontUuid: frontCard.uuid,
+                    backImageId: defaultCardbackId,
+                    backName: defaultCardbackName,
+                    options: { hasBuiltInBleed, usesDefaultCardback: true },
+                }))
+            );
         },
     });
 
@@ -271,7 +370,7 @@ export async function undoableChangeArtwork(
         description: `Change artwork for "${cardToUpdate.name}"`,
         undo: async () => {
             // Restore old card states
-            await db.transaction("rw", db.cards, db.images, async () => {
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
                 for (const oldCard of oldCardsState) {
                     await db.cards.update(oldCard.uuid, {
                         imageId: oldCard.imageId,
@@ -339,16 +438,26 @@ export async function undoableUpdateCardBleedSettings(
 ): Promise<void> {
     if (cardUuids.length === 0) return;
 
-    // Capture old settings for all affected cards
+    // Get selected cards
+    const selectedCards = await db.cards.where('uuid').anyOf(cardUuids).toArray();
+    if (selectedCards.length === 0) return;
+
+    // Find ALL cards that share the same imageId (for "apply to all" behavior)
+    const imageIds = new Set(selectedCards.map(c => c.imageId).filter((id): id is string => !!id));
+    const allAffectedCards: CardOption[] = [];
+    for (const imageId of imageIds) {
+        const cardsWithImage = await db.cards.where('imageId').equals(imageId).toArray();
+        allAffectedCards.push(...cardsWithImage);
+    }
+
+    // Capture old settings for ALL affected cards (for proper undo)
     const oldSettings: Map<string, {
         hasBuiltInBleed?: boolean;
         bleedMode?: CardOption['bleedMode'];
         existingBleedMm?: number;
         generateBleedMm?: number;
     }> = new Map();
-    const cards = await db.cards.where('uuid').anyOf(cardUuids).toArray();
-
-    for (const card of cards) {
+    for (const card of allAffectedCards) {
         oldSettings.set(card.uuid, {
             hasBuiltInBleed: card.hasBuiltInBleed,
             bleedMode: card.bleedMode,
@@ -357,10 +466,11 @@ export async function undoableUpdateCardBleedSettings(
         });
     }
 
-    const cardName = cards.length === 1 ? cards[0]?.name || 'card' : `${cards.length} cards`;
+    const cardName = selectedCards.length === 1 ? selectedCards[0]?.name || 'card' : `${selectedCards.length} cards`;
+    const allAffectedUuids = allAffectedCards.map(c => c.uuid);
 
-    // Perform the update - always set all fields to allow resetting to undefined
-    await db.transaction("rw", db.cards, db.images, async () => {
+    // Perform the update - apply to ALL cards sharing the same imageId
+    await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
         const changes: Partial<CardOption> = {
             hasBuiltInBleed: newSettings.hasBuiltInBleed,
             bleedMode: newSettings.bleedMode,
@@ -368,21 +478,25 @@ export async function undoableUpdateCardBleedSettings(
             generateBleedMm: newSettings.generateBleedMm,
         };
 
+        // Update ALL affected cards (not just selected)
         await db.cards.bulkUpdate(
-            cardUuids.map((uuid) => ({
+            allAffectedUuids.map((uuid) => ({
                 key: uuid,
                 changes,
             }))
         );
 
-        // Invalidate image cache for affected cards to trigger regeneration
-        // Clear generatedBleedMode and generatedHasBuiltInBleed so ensureProcessed detects the change
-        for (const card of cards) {
-            if (card.imageId) {
-                await db.images.update(card.imageId, {
-                    generatedBleedMode: undefined,
-                    generatedHasBuiltInBleed: undefined,
-                });
+        // Invalidate image/cardback cache to trigger regeneration
+        for (const imageId of imageIds) {
+            const invalidation = {
+                generatedBleedMode: undefined,
+                generatedHasBuiltInBleed: undefined,
+            };
+            // Update the correct table based on ID type
+            if (isCardbackId(imageId)) {
+                await db.cardbacks.update(imageId, invalidation);
+            } else {
+                await db.images.update(imageId, invalidation);
             }
         }
     });
@@ -392,8 +506,8 @@ export async function undoableUpdateCardBleedSettings(
         type: "UPDATE_BLEED_SETTINGS",
         description: `Change bleed settings for "${cardName}"`,
         undo: async () => {
-            // Restore old settings for each card and invalidate image cache
-            await db.transaction("rw", db.cards, db.images, async () => {
+            // Restore old settings for ALL affected cards
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
                 for (const [uuid, settings] of oldSettings) {
                     await db.cards.update(uuid, {
                         hasBuiltInBleed: settings.hasBuiltInBleed,
@@ -403,19 +517,17 @@ export async function undoableUpdateCardBleedSettings(
                     });
                 }
                 // Invalidate image cache to trigger regeneration
-                for (const card of cards) {
-                    if (card.imageId) {
-                        await db.images.update(card.imageId, {
-                            generatedBleedMode: undefined,
-                            generatedHasBuiltInBleed: undefined,
-                        });
-                    }
+                for (const imageId of imageIds) {
+                    await db.images.update(imageId, {
+                        generatedBleedMode: undefined,
+                        generatedHasBuiltInBleed: undefined,
+                    });
                 }
             });
         },
         redo: async () => {
-            // Re-apply new settings and invalidate image cache
-            await db.transaction("rw", db.cards, db.images, async () => {
+            // Re-apply new settings to ALL affected cards
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
                 const changes: Partial<CardOption> = {
                     hasBuiltInBleed: newSettings.hasBuiltInBleed,
                     bleedMode: newSettings.bleedMode,
@@ -424,21 +536,223 @@ export async function undoableUpdateCardBleedSettings(
                 };
 
                 await db.cards.bulkUpdate(
-                    cardUuids.map((uuid) => ({
+                    allAffectedUuids.map((uuid) => ({
                         key: uuid,
                         changes,
                     }))
                 );
                 // Invalidate image cache to trigger regeneration
-                for (const card of cards) {
-                    if (card.imageId) {
-                        await db.images.update(card.imageId, {
-                            generatedBleedMode: undefined,
-                            generatedHasBuiltInBleed: undefined,
-                        });
+                for (const imageId of imageIds) {
+                    await db.images.update(imageId, {
+                        generatedBleedMode: undefined,
+                        generatedHasBuiltInBleed: undefined,
+                    });
+                }
+            });
+        },
+    });
+}
+
+/**
+ * Changes cardback for one or more front cards with undo support.
+ * This is an atomic operation - all changes are undone/redone together.
+ */
+export async function undoableChangeCardback(
+    frontCardUuids: string[],
+    newCardbackId: string,
+    newCardbackName: string,
+    hasBuiltInBleed: boolean = true
+): Promise<void> {
+    if (frontCardUuids.length === 0) return;
+
+    // Get front cards
+    const frontCards = await db.cards.where('uuid').anyOf(frontCardUuids).toArray();
+    if (frontCards.length === 0) return;
+
+    // Capture old state for all affected back cards
+    type OldBackState = {
+        frontUuid: string;
+        backUuid?: string;
+        oldImageId?: string;
+        oldName?: string;
+        oldUsesDefaultCardback?: boolean;
+        hadBackCard: boolean;
+    };
+    const oldStates: OldBackState[] = [];
+
+    // Batch fetch all back cards at once for performance
+    const backCardUuids = frontCards
+        .filter(fc => fc.linkedBackId)
+        .map(fc => fc.linkedBackId!);
+    const backCardsMap = new Map<string, CardOption>();
+    if (backCardUuids.length > 0) {
+        const backCards = await db.cards.bulkGet(backCardUuids);
+        for (const backCard of backCards) {
+            if (backCard) backCardsMap.set(backCard.uuid, backCard);
+        }
+    }
+
+    for (const frontCard of frontCards) {
+        if (frontCard.linkedBackId) {
+            const backCard = backCardsMap.get(frontCard.linkedBackId);
+            if (backCard) {
+                oldStates.push({
+                    frontUuid: frontCard.uuid,
+                    backUuid: backCard.uuid,
+                    oldImageId: backCard.imageId,
+                    oldName: backCard.name,
+                    oldUsesDefaultCardback: backCard.usesDefaultCardback,
+                    hadBackCard: true,
+                });
+            }
+        } else {
+            oldStates.push({
+                frontUuid: frontCard.uuid,
+                hadBackCard: false,
+            });
+        }
+    }
+
+    // Perform the cardback changes
+    // Separate cards into those with existing backs and those that need new backs
+    const existingBackCards: CardOption[] = [];
+    const needsNewBackCards: typeof frontCards = [];
+
+    for (const frontCard of frontCards) {
+        if (frontCard.linkedBackId) {
+            const existingBack = backCardsMap.get(frontCard.linkedBackId);
+            if (existingBack) {
+                existingBackCards.push(existingBack);
+            }
+        } else {
+            needsNewBackCards.push(frontCard);
+        }
+    }
+
+    // Update existing back cards - changeCardArtwork handles image refs
+    for (const existingBack of existingBackCards) {
+        await changeCardArtwork(
+            existingBack.imageId,
+            newCardbackId,
+            existingBack,
+            false,
+            newCardbackName,
+            undefined,
+            undefined,
+            hasBuiltInBleed
+        );
+    }
+
+    // Batch update usesDefaultCardback for all existing back cards
+    if (existingBackCards.length > 0) {
+        await db.cards.bulkUpdate(
+            existingBackCards.map(c => ({
+                key: c.uuid,
+                changes: { usesDefaultCardback: false },
+            }))
+        );
+    }
+
+    // Create new back cards using bulk operation
+    if (needsNewBackCards.length > 0) {
+        await createLinkedBackCardsBulk(
+            needsNewBackCards.map(fc => ({
+                frontUuid: fc.uuid,
+                backImageId: newCardbackId,
+                backName: newCardbackName,
+                options: {
+                    hasBuiltInBleed,
+                    usesDefaultCardback: false,
+                },
+            }))
+        );
+    }
+
+    // Build description
+    const cardNames = frontCards.map(c => c.name);
+    const uniqueNames = [...new Set(cardNames)];
+    const description = frontCards.length === 1
+        ? `Change cardback for "${frontCards[0].name}"`
+        : uniqueNames.length === 1
+            ? `Change cardback for ${frontCards.length} "${uniqueNames[0]}" cards`
+            : `Change cardback for ${frontCards.length} cards`;
+
+    // Record the action for undo
+    useUndoRedoStore.getState().pushAction({
+        type: "CHANGE_CARDBACK",
+        description,
+        undo: async () => {
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+                for (const oldState of oldStates) {
+                    if (oldState.hadBackCard && oldState.backUuid && oldState.oldImageId) {
+                        // Restore old cardback
+                        const backCard = await db.cards.get(oldState.backUuid);
+                        if (backCard) {
+                            await changeCardArtwork(
+                                backCard.imageId,
+                                oldState.oldImageId,
+                                backCard,
+                                false,
+                                oldState.oldName,
+                                undefined,
+                                undefined,
+                                true // Assume old cardback had bleed
+                            );
+                            await db.cards.update(oldState.backUuid, {
+                                usesDefaultCardback: oldState.oldUsesDefaultCardback,
+                            });
+                        }
+                    } else {
+                        // Card didn't have a back card - delete the newly created one
+                        const frontCard = await db.cards.get(oldState.frontUuid);
+                        if (frontCard?.linkedBackId) {
+                            const backCard = await db.cards.get(frontCard.linkedBackId);
+                            if (backCard) {
+                                // Decrement image ref for non-cardback images
+                                if (backCard.imageId && !isCardbackId(backCard.imageId)) {
+                                    const image = await db.images.get(backCard.imageId);
+                                    if (image && image.refCount > 1) {
+                                        await db.images.update(backCard.imageId, { refCount: image.refCount - 1 });
+                                    } else if (image) {
+                                        await db.images.delete(backCard.imageId);
+                                    }
+                                }
+                                await db.cards.delete(frontCard.linkedBackId);
+                            }
+                            await db.cards.update(oldState.frontUuid, { linkedBackId: undefined });
+                        }
                     }
                 }
             });
+        },
+        redo: async () => {
+            // Re-apply cardback changes
+            for (const frontCard of frontCards) {
+                const currentFront = await db.cards.get(frontCard.uuid);
+                if (!currentFront) continue;
+
+                if (currentFront.linkedBackId) {
+                    const existingBack = await db.cards.get(currentFront.linkedBackId);
+                    if (existingBack) {
+                        await changeCardArtwork(
+                            existingBack.imageId,
+                            newCardbackId,
+                            existingBack,
+                            false,
+                            newCardbackName,
+                            undefined,
+                            undefined,
+                            hasBuiltInBleed
+                        );
+                        await db.cards.update(existingBack.uuid, { usesDefaultCardback: false });
+                    }
+                } else {
+                    await createLinkedBackCard(currentFront.uuid, newCardbackId, newCardbackName, {
+                        hasBuiltInBleed,
+                        usesDefaultCardback: false,
+                    });
+                }
+            }
         },
     });
 }

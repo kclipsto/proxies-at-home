@@ -153,23 +153,209 @@ export function GuidesSection() {
                 <div className="mb-2 block">
                     <Label htmlFor="perCardGuideStyle">Card Cut Guides</Label>
                 </div>
-                <Select
-                    id="perCardGuideStyle"
-                    value={perCardGuideStyle}
-                    onChange={(e) =>
-                        setPerCardGuideStyle(
-                            e.target.value as "corners" | "rounded-corners" | "dashed-squared-rect" | "solid-squared-rect" | "dashed-rounded-rect" | "solid-rounded-rect" | "none"
-                        )
-                    }
-                >
-                    <option value="corners">Squared Corner</option>
-                    <option value="rounded-corners">Rounded Corner</option>
-                    <option value="dashed-squared-rect">Dashed Squared Rectangle</option>
-                    <option value="solid-squared-rect">Solid Squared Rectangle</option>
-                    <option value="dashed-rounded-rect">Dashed Rounded Rectangle</option>
-                    <option value="solid-rounded-rect">Solid Rounded Rectangle</option>
-                    <option value="none">None</option>
-                </Select>
+
+                {/* Toggle-based guide style selector */}
+                {perCardGuideStyle === 'none' ? (
+                    <button
+                        onClick={() => setPerCardGuideStyle('corners')}
+                        className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500"
+                    >
+                        Enable Card Guides
+                    </button>
+                ) : (
+                    <div className="space-y-2">
+                        {/* Quick Presets - 2 rows: Square (top), Rounded (bottom) */}
+                        <div className="grid grid-cols-4 gap-2 pb-2 border-b border-gray-200 dark:border-gray-600">
+                            {([
+                                // Row 1: Square variants
+                                {
+                                    style: 'corners', title: 'Square Corners - Solid', paths: [
+                                        { d: 'M4,4 L4,10 M4,4 L10,4' },
+                                        { d: 'M24,4 L24,10 M24,4 L18,4' },
+                                        { d: 'M4,32 L4,26 M4,32 L10,32' },
+                                        { d: 'M24,32 L24,26 M24,32 L18,32' }
+                                    ]
+                                },
+                                {
+                                    style: 'dashed-corners', title: 'Square Corners - Dashed', paths: [
+                                        { d: 'M4,4 L4,10 M4,4 L10,4', dash: '2,2' },
+                                        { d: 'M24,4 L24,10 M24,4 L18,4', dash: '2,2' },
+                                        { d: 'M4,32 L4,26 M4,32 L10,32', dash: '2,2' },
+                                        { d: 'M24,32 L24,26 M24,32 L18,32', dash: '2,2' }
+                                    ]
+                                },
+                                { style: 'solid-squared-rect', title: 'Square Full - Solid', rect: { x: 4, y: 4, w: 20, h: 28 } },
+                                { style: 'dashed-squared-rect', title: 'Square Full - Dashed', rect: { x: 4, y: 4, w: 20, h: 28, dash: '4,3' } },
+                                // Row 2: Rounded variants
+                                {
+                                    style: 'rounded-corners', title: 'Rounded Corners - Solid', paths: [
+                                        { d: 'M4,12 Q4,4 12,4' },
+                                        { d: 'M16,4 Q24,4 24,12' },
+                                        { d: 'M4,24 Q4,32 12,32' },
+                                        { d: 'M16,32 Q24,32 24,24' }
+                                    ]
+                                },
+                                {
+                                    style: 'dashed-rounded-corners', title: 'Rounded Corners - Dashed', paths: [
+                                        { d: 'M4,12 Q4,4 12,4', dash: '2,2' },
+                                        { d: 'M16,4 Q24,4 24,12', dash: '2,2' },
+                                        { d: 'M4,24 Q4,32 12,32', dash: '2,2' },
+                                        { d: 'M16,32 Q24,32 24,24', dash: '2,2' }
+                                    ]
+                                },
+                                { style: 'solid-rounded-rect', title: 'Rounded Full - Solid', rect: { x: 4, y: 4, w: 20, h: 28, rx: 5 } },
+                                { style: 'dashed-rounded-rect', title: 'Rounded Full - Dashed', rect: { x: 4, y: 4, w: 20, h: 28, rx: 5, dash: '4,3' } },
+                            ] as Array<{
+                                style: Parameters<typeof setPerCardGuideStyle>[0];
+                                title: string;
+                                paths?: Array<{ d: string; dash?: string }>;
+                                rect?: { x: number; y: number; w: number; h: number; rx?: number; dash?: string };
+                            }>).map((config) => (
+                                <button
+                                    key={config.style}
+                                    onClick={() => setPerCardGuideStyle(config.style)}
+                                    className={`p-1 rounded transition-colors ${perCardGuideStyle === config.style
+                                        ? 'bg-blue-100 dark:bg-blue-600'
+                                        : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                        }`}
+                                    title={config.title}
+                                >
+                                    <svg width="28" height="36" viewBox="0 0 28 36" className="mx-auto">
+                                        <rect x="0" y="0" width="28" height="36" className="fill-gray-300 dark:fill-gray-500" />
+                                        {config.paths?.map((p, i) => (
+                                            <path key={i} d={p.d} fill="none" stroke={localColor} strokeWidth="2" strokeDasharray={p.dash} />
+                                        ))}
+                                        {config.rect && (
+                                            <rect x={config.rect.x} y={config.rect.y} width={config.rect.w} height={config.rect.h} rx={config.rect.rx} fill="none" stroke={localColor} strokeWidth="2" strokeDasharray={config.rect.dash} />
+                                        )}
+                                    </svg>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Coverage: Corners / Full */}
+                        <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+                            <button
+                                onClick={() => {
+                                    const isRound = perCardGuideStyle.includes('rounded');
+                                    const isDashed = perCardGuideStyle.includes('dashed');
+                                    if (isRound) {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-rounded-corners' : 'rounded-corners');
+                                    } else {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-corners' : 'corners');
+                                    }
+                                }}
+                                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${perCardGuideStyle.includes('corner')
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                            >
+                                Corners
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const isRound = perCardGuideStyle.includes('rounded');
+                                    const isDashed = perCardGuideStyle.includes('dashed');
+                                    if (isRound) {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-rounded-rect' : 'solid-rounded-rect');
+                                    } else {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-squared-rect' : 'solid-squared-rect');
+                                    }
+                                }}
+                                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${perCardGuideStyle.includes('rect')
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                            >
+                                Full
+                            </button>
+                        </div>
+
+                        {/* Line Style: Solid / Dashed */}
+                        <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+                            <button
+                                onClick={() => {
+                                    const isRound = perCardGuideStyle.includes('rounded');
+                                    const isCorners = perCardGuideStyle.includes('corner');
+                                    if (isCorners) {
+                                        setPerCardGuideStyle(isRound ? 'rounded-corners' : 'corners');
+                                    } else {
+                                        setPerCardGuideStyle(isRound ? 'solid-rounded-rect' : 'solid-squared-rect');
+                                    }
+                                }}
+                                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${!perCardGuideStyle.includes('dashed')
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                            >
+                                Solid
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const isRound = perCardGuideStyle.includes('rounded');
+                                    const isCorners = perCardGuideStyle.includes('corner');
+                                    if (isCorners) {
+                                        setPerCardGuideStyle(isRound ? 'dashed-rounded-corners' : 'dashed-corners');
+                                    } else {
+                                        setPerCardGuideStyle(isRound ? 'dashed-rounded-rect' : 'dashed-squared-rect');
+                                    }
+                                }}
+                                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${perCardGuideStyle.includes('dashed')
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                            >
+                                Dashed
+                            </button>
+                        </div>
+
+                        {/* Shape: Square / Round */}
+                        <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+                            <button
+                                onClick={() => {
+                                    const isDashed = perCardGuideStyle.includes('dashed');
+                                    const isCorners = perCardGuideStyle.includes('corner');
+                                    if (isCorners) {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-corners' : 'corners');
+                                    } else {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-squared-rect' : 'solid-squared-rect');
+                                    }
+                                }}
+                                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${!perCardGuideStyle.includes('rounded')
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                            >
+                                Square
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const isDashed = perCardGuideStyle.includes('dashed');
+                                    const isCorners = perCardGuideStyle.includes('corner');
+                                    if (isCorners) {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-rounded-corners' : 'rounded-corners');
+                                    } else {
+                                        setPerCardGuideStyle(isDashed ? 'dashed-rounded-rect' : 'solid-rounded-rect');
+                                    }
+                                }}
+                                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${perCardGuideStyle.includes('rounded')
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                            >
+                                Round
+                            </button>
+                        </div>
+
+                        {/* Disable button */}
+                        <button
+                            onClick={() => setPerCardGuideStyle('none')}
+                            className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500"
+                        >
+                            Disable Card Guides
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div>

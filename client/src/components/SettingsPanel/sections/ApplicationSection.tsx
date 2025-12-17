@@ -40,11 +40,17 @@ export function ApplicationSection({ cards }: Props) {
                 }
             }
 
-            // Delete the entire database to ensure a full reset
-            await db.delete();
+            // Clear individual tables but preserve cardbacks and imageCache
+            await db.transaction("rw", db.cards, db.images, db.settings, db.cardMetadataCache, async () => {
+                await db.cards.clear();
+                await db.images.clear();
+                await db.settings.clear();
+                await db.cardMetadataCache.clear();
+                // Note: cardbacks and imageCache are intentionally NOT cleared
+            });
 
-            // Re-open the database
-            await db.open();
+            // Clear localStorage preferences that should reset with app data
+            localStorage.removeItem("cardback-delete-confirm-disabled");
 
             resetSettings(); // Reset settings store to defaults
 
@@ -131,8 +137,8 @@ export function ApplicationSection({ cards }: Props) {
                             Confirm Reset App Data
                         </div>
                         <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                            This will clear all saved Proxxied data (cards, cached images,
-                            settings) and reload the page. Continue?
+                            This will clear all saved Proxxied data (cards, settings)
+                            and reload the page. Image cache will be preserved. Continue?
                         </div>
                         <div className="flex justify-center gap-4">
                             <Button

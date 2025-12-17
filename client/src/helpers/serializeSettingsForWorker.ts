@@ -47,8 +47,11 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     guideColor: string;
     guideWidthCssPx: number;
     cutLineStyle: 'none' | 'edges' | 'full';
-    perCardGuideStyle: 'corners' | 'rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
+    perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
     guidePlacement: 'inside' | 'outside';
+
+    // Right-align incomplete rows (for backs export)
+    rightAlignRows?: boolean;
 }
 
 /**

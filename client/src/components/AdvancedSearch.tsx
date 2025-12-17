@@ -7,6 +7,7 @@ import { useScryfallPreview } from "@/hooks/useScryfallPreview";
 import { extractCardInfo } from "@/helpers/CardInfoHelper";
 import { SearchCarousel } from "./SearchComponents/SearchCarousel";
 import { SearchResultsList } from "./SearchComponents/SearchResultsList";
+import { useToastStore } from "@/store/toast";
 import type { ScryfallCard } from "../../../shared/types";
 
 
@@ -16,6 +17,7 @@ interface AdvancedSearchProps {
     onSelectCard: (cardName: string) => void;
     title?: string;
     actionIcon?: React.ReactNode;
+    keepOpenOnAdd?: boolean;
 }
 
 export function AdvancedSearch({
@@ -24,6 +26,7 @@ export function AdvancedSearch({
     onSelectCard,
     title = "Add Card",
     actionIcon,
+    keepOpenOnAdd = false,
 }: AdvancedSearchProps) {
     const {
         query,
@@ -91,14 +94,22 @@ export function AdvancedSearch({
     const handleAddCurrentCard = (indexOverride?: number) => {
         const idx = indexOverride ?? hoveredIndex;
         if (idx !== null && loopSuggestions[idx]) {
-            // Use quotes to force exact match search
-            onSelectCard(loopSuggestions[idx].name);
-            handleClear();
-            onClose();
+            const cardName = loopSuggestions[idx].name;
+            onSelectCard(cardName);
+            if (keepOpenOnAdd) {
+                useToastStore.getState().showSuccessToast(cardName);
+            } else {
+                handleClear();
+                onClose();
+            }
         } else if (query && loopSuggestions.length === 0) {
             onSelectCard(query);
-            handleClear();
-            onClose();
+            if (keepOpenOnAdd) {
+                useToastStore.getState().showSuccessToast(query);
+            } else {
+                handleClear();
+                onClose();
+            }
         }
     };
 

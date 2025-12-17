@@ -66,8 +66,8 @@ type Store = {
   setDpi: (value: number) => void;
   cutLineStyle: 'none' | 'edges' | 'full';
   setCutLineStyle: (value: 'none' | 'edges' | 'full') => void;
-  perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-squared-rect' | 'solid-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none';
-  setPerCardGuideStyle: (value: 'corners' | 'rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'none') => void;
+  perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none';
+  setPerCardGuideStyle: (value: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none') => void;
   guidePlacement: 'inside' | 'outside';
   setGuidePlacement: (value: 'inside' | 'outside') => void;
   globalLanguage: string;
@@ -109,6 +109,10 @@ type Store = {
   setDecklistSortAlpha: (value: boolean) => void;
   showProcessingToasts: boolean;
   setShowProcessingToasts: (value: boolean) => void;
+  defaultCardbackId: string;
+  setDefaultCardbackId: (id: string) => void;
+  exportMode: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs';
+  setExportMode: (value: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs') => void;
   hasHydrated: boolean;
   setHasHydrated: (value: boolean) => void;
 };
@@ -170,6 +174,8 @@ const defaultPageSettings = {
   filterMatchType: "partial" as "partial" | "exact",
   decklistSortAlpha: false,
   showProcessingToasts: true,
+  defaultCardbackId: "cardback_builtin_mtg",  // Default to MTG cardback
+  exportMode: "fronts" as 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs',
 };
 
 const layoutPresetsSizes: Record<
@@ -449,6 +455,10 @@ export const useSettingsStore = create<Store>()(
       setDecklistSortAlpha: (value) => set({ decklistSortAlpha: value }),
       showProcessingToasts: true,
       setShowProcessingToasts: (value) => set({ showProcessingToasts: value }),
+      defaultCardbackId: "cardback_builtin_mtg",
+      setDefaultCardbackId: (id) => set({ defaultCardbackId: id }),
+      exportMode: "fronts",
+      setExportMode: (value) => set({ exportMode: value }),
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
 

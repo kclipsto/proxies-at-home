@@ -11,7 +11,6 @@ import { DeckBuilderImporter } from "./UploadComponents/DeckBuilderImporter";
 import { DecklistUploader } from "./UploadComponents/DecklistUploader";
 import { FileUploader } from "./UploadComponents/FileUploader";
 import { MpcImportSection } from "./UploadComponents/MpcImportSection";
-import { AddCardBack } from "./UploadComponents/AddCardBack";
 
 type Props = {
   isCollapsed?: boolean;
@@ -51,8 +50,6 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
         </div>
       )}
 
-
-
       <PullToRefresh className={`flex-1 flex flex-col overflow-y-auto gap-6 px-4 pb-4 pt-4 ${mobile ? "[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" : ""}`}>
         {mobile && (
           <div className={`flex justify-center mb-2 ${mobile ? 'landscape:hidden' : ''}`}>
@@ -70,7 +67,6 @@ export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete
               {/* File Uploaders */}
               <FileUploader mobile={mobile} onUploadComplete={onUploadComplete} />
               <MpcImportSection mobile={mobile} onUploadComplete={onUploadComplete} />
-              <AddCardBack onUploadComplete={onUploadComplete} />
 
               {/* Deck Builder Importer - in landscape, show here below MPC */}
               <div className={`hidden ${mobile ? 'landscape:block' : ''}`}>

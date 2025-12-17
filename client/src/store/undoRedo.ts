@@ -10,6 +10,7 @@ export type ActionType =
     | "REORDER_CARDS"
     | "REORDER_MULTIPLE_CARDS"
     | "CHANGE_ARTWORK"
+    | "CHANGE_CARDBACK"
     | "CHANGE_SETTING"
     | "UPDATE_BLEED_SETTINGS";
 

@@ -16,7 +16,10 @@ import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/cacheUtils";
-import { getExpectedBleedWidth, type GlobalSettings } from "../helpers/imageSpecs";
+import { ensureBuiltinCardbacksInDb } from "../helpers/cardbackLibrary";
+import { initializeFlipState } from "../store/selection";
+
+import { getExpectedBleedWidth, getHasBuiltInBleed, getEffectiveBleedMode, type GlobalSettings } from "../helpers/imageSpecs";
 
 
 
@@ -146,7 +149,11 @@ export default function ProxyBuilderPage() {
     [createResizeHandler, uploadPanelWidth, setUploadPanelWidth, isUploadPanelCollapsed, toggleUploadPanel]
   );
 
-
+  // On startup, ensure built-in cardbacks are properly initialized BEFORE card processing
+  // This must run early to avoid race conditions with stale cached images
+  useEffect(() => {
+    void ensureBuiltinCardbacksInDb();
+  }, []);
 
   // On startup, rebalance card orders to prevent floating point issues.
   useEffect(() => {
@@ -154,6 +161,10 @@ export default function ProxyBuilderPage() {
       void rebalanceCardOrders();
     }, 200);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    void initializeFlipState();
   }, []);
 
   // On startup, clean expired image cache entries (non-blocking)
@@ -176,14 +187,23 @@ export default function ProxyBuilderPage() {
   // This replaces multiple redundant useLiveQuery calls across child components
   const allCardsQuery = useLiveQuery<CardOption[]>(() => db.cards.orderBy("order").toArray(), []);
   const allImagesQuery = useLiveQuery(() => db.images.toArray(), []);
+  // Also query cardbacks - they share the same shape for useImageCache
+  const allCardbacksQuery = useLiveQuery(() => db.cardbacks.toArray(), []);
+
 
   const allCards = allCardsQuery ?? EMPTY_CARDS;
-  const allImages = allImagesQuery ?? EMPTY_IMAGES;
+  // Merge images and cardbacks for PageView - both have id, displayBlob, displayBlobDarkened
+  const allImages = useMemo(() => {
+    const images = allImagesQuery ?? EMPTY_IMAGES;
+    const cardbacks = allCardbacksQuery ?? [];
+    // Cast cardbacks to Image type since they share the necessary fields
+    return [...images, ...cardbacks as unknown as Image[]];
+  }, [allImagesQuery, allCardbacksQuery]);
 
   // Derived values (no additional DB queries needed)
   const cardCount = allCards.length;
 
-  const { loadingMap, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
+  const { getLoadingState, ensureProcessed, reprocessSelectedImages, cancelProcessing } =
     useImageProcessing({
       unit: "mm",
       bleedEdgeWidth: (() => {
@@ -203,7 +223,8 @@ export default function ProxyBuilderPage() {
       const allImages = await db.images.toArray();
       const imagesById = new Map(allImages.map((img) => [img.id, img]));
 
-      const unprocessedCards = [];
+      // Deduplicate by imageId - only process each unique image once
+      const imageIdToRepresentativeCard = new Map<string, CardOption>();
 
       const state = useSettingsStore.getState();
       const settings: GlobalSettings = {
@@ -218,29 +239,42 @@ export default function ProxyBuilderPage() {
 
       for (const card of allCards) {
         if (!card.imageId) continue;
+
+        // Skip if we already have a representative card for this imageId
+        if (imageIdToRepresentativeCard.has(card.imageId)) continue;
+
         const img = imagesById.get(card.imageId);
 
-        // Check if fully processed using same smart logic as settings change
+        // Check if fully processed using same smart logic as ensureProcessed
         if (!img?.displayBlob || !img?.displayBlobDarkened || !img?.exportBlob) {
-          unprocessedCards.push(card);
+          imageIdToRepresentativeCard.set(card.imageId, card);
           continue;
         }
 
         const expectedBleedWidth = getExpectedBleedWidth(card, settings.bleedEdgeWidth, settings);
+        const hasBuiltInBleed = getHasBuiltInBleed(card);
+        const effectiveBleedMode = getEffectiveBleedMode(card, settings);
 
         const isDpiMatch = img.exportDpi === dpi;
         const isBleedMatch = img.exportBleedWidth !== undefined && Math.abs(img.exportBleedWidth - expectedBleedWidth) < 0.001;
+        // Also check generation parameters match (same as ensureProcessed smart cache)
+        const isBuiltInBleedMatch = img.generatedHasBuiltInBleed === hasBuiltInBleed;
+        const isBleedModeMatch = img.generatedBleedMode === effectiveBleedMode;
 
-        const isProcessed = isDpiMatch && isBleedMatch;
+        const isProcessed = isDpiMatch && isBleedMatch && isBuiltInBleedMatch && isBleedModeMatch;
 
         if (!isProcessed) {
-          unprocessedCards.push(card);
+          imageIdToRepresentativeCard.set(card.imageId, card);
         }
         // Note: Don't call markCacheHit/markCardProcessed here - ensureProcessed handles cache tracking
       }
 
-      if (unprocessedCards.length > 0) {
-        for (const card of unprocessedCards) {
+      const uniqueUnprocessedCount = imageIdToRepresentativeCard.size;
+      // console.log('[PerfTrace] ProxyBuilderPage: processUnprocessed found', uniqueUnprocessedCount, 'unique images to process');
+
+      if (uniqueUnprocessedCount > 0) {
+        // Process once per unique imageId using representative card
+        for (const card of imageIdToRepresentativeCard.values()) {
           void ensureProcessed(card, Priority.LOW);
         }
       }
@@ -408,7 +442,7 @@ export default function ProxyBuilderPage() {
 
           <div className={activeMobileView === "preview" ? "block h-full" : "hidden"}>
             <PageView
-              loadingMap={loadingMap}
+              getLoadingState={getLoadingState}
               ensureProcessed={ensureProcessed}
               cards={allCards}
               images={allImages}
@@ -462,7 +496,7 @@ export default function ProxyBuilderPage() {
         {/* Main Content Area */}
         <div className="flex-1 overflow-hidden relative h-full">
           <PageView
-            loadingMap={loadingMap}
+            getLoadingState={getLoadingState}
             ensureProcessed={ensureProcessed}
             cards={allCards}
             images={allImages}

@@ -88,8 +88,28 @@ function buildCardResponse(
   const responseSet = querySet || card.set;
   const responseNumber = queryNumber || card.collector_number;
 
+  // Build card_faces for DFC support on client
+  const card_faces = card.card_faces?.map(face => ({
+    name: face.name ?? '',
+    imageUrl: face.image_uris?.png,
+  }));
+
+  // Use canonical Scryfall name. For DFCs, find the requested face name if it matches
+  let canonicalName = card.name ?? queryName;
+  if (card.card_faces && card.card_faces.length > 0) {
+    // Check if query matches a specific face (for DFCs like "Bala Ged Recovery // Bala Ged Sanctuary")
+    const queryLower = queryName.toLowerCase();
+    const matchedFace = card.card_faces.find(f => f.name?.toLowerCase() === queryLower);
+    if (matchedFace && matchedFace.name) {
+      canonicalName = matchedFace.name;
+    } else if (card.card_faces[0].name) {
+      // Default to front face name for DFCs
+      canonicalName = card.card_faces[0].name;
+    }
+  }
+
   return {
-    name: queryName,
+    name: canonicalName,
     set: responseSet,
     number: responseNumber,
     lang: language,
@@ -100,6 +120,7 @@ function buildCardResponse(
     cmc: card.cmc,
     type_line: card.type_line,
     rarity: card.rarity,
+    card_faces,
   };
 }
 

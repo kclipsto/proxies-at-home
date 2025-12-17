@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "../db";
+import type { CardOption } from "@/types";
 import { API_BASE } from "../constants";
 import { getCurrentSession } from "../helpers/ImportSession";
 import { useToastStore } from "../store/toast";
 import { getEnrichmentAbortController } from "../helpers/cancellationService";
+import { isCardbackId } from "../helpers/cardbackLibrary";
 
 // Retry configuration with exponential backoff
 const ENRICHMENT_RETRY_CONFIG = {
@@ -49,6 +51,9 @@ interface EnrichedCardData {
 export function useCardEnrichment() {
     const [enrichmentProgress, setEnrichmentProgress] = useState<EnrichmentProgress | null>(null);
     const isEnrichingRef = useRef(false);
+    // Track cards that have been fully processed (success or max retries exceeded)
+    // to avoid re-checking them on every enrichment cycle
+    const processedCardsRef = useRef<Set<string>>(new Set());
 
     const enrichCards = useCallback(async () => {
         if (isEnrichingRef.current) return;
@@ -63,9 +68,17 @@ export function useCardEnrichment() {
             // Use filter on all cards for reliability
             const unenrichedCards = allCards.filter((card) => {
                 if (!card.needsEnrichment) return false;
+                // Skip back cards (cardbacks) - they never need metadata enrichment
+                if (card.linkedFrontId) return false;
+                // Skip cards using cardback images - they're not real Magic cards
+                if (card.imageId && isCardbackId(card.imageId)) return false;
+                // Skip cards already processed in this session
+                if (processedCardsRef.current.has(card.uuid)) return false;
                 if (card.enrichmentNextRetryAt && card.enrichmentNextRetryAt > now) return false;
                 // Skip if max retries exceeded
                 if ((card.enrichmentRetryCount ?? 0) >= ENRICHMENT_RETRY_CONFIG.maxRetries) {
+                    // Mark as processed so we don't check again
+                    processedCardsRef.current.add(card.uuid);
                     return false;
                 }
                 return true;
@@ -176,10 +189,14 @@ export function useCardEnrichment() {
                         }
                     }
 
-                    // Update each card in DB (Merging cached and fetched data)
+                    // Update each card in DB (Merging cached and fetched data) using bulk operations
                     await db.transaction("rw", db.cards, async () => {
                         // Pointer for fetched responses
                         let fetchIndex = 0;
+
+                        // Prepare bulk updates
+                        const successUpdates: { key: string; changes: Partial<CardOption> }[] = [];
+                        const retryUpdates: { key: string; changes: Partial<CardOption> }[] = [];
 
                         for (let i = 0; i < batch.length; i++) {
                             const card = batch[i];
@@ -192,38 +209,56 @@ export function useCardEnrichment() {
                             }
 
                             if (data) {
-                                await db.cards.update(card.uuid, {
-                                    colors: data.colors,
-                                    cmc: data.cmc,
-                                    type_line: data.type_line,
-                                    rarity: data.rarity,
-                                    mana_cost: data.mana_cost,
-                                    lang: data.lang,
-                                    set: data.set || card.set,
-                                    number: data.number || card.number,
-                                    needsEnrichment: false,
-                                    enrichmentRetryCount: undefined,
-                                    enrichmentNextRetryAt: undefined,
+                                successUpdates.push({
+                                    key: card.uuid,
+                                    changes: {
+                                        name: data.name, // Canonicalize name from Scryfall
+                                        colors: data.colors,
+                                        cmc: data.cmc,
+                                        type_line: data.type_line,
+                                        rarity: data.rarity,
+                                        mana_cost: data.mana_cost,
+                                        lang: data.lang,
+                                        set: data.set || card.set,
+                                        number: data.number || card.number,
+                                        needsEnrichment: false,
+                                        enrichmentRetryCount: undefined,
+                                        enrichmentNextRetryAt: undefined,
+                                    },
                                 });
+                                processedCardsRef.current.add(card.uuid);
                             } else {
                                 // Card not found in enrichment response.
                                 const retryCount = (card.enrichmentRetryCount ?? 0) + 1;
                                 if (retryCount >= ENRICHMENT_RETRY_CONFIG.maxRetries) {
-                                    // Max retries exceeded.
                                     console.warn(`[Metadata] Max retries exceeded for: ${card.name} (UUID: ${card.uuid})`);
-                                    await db.cards.update(card.uuid, {
-                                        needsEnrichment: false,
-                                        enrichmentRetryCount: retryCount,
+                                    retryUpdates.push({
+                                        key: card.uuid,
+                                        changes: {
+                                            needsEnrichment: false,
+                                            enrichmentRetryCount: retryCount,
+                                        },
                                     });
+                                    processedCardsRef.current.add(card.uuid);
                                 } else {
-                                    // Schedule retry.
                                     const nextRetryAt = Date.now() + getRetryDelay(retryCount - 1);
-                                    await db.cards.update(card.uuid, {
-                                        enrichmentRetryCount: retryCount,
-                                        enrichmentNextRetryAt: nextRetryAt,
+                                    retryUpdates.push({
+                                        key: card.uuid,
+                                        changes: {
+                                            enrichmentRetryCount: retryCount,
+                                            enrichmentNextRetryAt: nextRetryAt,
+                                        },
                                     });
                                 }
                             }
+                        }
+
+                        // Perform bulk updates
+                        if (successUpdates.length > 0) {
+                            await db.cards.bulkUpdate(successUpdates);
+                        }
+                        if (retryUpdates.length > 0) {
+                            await db.cards.bulkUpdate(retryUpdates);
                         }
                     });
 
@@ -234,22 +269,35 @@ export function useCardEnrichment() {
                     }
                     console.error("[Metadata] Batch error:", error);
 
-                    // Schedule retry for failed batch.
+                    // Schedule retry for failed batch using bulk operations
                     await db.transaction("rw", db.cards, async () => {
+                        const updates: { key: string; changes: Partial<CardOption> }[] = [];
+
                         for (const card of batch) {
                             const retryCount = (card.enrichmentRetryCount ?? 0) + 1;
                             const nextRetryAt = Date.now() + getRetryDelay(retryCount - 1);
-                            await db.cards.update(card.uuid, {
-                                enrichmentRetryCount: retryCount,
-                                enrichmentNextRetryAt: nextRetryAt,
-                            });
+
                             if (retryCount >= ENRICHMENT_RETRY_CONFIG.maxRetries) {
-                                // Max retries exceeded.
-                                await db.cards.update(card.uuid, {
-                                    needsEnrichment: false,
-                                    enrichmentRetryCount: retryCount,
+                                updates.push({
+                                    key: card.uuid,
+                                    changes: {
+                                        needsEnrichment: false,
+                                        enrichmentRetryCount: retryCount,
+                                    },
+                                });
+                            } else {
+                                updates.push({
+                                    key: card.uuid,
+                                    changes: {
+                                        enrichmentRetryCount: retryCount,
+                                        enrichmentNextRetryAt: nextRetryAt,
+                                    },
                                 });
                             }
+                        }
+
+                        if (updates.length > 0) {
+                            await db.cards.bulkUpdate(updates);
                         }
                     });
                 }

@@ -2,27 +2,80 @@ import { memo, useEffect } from "react";
 import { useOnScreen } from "../hooks/useOnScreen";
 import type { CardOption } from "../../../shared/types";
 import { Priority } from "../helpers/imageProcessor";
+import SortableCard from "./SortableCard";
 
 type Props = {
   card: CardOption;
+  backCard?: CardOption;
   state: "idle" | "loading" | "error" | undefined;
   hasImage: boolean;
   ensureProcessed: (card: CardOption, priority?: Priority) => Promise<void>;
-  children: React.ReactNode;
+  // SortableCard props
+  index: number;
+  globalIndex: number;
+  imageSrc: string;
+  backImageSrc?: string;
+  backImageId?: string;
+  totalCardWidth: number;
+  totalCardHeight: number;
+  guideOffset: string;
+  imageBleedWidth: number;
+  onRangeSelect?: (index: number) => void;
+  setContextMenu: (menu: {
+    visible: boolean;
+    x: number;
+    y: number;
+    cardUuid: string;
+  }) => void;
+  disabled: boolean;
+  mobile: boolean;
+  scale: number;
+  dropped: boolean;
 };
 
 const CardCellLazy = memo(function CardCellLazy({
   card,
+  backCard,
   state,
   hasImage,
   ensureProcessed,
-  children,
+  // SortableCard props
+  index,
+  globalIndex,
+  imageSrc,
+  backImageSrc,
+  backImageId,
+  totalCardWidth,
+  totalCardHeight,
+  guideOffset,
+  imageBleedWidth,
+  onRangeSelect,
+  setContextMenu,
+  disabled,
+  mobile,
+  scale,
+  dropped,
 }: Props) {
   const { ref, visible } = useOnScreen<HTMLDivElement>("400px");
 
+  // Extract stable identifiers - use null for missing values to keep array size constant
+  const backCardUuid = backCard?.uuid ?? null;
+  const backCardImageId = backCard?.imageId ?? null; // Trigger processing when visible
   useEffect(() => {
-    if (visible) void ensureProcessed(card, Priority.HIGH);
-  }, [visible, card, ensureProcessed]);
+    if (visible && card.imageId) {
+      if (card.order < 5) {
+        // console.log('[PerfTrace] CardCellLazy effect triggered for', card.uuid, 'imageId:', card.imageId);
+      }
+      void ensureProcessed(card, Priority.HIGH);
+      // Also process back card if it exists
+      if (backCard) {
+        void ensureProcessed(backCard, Priority.HIGH);
+      }
+    }
+    // Use stable identifiers instead of object references to prevent
+    // re-firing when useLiveQuery returns new object references
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, card.uuid, card.imageId, backCardUuid, backCardImageId, ensureProcessed]);
 
   return (
     <div ref={ref} className={`relative w-full h-full ${!hasImage ? "bg-black" : ""}`}>
@@ -43,7 +96,24 @@ const CardCellLazy = memo(function CardCellLazy({
           if (state === "error") void ensureProcessed(card, Priority.HIGH);
         }}
       >
-        {children}
+        <SortableCard
+          card={card}
+          index={index}
+          globalIndex={globalIndex}
+          imageSrc={imageSrc}
+          backImageSrc={backImageSrc}
+          backImageId={backImageId}
+          totalCardWidth={totalCardWidth}
+          totalCardHeight={totalCardHeight}
+          guideOffset={guideOffset}
+          imageBleedWidth={imageBleedWidth}
+          onRangeSelect={onRangeSelect}
+          setContextMenu={setContextMenu}
+          disabled={disabled}
+          mobile={mobile}
+          scale={scale}
+          dropped={dropped}
+        />
       </div>
     </div>
   );
