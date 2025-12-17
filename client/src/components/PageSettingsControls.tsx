@@ -289,16 +289,8 @@ export function PageSettingsControls({
     );
   }
 
-  return (
-    <PullToRefresh
-      ref={scrollContainerRef}
-      onScroll={(e) => {
-        scrollPosRef.current = e.currentTarget.scrollTop;
-      }}
-      disabled={!!activeId}
-      hideScrollbars={true}
-      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden"
-    >
+  const settingsContent = (
+    <>
       <div className={`sticky top-0 z-20 bg-gray-100 dark:bg-gray-700 flex items-center justify-between p-4 shrink-0 border-b border-gray-300 dark:border-gray-600 ${mobile ? 'landscape:p-2 landscape:min-h-[50px]' : ''}`}>
         <h2 className={`text-2xl font-semibold dark:text-white ${mobile ? 'landscape:text-lg landscape:hidden' : ''}`}>
           Settings
@@ -322,7 +314,7 @@ export function PageSettingsControls({
         </div>
       </div>
 
-      <div className={`flex-1 overflow-x-hidden ${mobile ? "mobile-scrollbar-hide pb-20 landscape:pb-4" : ""}`}>
+      <div className={`flex-1 ${mobile ? "mobile-scrollbar-hide pb-20 landscape:pb-4" : ""}`}>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -343,13 +335,43 @@ export function PageSettingsControls({
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col overflow-hidden">
+              <div className="flex flex-col">
                 {settingsPanelState.order.map((id) => renderSection(id))}
               </div>
             )}
           </SortableContext>
         </DndContext>
       </div>
-    </PullToRefresh>
+    </>
+  );
+
+  // Use PullToRefresh only on mobile
+  if (mobile) {
+    return (
+      <PullToRefresh
+        ref={scrollContainerRef}
+        onScroll={(e) => {
+          scrollPosRef.current = e.currentTarget.scrollTop;
+        }}
+        disabled={!!activeId}
+        hideScrollbars={true}
+        className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden"
+      >
+        {settingsContent}
+      </PullToRefresh>
+    );
+  }
+
+  // Desktop: regular scrollable div
+  return (
+    <div
+      ref={scrollContainerRef}
+      onScroll={(e) => {
+        scrollPosRef.current = e.currentTarget.scrollTop;
+      }}
+      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-y-auto overflow-x-hidden"
+    >
+      {settingsContent}
+    </div>
   );
 }

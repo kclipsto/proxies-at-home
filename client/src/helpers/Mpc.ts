@@ -1,5 +1,6 @@
 import { API_BASE } from "../constants";
-import { addRemoteImages } from "./dbUtils";
+import { db } from "../db";
+import { addRemoteImages, createLinkedBackCardsBulk } from "./dbUtils";
 import { undoableAddCards } from "./undoableActions";
 import { extractCardInfo } from "./CardInfoHelper";
 import { createImportSession } from "./ImportSession";
@@ -11,9 +12,15 @@ export type MpcItem = {
   filename?: string;
   frontId?: string;
   backId?: string;
+  backName?: string;
   imageId?: string;
   url?: string;
 };
+
+export interface MpcParseResult {
+  items: MpcItem[];
+  globalCardbackId?: string;
+}
 
 export interface MpcImportResult {
   success: boolean;
@@ -71,24 +78,33 @@ export function extractDriveId(
   return undefined;
 }
 
-export function tryParseMpcSchemaXml(raw: string): MpcItem[] | null {
+export function tryParseMpcSchemaXml(raw: string): MpcParseResult | null {
   const doc = new DOMParser().parseFromString(raw, "text/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
   const order = doc.querySelector("order");
   if (!order) return null;
 
+  // Parse the global cardback element (default back for cards without specific backs)
+  const globalCardbackElement = order.querySelector(":scope > cardback");
+  const globalCardbackId = extractDriveId(globalCardbackElement?.textContent || undefined);
+
   const fronts = Array.from(order.querySelectorAll("fronts > card"));
-  const backs = new Map<number, string>(); // slotIndex -> backId
+  // slotIndex -> { backId, backName }
+  const backs = new Map<number, { backId: string; backName: string }>();
   for (const bc of Array.from(order.querySelectorAll("backs > card"))) {
     const backId = extractDriveId(
       bc.querySelector("id")?.textContent || undefined
     );
+    const backNameRaw = bc.querySelector("name")?.textContent || "";
+    const backName = /\.[a-z0-9]{2,4}$/i.test(backNameRaw)
+      ? inferCardNameFromFilename(backNameRaw)
+      : backNameRaw || "Back";
     const slots = (bc.querySelector("slots")?.textContent || "")
       .split(",")
       .map((s) => parseInt(s.trim(), 10))
       .filter((n) => Number.isFinite(n));
     if (backId && slots.length) {
-      for (const s of slots) backs.set(s, backId);
+      for (const s of slots) backs.set(s, { backId, backName });
     }
   }
 
@@ -108,8 +124,11 @@ export function tryParseMpcSchemaXml(raw: string): MpcItem[] | null {
     const qty = Math.max(1, slots.length || 1);
 
     let backId: string | undefined;
+    let backName: string | undefined;
     if (slots.length > 0) {
-      backId = backs.get(slots[0]);
+      const backInfo = backs.get(slots[0]);
+      backId = backInfo?.backId;
+      backName = backInfo?.backName;
     }
 
     const looksLikeFilename = /\.[a-z0-9]{2,4}$/i.test(nameText);
@@ -126,10 +145,11 @@ export function tryParseMpcSchemaXml(raw: string): MpcItem[] | null {
       filename,
       frontId,
       backId,
+      backName,
     });
   }
 
-  return items;
+  return { items, globalCardbackId };
 }
 
 export function parseMpcText(raw: string): MpcItem[] {
@@ -191,46 +211,85 @@ export async function processMpcImport(
   xmlContent: string,
   onProgress?: (current: number, total: number, message: string) => void
 ): Promise<MpcImportResult> {
-  const mpcData = tryParseMpcSchemaXml(xmlContent);
-  if (!mpcData) {
+  const parseResult = tryParseMpcSchemaXml(xmlContent);
+  if (!parseResult) {
     return { success: false, count: 0, error: "Failed to parse MPC XML" };
   }
+
+  const { items: mpcData, globalCardbackId } = parseResult;
 
   const cardsToAdd: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }> = [];
   const totalItems = mpcData.length;
   const totalCards = mpcData.reduce((sum, item) => sum + item.qty, 0);
 
+  // Get the global cardback URL (used as fallback for cards without specific backs)
+  const globalCardbackUrl = getMpcImageUrl(globalCardbackId);
+
   // First pass: Collect all images to batch add (with correct ref counts based on qty)
   const imagesToBatch: Array<{ imageUrls: string[]; count: number }> = [];
-  const itemsWithUrls: Array<{ item: MpcItem; frontUrl?: string; backUrl?: string }> = [];
+  const itemsWithUrls: Array<{ item: MpcItem; frontUrl?: string; backUrl?: string; usesGlobalCardback: boolean }> = [];
+
+  // Count how many cards will use the global cardback (cards without specific backs)
+  let globalCardbackRefCount = 0;
 
   for (let i = 0; i < totalItems; i++) {
     const item = mpcData[i];
     const frontUrl = getMpcImageUrl(item.frontId);
-    const backUrl = getMpcImageUrl(item.backId);
+    const specificBackUrl = getMpcImageUrl(item.backId);
 
     // Use item.qty for the image ref count (multiple cards share the same image)
     if (frontUrl) {
       imagesToBatch.push({ imageUrls: [frontUrl], count: item.qty });
     }
-    if (backUrl) {
-      imagesToBatch.push({ imageUrls: [backUrl], count: item.qty });
+
+    // Determine which back to use: specific back takes priority, then global cardback
+    let backUrl: string | undefined;
+    let usesGlobalCardback = false;
+
+    if (specificBackUrl) {
+      // Card has a specific back from <backs> section (e.g., DFC)
+      backUrl = specificBackUrl;
+      imagesToBatch.push({ imageUrls: [specificBackUrl], count: item.qty });
+    } else if (globalCardbackUrl) {
+      // Card uses the global cardback
+      backUrl = globalCardbackUrl;
+      usesGlobalCardback = true;
+      globalCardbackRefCount += item.qty;
     }
 
-    itemsWithUrls.push({ item, frontUrl: frontUrl || undefined, backUrl: backUrl || undefined });
+    itemsWithUrls.push({ item, frontUrl: frontUrl || undefined, backUrl, usesGlobalCardback });
   }
 
-  // Batch add logic
+  // Add global cardback to db.cardbacks (not db.images)
+  let globalCardbackImageId: string | undefined;
+  if (globalCardbackUrl && globalCardbackRefCount > 0) {
+    // Use a stable ID based on the URL with cardback_ prefix
+    globalCardbackImageId = `cardback_mpc_${globalCardbackUrl.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 100)}`;
+
+    // Check if already exists - if not, add it
+    const existing = await db.cardbacks.get(globalCardbackImageId);
+    if (!existing) {
+      await db.cardbacks.add({
+        id: globalCardbackImageId,
+        sourceUrl: globalCardbackUrl,
+        hasBuiltInBleed: true,  // MPC cardbacks have bleed built in
+      });
+    }
+  }
+
+  // Batch add logic for front images only (not cardbacks)
   const urlToIdMap = await addRemoteImages(imagesToBatch);
+
+  // Track which cards have backs (for linking after creation)
+  const cardsWithBacks: Array<{ index: number; backUrl: string; backName?: string }> = [];
 
   // Second pass: Create card entries (respecting qty for multiple copies)
   let cardIndex = 0;
-  itemsWithUrls.forEach(({ item, frontUrl }, i) => {
+  itemsWithUrls.forEach(({ item, frontUrl, backUrl, usesGlobalCardback }, i) => {
     let frontImageId: string | undefined;
     if (frontUrl) {
       frontImageId = urlToIdMap.get(frontUrl);
     }
-    // Back URL handling logic omitted for brevity as it's not linked to card yet
 
     const rawName = item.name || `MPC Import ${i + 1}`;
     const cardInfo = extractCardInfo(rawName);
@@ -240,6 +299,13 @@ export async function processMpcImport(
       cardIndex++;
       if (onProgress) {
         onProgress(cardIndex, totalCards, `Processing card ${cardIndex}...`);
+      }
+
+      // Track which cards have backs for linking later
+      if (backUrl) {
+        // Use specific back name from XML, or "MPC Cardback" for global cardback
+        const backName = usesGlobalCardback ? "MPC Cardback" : item.backName;
+        cardsWithBacks.push({ index: cardsToAdd.length, backUrl, backName });
       }
 
       // Skip Scryfall enrichment during import - will be done in background
@@ -258,12 +324,41 @@ export async function processMpcImport(
   if (cardsToAdd.length > 0) {
     const addedCards = await undoableAddCards(cardsToAdd);
     const cardUuids = addedCards.map(c => c.uuid);
+    const allCreatedCardUuids = [...cardUuids];
 
-    // Create import session with all known UUIDs
+    // Create linked back cards for items with backs
+    const backCardItems = [];
+    for (const { index, backUrl, backName } of cardsWithBacks) {
+      const frontCard = addedCards[index];
+      if (!frontCard) continue;
+
+      // For global cardback, use the pre-computed ID; otherwise lookup from urlToIdMap
+      const isGlobalCardback = backUrl === globalCardbackUrl;
+      const backImageId = isGlobalCardback ? globalCardbackImageId : urlToIdMap.get(backUrl);
+      if (!backImageId) continue;
+
+      const backCardName = backName || `${frontCard.name} (Back)`;
+      backCardItems.push({
+        frontUuid: frontCard.uuid,
+        backImageId,
+        backName: backCardName,
+        options: {
+          needsEnrichment: false,
+          hasBuiltInBleed: true,
+        },
+      });
+    }
+
+    if (backCardItems.length > 0) {
+      const backUuids = await createLinkedBackCardsBulk(backCardItems);
+      allCreatedCardUuids.push(...backUuids);
+    }
+
+    // Create import session with all known UUIDs (fronts + backs)
     // awaitEnrichment: true because MPC imports need metadata fetching afterward
     createImportSession({
-      totalCards: cardUuids.length,
-      cardUuids,
+      totalCards: allCreatedCardUuids.length,
+      cardUuids: allCreatedCardUuids,
       importType: 'mpc',
       awaitEnrichment: true,
     });

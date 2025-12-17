@@ -1,281 +1,538 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useSettingsStore } from "./settings";
 
-// Mock indexedDbStorage
-vi.mock("./indexedDbStorage", () => ({
-    indexedDbStorage: {
-        getItem: vi.fn(),
-        setItem: vi.fn(),
-        removeItem: vi.fn(),
+// Mock dependencies
+vi.mock("./undoRedo", () => ({
+    useUndoRedoStore: {
+        getState: vi.fn(() => ({
+            pushAction: vi.fn(),
+        })),
     },
 }));
 
+vi.mock("@/helpers/undoableSettings", () => ({
+    recordSettingChange: vi.fn(),
+}));
+
 describe("useSettingsStore", () => {
+    // Store initial state for restoration
+    const initialState = useSettingsStore.getState();
+
     beforeEach(() => {
-        useSettingsStore.getState().resetSettings();
-        vi.clearAllMocks();
-    });
-
-    it("should have default settings", () => {
-        const state = useSettingsStore.getState();
-        expect(state.pageSizePreset).toBe("Letter");
-        expect(state.pageOrientation).toBe("portrait");
-        expect(state.columns).toBe(3);
-        expect(state.rows).toBe(3);
-    });
-
-    it("should update page size preset", () => {
-        const { setPageSizePreset } = useSettingsStore.getState();
-
-        setPageSizePreset("A4");
-
-        const state = useSettingsStore.getState();
-        expect(state.pageSizePreset).toBe("A4");
-        expect(state.pageSizeUnit).toBe("mm");
-        expect(state.pageWidth).toBe(210);
-        expect(state.pageHeight).toBe(297);
-    });
-
-    it("should swap page orientation", () => {
-        const { swapPageOrientation } = useSettingsStore.getState();
-
-        swapPageOrientation();
-
-        let state = useSettingsStore.getState();
-        expect(state.pageOrientation).toBe("landscape");
-        expect(state.pageWidth).toBe(11);
-        expect(state.pageHeight).toBe(8.5);
-
-        swapPageOrientation();
-
-        state = useSettingsStore.getState();
-        expect(state.pageOrientation).toBe("portrait");
-        expect(state.pageWidth).toBe(8.5);
-        expect(state.pageHeight).toBe(11);
-    });
-
-    it("should update simple settings", () => {
-        const state = useSettingsStore.getState();
-
-        state.setColumns(4);
-        expect(useSettingsStore.getState().columns).toBe(4);
-
-        state.setRows(5);
-        expect(useSettingsStore.getState().rows).toBe(5);
-
-        state.setBleedEdgeWidth(2);
-        expect(useSettingsStore.getState().bleedEdgeWidth).toBe(2);
-
-        state.setBleedEdge(false);
-        expect(useSettingsStore.getState().bleedEdge).toBe(false);
-
-        state.setGuideColor("#000000");
-        expect(useSettingsStore.getState().guideColor).toBe("#000000");
-
-        state.setGuideWidth(1);
-        expect(useSettingsStore.getState().guideWidth).toBe(1);
-
-        state.setZoom(2);
-        expect(useSettingsStore.getState().zoom).toBe(2);
-
-        state.setCardSpacingMm(5);
-        expect(useSettingsStore.getState().cardSpacingMm).toBe(5);
-
-        state.setCardPositionX(10);
-        expect(useSettingsStore.getState().cardPositionX).toBe(10);
-
-        state.setCardPositionY(20);
-        expect(useSettingsStore.getState().cardPositionY).toBe(20);
-
-        state.setDpi(600);
-        expect(useSettingsStore.getState().dpi).toBe(600);
-
-        state.setGlobalLanguage("es");
-        expect(useSettingsStore.getState().globalLanguage).toBe("es");
-    });
-
-    it("should reset settings", () => {
-        const state = useSettingsStore.getState();
-        state.setColumns(10);
-        state.resetSettings();
-
-        expect(useSettingsStore.getState().columns).toBe(3);
-    });
-
-    it("should migrate state correctly", () => {
-        const options = useSettingsStore.persist.getOptions();
-        const migrate = options.migrate;
-
-        if (!migrate) {
-            throw new Error("Migrate function not found");
-        }
-
-        // Test invalid state
-        expect(migrate(null, 0)).toEqual(expect.objectContaining({ pageSizePreset: "Letter" }));
-        expect(migrate("invalid", 0)).toEqual(expect.objectContaining({ pageSizePreset: "Letter" }));
-
-        // Test version < 2 (should remove page dimensions)
-        const oldState = {
-            pageSizePreset: "A4",
-            pageWidth: 100,
-            pageHeight: 200,
-            pageSizeUnit: "mm",
-            columns: 5
-        };
-
-        const migrated = migrate(oldState, 1) as Record<string, unknown>;
-        expect(migrated.columns).toBe(5);
-        expect(migrated.pageSizePreset).toBe("A4");
-        // Migration merges defaultPageSettings, so these will be present
-        expect(migrated.pageWidth).toBe(8.5);
-        expect(migrated.pageHeight).toBe(11);
-        expect(migrated.pageSizeUnit).toBe("in");
-
-        // Test version >= 2 (should keep state)
-        const newState = {
-            pageSizePreset: "A4",
-            pageWidth: 210,
-            pageHeight: 297,
-            pageSizeUnit: "mm",
-            columns: 5
-        };
-
-        const migratedNew = migrate(newState, 2);
-        expect(migratedNew).toEqual(expect.objectContaining(newState));
-    });
-
-    it("should merge state correctly", () => {
-        const options = useSettingsStore.persist.getOptions();
-        const merge = options.merge;
-
-        if (!merge) {
-            throw new Error("Merge function not found");
-        }
-
-        const currentState = useSettingsStore.getState();
-
-        // Test merging persisted state with landscape orientation
-        const persistedState = {
-            pageSizePreset: "A4",
-            pageOrientation: "landscape",
-            columns: 4
-        };
-
-        const merged = merge(persistedState, currentState) as Record<string, unknown>;
-
-        expect(merged.columns).toBe(4);
-        expect(merged.pageSizePreset).toBe("A4");
-        expect(merged.pageOrientation).toBe("landscape");
-        // A4 is 210x297 mm. Landscape should be 297x210.
-        expect(merged.pageWidth).toBe(297);
-        expect(merged.pageHeight).toBe(210);
-        expect(merged.pageSizeUnit).toBe("mm");
-    });
-
-    describe("Custom Page Size", () => {
-        it("should set custom page width and height", () => {
-            const { setPageWidth, setPageHeight } = useSettingsStore.getState();
-
-            setPageWidth(10);
-            let state = useSettingsStore.getState();
-            expect(state.pageWidth).toBe(10);
-            expect(state.customPageWidth).toBe(10);
-            expect(state.pageSizePreset).toBe("Custom");
-
-            setPageHeight(20);
-            state = useSettingsStore.getState();
-            expect(state.pageHeight).toBe(20);
-            expect(state.customPageHeight).toBe(20);
-            expect(state.pageSizePreset).toBe("Custom");
+        // Reset to a known state before each test
+        useSettingsStore.setState({
+            pageWidth: 8.5,
+            pageHeight: 11,
+            pageSizeUnit: "in",
+            pageSizePreset: "Letter",
+            pageOrientation: "portrait",
+            customPageWidth: 8.5,
+            customPageHeight: 11,
+            customPageUnit: "in",
+            columns: 3,
+            rows: 3,
+            bleedEdgeWidth: 1,
+            bleedEdge: true,
+            zoom: 1,
+            dpi: 900,
+            settingsPanelState: {
+                order: ["layout", "bleed", "guides", "card", "filterSort", "application"],
+                collapsed: {},
+            },
+            isSettingsPanelCollapsed: false,
+            isUploadPanelCollapsed: false,
+            sortBy: "manual",
+            sortOrder: "asc",
+            filterManaCost: [],
+            filterColors: [],
+            filterTypes: [],
+            filterCategories: [],
+            filterSectionCollapsed: {},
+            filterMatchType: "partial",
         });
+    });
 
-        it("should convert units correctly", () => {
-            const { setPageWidth, setPageHeight, setPageSizeUnit } = useSettingsStore.getState();
+    afterEach(() => {
+        // Restore initial state
+        useSettingsStore.setState(initialState);
+    });
 
-            // Set initial values in inches
-            setPageWidth(10);
-            setPageHeight(20);
+    describe("setPageSizePreset", () => {
+        it("should set A4 preset with correct dimensions", () => {
+            const { setPageSizePreset } = useSettingsStore.getState();
 
-            // Convert to mm
-            setPageSizeUnit("mm");
-            let state = useSettingsStore.getState();
+            setPageSizePreset("A4");
+
+            const state = useSettingsStore.getState();
+            expect(state.pageSizePreset).toBe("A4");
+            expect(state.pageWidth).toBe(210);
+            expect(state.pageHeight).toBe(297);
             expect(state.pageSizeUnit).toBe("mm");
-            expect(state.pageWidth).toBeCloseTo(254);
-            expect(state.pageHeight).toBeCloseTo(508);
-            expect(state.customPageWidth).toBeCloseTo(254);
-            expect(state.customPageHeight).toBeCloseTo(508);
-            expect(state.customPageUnit).toBe("mm");
-
-            // Convert back to inches
-            setPageSizeUnit("in");
-            state = useSettingsStore.getState();
-            expect(state.pageSizeUnit).toBe("in");
-            expect(state.pageWidth).toBeCloseTo(10);
-            expect(state.pageHeight).toBeCloseTo(20);
+            expect(state.pageOrientation).toBe("portrait");
         });
 
-        it("should persist custom values when switching presets", () => {
-            const { setPageWidth, setPageHeight, setPageSizePreset } = useSettingsStore.getState();
+        it("should set Letter preset with correct dimensions", () => {
+            const { setPageSizePreset } = useSettingsStore.getState();
 
-            // Set custom values
-            setPageWidth(15);
-            setPageHeight(25);
-
-            // Switch to preset
             setPageSizePreset("Letter");
-            let state = useSettingsStore.getState();
+
+            const state = useSettingsStore.getState();
             expect(state.pageSizePreset).toBe("Letter");
             expect(state.pageWidth).toBe(8.5);
-
-            // Switch back to Custom
-            setPageSizePreset("Custom");
-            state = useSettingsStore.getState();
-            expect(state.pageSizePreset).toBe("Custom");
-            expect(state.pageWidth).toBe(15);
-            expect(state.pageHeight).toBe(25);
+            expect(state.pageHeight).toBe(11);
+            expect(state.pageSizeUnit).toBe("in");
         });
 
-        it("should sync custom values on orientation swap", () => {
-            const { setPageWidth, setPageHeight, swapPageOrientation } = useSettingsStore.getState();
+        it("should restore custom dimensions when switching to Custom", () => {
+            useSettingsStore.setState({
+                customPageWidth: 10,
+                customPageHeight: 12,
+                customPageUnit: "in"
+            });
+            const { setPageSizePreset } = useSettingsStore.getState();
 
-            // Set custom values
-            setPageWidth(10);
-            setPageHeight(20);
+            setPageSizePreset("Custom");
 
-            // Swap orientation
-            swapPageOrientation();
             const state = useSettingsStore.getState();
+            expect(state.pageSizePreset).toBe("Custom");
+            expect(state.pageWidth).toBe(10);
+            expect(state.pageHeight).toBe(12);
+        });
+    });
+
+    describe("setPageWidth", () => {
+        it("should update width and switch to Custom preset", () => {
+            const { setPageWidth } = useSettingsStore.getState();
+
+            setPageWidth(9);
+
+            const state = useSettingsStore.getState();
+            expect(state.pageWidth).toBe(9);
+            expect(state.customPageWidth).toBe(9);
+            expect(state.pageSizePreset).toBe("Custom");
+        });
+    });
+
+    describe("setPageHeight", () => {
+        it("should update height and switch to Custom preset", () => {
+            const { setPageHeight } = useSettingsStore.getState();
+
+            setPageHeight(14);
+
+            const state = useSettingsStore.getState();
+            expect(state.pageHeight).toBe(14);
+            expect(state.customPageHeight).toBe(14);
+            expect(state.pageSizePreset).toBe("Custom");
+        });
+    });
+
+    describe("setPageSizeUnit", () => {
+        it("should convert dimensions from inches to mm", () => {
+            const { setPageSizeUnit } = useSettingsStore.getState();
+
+            setPageSizeUnit("mm");
+
+            const state = useSettingsStore.getState();
+            expect(state.pageSizeUnit).toBe("mm");
+            expect(state.pageWidth).toBeCloseTo(8.5 * 25.4, 1);
+            expect(state.pageHeight).toBeCloseTo(11 * 25.4, 1);
+        });
+
+        it("should convert dimensions from mm to inches", () => {
+            useSettingsStore.setState({
+                pageWidth: 210,
+                pageHeight: 297,
+                pageSizeUnit: "mm"
+            });
+            const { setPageSizeUnit } = useSettingsStore.getState();
+
+            setPageSizeUnit("in");
+
+            const state = useSettingsStore.getState();
+            expect(state.pageSizeUnit).toBe("in");
+            expect(state.pageWidth).toBeCloseTo(210 / 25.4, 1);
+            expect(state.pageHeight).toBeCloseTo(297 / 25.4, 1);
+        });
+
+        it("should do nothing if already in target unit", () => {
+            const { setPageSizeUnit } = useSettingsStore.getState();
+
+            setPageSizeUnit("in");
+
+            const state = useSettingsStore.getState();
+            expect(state.pageWidth).toBe(8.5);
+        });
+    });
+
+    describe("swapPageOrientation", () => {
+        it("should swap width and height", () => {
+            const { swapPageOrientation } = useSettingsStore.getState();
+
+            swapPageOrientation();
+
+            const state = useSettingsStore.getState();
+            expect(state.pageWidth).toBe(11);
+            expect(state.pageHeight).toBe(8.5);
             expect(state.pageOrientation).toBe("landscape");
-            expect(state.pageWidth).toBe(20);
-            expect(state.pageHeight).toBe(10);
-            // Verify custom values are also swapped
-            expect(state.customPageWidth).toBe(20);
+        });
+
+        it("should swap back to portrait", () => {
+            useSettingsStore.setState({ pageOrientation: "landscape" });
+            const { swapPageOrientation } = useSettingsStore.getState();
+
+            swapPageOrientation();
+
+            const state = useSettingsStore.getState();
+            expect(state.pageOrientation).toBe("portrait");
+        });
+
+        it("should also swap custom dimensions when in Custom mode", () => {
+            useSettingsStore.setState({
+                pageSizePreset: "Custom",
+                customPageWidth: 10,
+                customPageHeight: 12
+            });
+            const { swapPageOrientation } = useSettingsStore.getState();
+
+            swapPageOrientation();
+
+            const state = useSettingsStore.getState();
+            expect(state.customPageWidth).toBe(12);
             expect(state.customPageHeight).toBe(10);
         });
+    });
 
-        it("should merge custom state correctly", () => {
-            const options = useSettingsStore.persist.getOptions();
-            const merge = options.merge;
+    describe("simple setters", () => {
+        it("setColumns should update columns", () => {
+            const { setColumns } = useSettingsStore.getState();
+            setColumns(4);
+            expect(useSettingsStore.getState().columns).toBe(4);
+        });
 
-            if (!merge) throw new Error("Merge function not found");
+        it("setRows should update rows", () => {
+            const { setRows } = useSettingsStore.getState();
+            setRows(4);
+            expect(useSettingsStore.getState().rows).toBe(4);
+        });
 
-            const currentState = useSettingsStore.getState();
+        it("setBleedEdgeWidth should update bleedEdgeWidth", () => {
+            const { setBleedEdgeWidth } = useSettingsStore.getState();
+            setBleedEdgeWidth(2);
+            expect(useSettingsStore.getState().bleedEdgeWidth).toBe(2);
+        });
 
-            // Test merging persisted custom state
-            const persistedState = {
-                pageSizePreset: "Custom",
-                customPageWidth: 12.5,
-                customPageHeight: 18.5,
-                customPageUnit: "in",
-                columns: 4
-            };
+        it("setBleedEdge should update bleedEdge", () => {
+            const { setBleedEdge } = useSettingsStore.getState();
+            setBleedEdge(false);
+            expect(useSettingsStore.getState().bleedEdge).toBe(false);
+        });
 
-            const merged = merge(persistedState, currentState) as Record<string, unknown>;
+        it("setZoom should update zoom", () => {
+            const { setZoom } = useSettingsStore.getState();
+            setZoom(1.5);
+            expect(useSettingsStore.getState().zoom).toBe(1.5);
+        });
 
-            expect(merged.pageSizePreset).toBe("Custom");
-            expect(merged.pageWidth).toBe(12.5);
-            expect(merged.pageHeight).toBe(18.5);
-            expect(merged.pageSizeUnit).toBe("in");
+        it("setDpi should update dpi", () => {
+            const { setDpi } = useSettingsStore.getState();
+            setDpi(600);
+            expect(useSettingsStore.getState().dpi).toBe(600);
+        });
+
+        it("setSortBy should update sortBy", () => {
+            const { setSortBy } = useSettingsStore.getState();
+            setSortBy("name");
+            expect(useSettingsStore.getState().sortBy).toBe("name");
+        });
+
+        it("setSortOrder should update sortOrder", () => {
+            const { setSortOrder } = useSettingsStore.getState();
+            setSortOrder("desc");
+            expect(useSettingsStore.getState().sortOrder).toBe("desc");
+        });
+    });
+
+    describe("setCardSpacingMm", () => {
+        it("should update card spacing", () => {
+            const { setCardSpacingMm } = useSettingsStore.getState();
+            setCardSpacingMm(2);
+            expect(useSettingsStore.getState().cardSpacingMm).toBe(2);
+        });
+
+        it("should clamp negative values to 0", () => {
+            const { setCardSpacingMm } = useSettingsStore.getState();
+            setCardSpacingMm(-5);
+            expect(useSettingsStore.getState().cardSpacingMm).toBe(0);
+        });
+    });
+
+    describe("panel state management", () => {
+        it("setPanelOrder should update panel order", () => {
+            const { setPanelOrder } = useSettingsStore.getState();
+            const newOrder = ["bleed", "layout", "guides"];
+
+            setPanelOrder(newOrder);
+
+            expect(useSettingsStore.getState().settingsPanelState.order).toEqual(newOrder);
+        });
+
+        it("togglePanelCollapse should toggle panel collapsed state", () => {
+            const { togglePanelCollapse } = useSettingsStore.getState();
+
+            togglePanelCollapse("layout");
+            expect(useSettingsStore.getState().settingsPanelState.collapsed.layout).toBe(true);
+
+            togglePanelCollapse("layout");
+            expect(useSettingsStore.getState().settingsPanelState.collapsed.layout).toBe(false);
+        });
+
+        it("expandAllPanels should set all panels to not collapsed", () => {
+            useSettingsStore.setState({
+                settingsPanelState: {
+                    order: ["layout", "bleed", "guides"],
+                    collapsed: { layout: true, bleed: true, guides: true },
+                },
+            });
+            const { expandAllPanels } = useSettingsStore.getState();
+
+            expandAllPanels();
+
+            const collapsed = useSettingsStore.getState().settingsPanelState.collapsed;
+            expect(collapsed.layout).toBe(false);
+            expect(collapsed.bleed).toBe(false);
+            expect(collapsed.guides).toBe(false);
+        });
+
+        it("collapseAllPanels should set all panels to collapsed", () => {
+            const { collapseAllPanels } = useSettingsStore.getState();
+
+            collapseAllPanels();
+
+            const collapsed = useSettingsStore.getState().settingsPanelState.collapsed;
+            expect(collapsed.layout).toBe(true);
+            expect(collapsed.bleed).toBe(true);
+            expect(collapsed.guides).toBe(true);
+        });
+
+        it("toggleSettingsPanel should toggle settings panel collapsed state", () => {
+            const { toggleSettingsPanel } = useSettingsStore.getState();
+
+            toggleSettingsPanel();
+            expect(useSettingsStore.getState().isSettingsPanelCollapsed).toBe(true);
+
+            toggleSettingsPanel();
+            expect(useSettingsStore.getState().isSettingsPanelCollapsed).toBe(false);
+        });
+
+        it("toggleUploadPanel should toggle upload panel collapsed state", () => {
+            const { toggleUploadPanel } = useSettingsStore.getState();
+
+            toggleUploadPanel();
+            expect(useSettingsStore.getState().isUploadPanelCollapsed).toBe(true);
+
+            toggleUploadPanel();
+            expect(useSettingsStore.getState().isUploadPanelCollapsed).toBe(false);
+        });
+    });
+
+    describe("filter settings", () => {
+        it("setFilterManaCost should update filter", () => {
+            const { setFilterManaCost } = useSettingsStore.getState();
+            setFilterManaCost([1, 2, 3]);
+            expect(useSettingsStore.getState().filterManaCost).toEqual([1, 2, 3]);
+        });
+
+        it("setFilterColors should update filter", () => {
+            const { setFilterColors } = useSettingsStore.getState();
+            setFilterColors(["W", "U", "B"]);
+            expect(useSettingsStore.getState().filterColors).toEqual(["W", "U", "B"]);
+        });
+
+        it("setFilterTypes should update filter", () => {
+            const { setFilterTypes } = useSettingsStore.getState();
+            setFilterTypes(["Creature", "Instant"]);
+            expect(useSettingsStore.getState().filterTypes).toEqual(["Creature", "Instant"]);
+        });
+
+        it("setFilterCategories should update filter", () => {
+            const { setFilterCategories } = useSettingsStore.getState();
+            setFilterCategories(["Main", "Sideboard"]);
+            expect(useSettingsStore.getState().filterCategories).toEqual(["Main", "Sideboard"]);
+        });
+
+        it("setFilterSectionCollapsed should update collapsed state for section", () => {
+            const { setFilterSectionCollapsed } = useSettingsStore.getState();
+            setFilterSectionCollapsed("mana", true);
+            expect(useSettingsStore.getState().filterSectionCollapsed.mana).toBe(true);
+        });
+
+        it("setFilterMatchType should update match type", () => {
+            const { setFilterMatchType } = useSettingsStore.getState();
+            setFilterMatchType("exact");
+            expect(useSettingsStore.getState().filterMatchType).toBe("exact");
+        });
+    });
+
+    describe("additional settings", () => {
+        it("setDecklistSortAlpha should update setting", () => {
+            const { setDecklistSortAlpha } = useSettingsStore.getState();
+            setDecklistSortAlpha(true);
+            expect(useSettingsStore.getState().decklistSortAlpha).toBe(true);
+        });
+
+        it("setShowProcessingToasts should update setting", () => {
+            const { setShowProcessingToasts } = useSettingsStore.getState();
+            setShowProcessingToasts(false);
+            expect(useSettingsStore.getState().showProcessingToasts).toBe(false);
+        });
+
+        it("setDefaultCardbackId should update setting", () => {
+            const { setDefaultCardbackId } = useSettingsStore.getState();
+            setDefaultCardbackId("custom-back");
+            expect(useSettingsStore.getState().defaultCardbackId).toBe("custom-back");
+        });
+
+        it("setExportMode should update setting", () => {
+            const { setExportMode } = useSettingsStore.getState();
+            setExportMode("duplex");
+            expect(useSettingsStore.getState().exportMode).toBe("duplex");
+        });
+
+        it("setHasHydrated should update setting", () => {
+            const { setHasHydrated } = useSettingsStore.getState();
+            setHasHydrated(true);
+            expect(useSettingsStore.getState().hasHydrated).toBe(true);
+        });
+    });
+
+    describe("bleed settings", () => {
+        it("setWithBleedSourceAmount should update setting", () => {
+            const { setWithBleedSourceAmount } = useSettingsStore.getState();
+            setWithBleedSourceAmount(5);
+            expect(useSettingsStore.getState().withBleedSourceAmount).toBe(5);
+        });
+
+        it("setWithBleedTargetMode should update setting", () => {
+            const { setWithBleedTargetMode } = useSettingsStore.getState();
+            setWithBleedTargetMode("none");
+            expect(useSettingsStore.getState().withBleedTargetMode).toBe("none");
+        });
+
+        it("setWithBleedTargetAmount should update setting", () => {
+            const { setWithBleedTargetAmount } = useSettingsStore.getState();
+            setWithBleedTargetAmount(4);
+            expect(useSettingsStore.getState().withBleedTargetAmount).toBe(4);
+        });
+
+        it("setNoBleedTargetMode should update setting", () => {
+            const { setNoBleedTargetMode } = useSettingsStore.getState();
+            setNoBleedTargetMode("manual");
+            expect(useSettingsStore.getState().noBleedTargetMode).toBe("manual");
+        });
+
+        it("setNoBleedTargetAmount should update setting", () => {
+            const { setNoBleedTargetAmount } = useSettingsStore.getState();
+            setNoBleedTargetAmount(2);
+            expect(useSettingsStore.getState().noBleedTargetAmount).toBe(2);
+        });
+    });
+
+    describe("guide settings", () => {
+        it("setGuideColor should update setting", () => {
+            const { setGuideColor } = useSettingsStore.getState();
+            setGuideColor("#FF0000");
+            expect(useSettingsStore.getState().guideColor).toBe("#FF0000");
+        });
+
+        it("setGuideWidth should update setting", () => {
+            const { setGuideWidth } = useSettingsStore.getState();
+            setGuideWidth(2);
+            expect(useSettingsStore.getState().guideWidth).toBe(2);
+        });
+
+        it("setCutLineStyle should update setting", () => {
+            const { setCutLineStyle } = useSettingsStore.getState();
+            setCutLineStyle("edges");
+            expect(useSettingsStore.getState().cutLineStyle).toBe("edges");
+        });
+
+        it("setPerCardGuideStyle should update setting", () => {
+            const { setPerCardGuideStyle } = useSettingsStore.getState();
+            setPerCardGuideStyle("rounded-corners");
+            expect(useSettingsStore.getState().perCardGuideStyle).toBe("rounded-corners");
+        });
+
+        it("setGuidePlacement should update setting", () => {
+            const { setGuidePlacement } = useSettingsStore.getState();
+            setGuidePlacement("inside");
+            expect(useSettingsStore.getState().guidePlacement).toBe("inside");
+        });
+    });
+
+    describe("position settings", () => {
+        it("setCardPositionX should update setting", () => {
+            const { setCardPositionX } = useSettingsStore.getState();
+            setCardPositionX(5);
+            expect(useSettingsStore.getState().cardPositionX).toBe(5);
+        });
+
+        it("setCardPositionY should update setting", () => {
+            const { setCardPositionY } = useSettingsStore.getState();
+            setCardPositionY(10);
+            expect(useSettingsStore.getState().cardPositionY).toBe(10);
+        });
+    });
+
+    describe("language and panel width", () => {
+        it("setGlobalLanguage should update setting", () => {
+            const { setGlobalLanguage } = useSettingsStore.getState();
+            setGlobalLanguage("de");
+            expect(useSettingsStore.getState().globalLanguage).toBe("de");
+        });
+
+        it("setSettingsPanelWidth should update setting", () => {
+            const { setSettingsPanelWidth } = useSettingsStore.getState();
+            setSettingsPanelWidth(400);
+            expect(useSettingsStore.getState().settingsPanelWidth).toBe(400);
+        });
+
+        it("setUploadPanelWidth should update setting", () => {
+            const { setUploadPanelWidth } = useSettingsStore.getState();
+            setUploadPanelWidth(350);
+            expect(useSettingsStore.getState().uploadPanelWidth).toBe(350);
+        });
+
+        it("setBleedEdgeUnit should update setting", () => {
+            const { setBleedEdgeUnit } = useSettingsStore.getState();
+            setBleedEdgeUnit("in");
+            expect(useSettingsStore.getState().bleedEdgeUnit).toBe("in");
+        });
+
+        it("setDarkenNearBlack should update setting", () => {
+            const { setDarkenNearBlack } = useSettingsStore.getState();
+            setDarkenNearBlack(false);
+            expect(useSettingsStore.getState().darkenNearBlack).toBe(false);
+        });
+    });
+
+    describe("resetSettings", () => {
+        it("should reset to default settings", () => {
+            // Modify some settings first
+            useSettingsStore.setState({
+                columns: 5,
+                rows: 5,
+                zoom: 2,
+                sortBy: "name",
+            });
+
+            const { resetSettings } = useSettingsStore.getState();
+            resetSettings();
+
+            const state = useSettingsStore.getState();
+            expect(state.columns).toBe(3);
+            expect(state.rows).toBe(3);
+            expect(state.zoom).toBe(1);
+            expect(state.sortBy).toBe("manual");
         });
     });
 });

@@ -228,4 +228,90 @@ test.describe('Performance Regression Tests', () => {
         // Should be ZERO or very few (blobs cached in IndexedDB)
         expect(requestsAfterReload).toBeLessThanOrEqual(2); // Allow minimal fallback
     });
+
+    test('should not trigger cascading re-renders after processing completes', async ({ page, browserName }) => {
+        test.skip(browserName === 'webkit', 'WebKit is too slow for this test');
+
+        // Track console logs for processing patterns
+        const processUnprocessedCalls: string[] = [];
+        const imageCacheUpdates: string[] = [];
+        const ensureProcessedCalls: string[] = [];
+
+        page.on('console', msg => {
+            const text = msg.text();
+            if (text.includes('[PerfTrace] ProxyBuilderPage: processUnprocessed found')) {
+                processUnprocessedCalls.push(text);
+            }
+            if (text.includes('[PerfTrace] useImageCache: processedImageUrls updated')) {
+                imageCacheUpdates.push(text);
+            }
+            if (text.includes('[PerfTrace] ensureProcessed: Starting processing for')) {
+                ensureProcessedCalls.push(text);
+            }
+        });
+
+        await page.goto('/');
+
+        // Upload cards
+        const fileInput = page.locator('input#import-mpc-xml');
+        await fileInput.setInputFiles(path.join(__dirname, '../fixtures/mpc-cards.xml'));
+
+        // Wait for cards to render
+        const cardDragHandles = page.getByTitle('Drag');
+        await expect(cardDragHandles).toHaveCount(2, { timeout: 10000 });
+
+        // Wait for VISIBLE images to be processed
+        await expect(async () => {
+            const visibleImages = page.locator('.proxy-page img:visible');
+            const count = await visibleImages.count();
+            expect(count).toBeGreaterThan(0);
+
+            for (let i = 0; i < count; i++) {
+                const src = await visibleImages.nth(i).getAttribute('src');
+                expect(src).toMatch(/^blob:/);
+            }
+        }).toPass({ timeout: 60000 });
+
+        // Let things settle
+        await page.waitForTimeout(3000);
+
+        // Log the patterns for debugging
+        console.log(`processUnprocessed calls: ${processUnprocessedCalls.length}`);
+        console.log(`useImageCache updates: ${imageCacheUpdates.length}`);
+        console.log(`ensureProcessed calls: ${ensureProcessedCalls.length}`);
+
+        // Print sample logs for debugging if there are too many
+        if (processUnprocessedCalls.length > 10) {
+            console.log('Sample processUnprocessed logs:');
+            processUnprocessedCalls.slice(-5).forEach(log => console.log(`  ${log}`));
+        }
+
+        // CRITICAL: After processing is complete, we should see:
+        // - processUnprocessed should eventually settle to "0 unique images"
+        // - There should NOT be an excessive number of these calls
+
+        // Count how many times processUnprocessed was called with 0 images
+        const zeroImageCalls = processUnprocessedCalls.filter(c => c.includes('found 0 unique images'));
+
+        // There should be at most 5 "found 0" calls after processing settles
+        // If there are many more, it indicates a cascading re-render problem
+        expect(zeroImageCalls.length).toBeLessThanOrEqual(5);
+
+        // The useImageCache "New keys" updates should stabilize
+        // After initial processing, there should NOT be repeated updates with same key count
+        const keyUpdateCounts = imageCacheUpdates.map(log => {
+            const match = log.match(/New keys: (\d+)/);
+            return match ? parseInt(match[1]) : 0;
+        });
+
+        // Find how many times the same count repeats after it stabilizes
+        const maxKeyCount = Math.max(...keyUpdateCounts);
+        const repeatedMaxCount = keyUpdateCounts.filter(c => c === maxKeyCount).length;
+
+        // If the max key count repeats more than 10 times, that's a bug
+        // (indicates useImageCache creating new refs for unchanged data)
+        expect(repeatedMaxCount).toBeLessThanOrEqual(10);
+
+        console.log(`Max key count (${maxKeyCount}) repeated ${repeatedMaxCount} times`);
+    });
 });

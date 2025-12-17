@@ -35,13 +35,22 @@ test.describe('Advanced Search & Artwork Modal', () => {
         // It's the button next to the input.
         await page.locator('.flex.gap-2.h-12 button.aspect-square').click();
 
-        // Wait for modal to close (ensure backdrop is gone)
-        await expect(page.locator('.fixed.inset-0.z-\\[100\\]')).toBeHidden();
+        // Modal should stay open (keepOpenOnAdd is true for DecklistUploader's AdvancedSearch)
+        await expect(page.locator('.fixed.inset-0.z-\\[100\\]')).toBeVisible();
 
-        // Re-open Advanced Search
+        // Success toast should appear with the card name
+        await expect(page.getByText(/Added Time/)).toBeVisible({ timeout: 2000 });
+
+        // Search input should still have the query (not cleared)
+        await expect(page.getByPlaceholder('Search card name...')).toHaveValue('Time Wa');
+
+        // Close modal manually
+        await page.locator('.fixed.inset-0.z-\\[100\\]').first().click({ position: { x: 10, y: 10 } });
+
+        // Re-open Advanced Search to verify it was properly closed
         await page.getByRole('button', { name: 'Advanced Search' }).click();
 
-        // Check if input is empty
+        // Check if input is empty (fresh modal open)
         await expect(page.getByPlaceholder('Search card name...')).toBeEmpty();
     });
 

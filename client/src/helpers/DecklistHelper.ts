@@ -16,7 +16,8 @@ export function groupCardsForDecklist(cards: CardOption[]): DecklistEntry[] {
   const result: DecklistEntry[] = [];
 
   for (const c of cards) {
-    if (!c?.name || c.name.toLowerCase().includes("card back")) continue;
+    // Skip cards without name, cards named "card back", and linked back cards (from cardback library)
+    if (!c?.name || c.name.toLowerCase().includes("card back") || c.linkedFrontId) continue;
 
     const name = c.name.trim();
     const set = c.set;

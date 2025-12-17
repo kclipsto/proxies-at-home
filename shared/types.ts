@@ -22,6 +22,13 @@ export interface CardOption {
   needsEnrichment?: boolean;
   enrichmentRetryCount?: number;
   enrichmentNextRetryAt?: number;
+  // DFC / Linked card support
+  linkedFrontId?: string;  // If set, this card IS a back (points to its front)
+  linkedBackId?: string;   // If set, this card HAS a back (points to it)
+  // Default cardback tracking - for linked back cards only
+  usesDefaultCardback?: boolean;  // If true, follows default cardback changes. If false, keeps specific selection.
+  // Visual state
+  isFlipped?: boolean;  // If true, card displays back face
 }
 
 export interface PrintInfo {
@@ -45,6 +52,11 @@ export interface ScryfallCard {
   type_line?: string;
   rarity?: string;
   prints?: PrintInfo[];
+  // DFC support: face information
+  card_faces?: Array<{
+    name: string;
+    imageUrl?: string;
+  }>;
 }
 
 export type CardInfo = {

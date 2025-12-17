@@ -36,7 +36,6 @@ export function SearchCarousel({
     const isProgrammaticSlideRef = useRef(false);
     const lastClickedIndexRef = useRef<number | null>(null);
     const snapDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const lastTapRef = useRef<number>(0);
 
     const totalItems = originalLength ?? displaySuggestions.length;
 
@@ -179,11 +178,6 @@ export function SearchCarousel({
                                     onAddCard(lastClickedIndexRef.current);
                                 }
                             }}
-                            onDoubleTap={() => {
-                                if (lastClickedIndexRef.current !== null) {
-                                    onAddCard(lastClickedIndexRef.current);
-                                }
-                            }}
                             watchSlidesProgress={true}
                             className="w-full h-full overflow-hidden"
                         >
@@ -194,19 +188,6 @@ export function SearchCarousel({
                                         return (
                                             <div
                                                 className={`transition-all duration-300 p-1 h-full flex items-center justify-center ${isActive ? 'brightness-100' : 'brightness-60'}`}
-                                                onDoubleClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onAddCard();
-                                                }}
-                                                onTouchEnd={(e) => {
-                                                    const now = Date.now();
-                                                    if (now - (lastTapRef.current || 0) < 300) {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        onAddCard();
-                                                    }
-                                                    lastTapRef.current = now;
-                                                }}
                                             >
                                                 <img
                                                     src={suggestion.imageUrls?.[0] || getScryfallImageUrl(suggestion.name)}

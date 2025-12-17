@@ -335,5 +335,179 @@ describe('dbUtils', () => {
         const updatedCard = await db.cards.get(card.uuid);
         expect(updatedCard?.name).toBe('New Name');
     });
+
+    // === DFC Support: Linked Back Cards ===
+    describe('Linked Back Cards', () => {
+        it('createLinkedBackCard should create back card with linkedFrontId', async () => {
+            const { addCards, createLinkedBackCard } = await import('./dbUtils');
+
+            // Create front card first
+            const [frontCard] = await addCards([{ name: 'Front Card', isUserUpload: false }]);
+            const frontId = frontCard.uuid;
+
+            // Create linked back card
+            const backId = await createLinkedBackCard(frontId, undefined, 'Back Card');
+
+            const back = await db.cards.get(backId);
+            expect(back).toBeDefined();
+            expect(back?.linkedFrontId).toBe(frontId);
+            expect(back?.name).toBe('Back Card');
+        });
+
+        it('createLinkedBackCard should update front with linkedBackId', async () => {
+            const { addCards, createLinkedBackCard } = await import('./dbUtils');
+
+            const [frontCard] = await addCards([{ name: 'Front', isUserUpload: false }]);
+            const frontId = frontCard.uuid;
+
+            const backId = await createLinkedBackCard(frontId, undefined, 'Back');
+
+            const updatedFront = await db.cards.get(frontId);
+            expect(updatedFront?.linkedBackId).toBe(backId);
+        });
+
+        it('createLinkedBackCard should assign imageId to back card', async () => {
+            const { addCards, addCustomImage, createLinkedBackCard } = await import('./dbUtils');
+
+            const blob = new Blob(['back image'], { type: 'image/png' });
+            const backImageId = await addCustomImage(blob);
+
+            const [frontCard] = await addCards([{ name: 'Front', isUserUpload: false }]);
+            const backId = await createLinkedBackCard(frontCard.uuid, backImageId, 'Back');
+
+            const back = await db.cards.get(backId);
+            expect(back?.imageId).toBe(backImageId);
+        });
+
+        it('deleteCard should cascade delete linked back card', async () => {
+            const { addCards, createLinkedBackCard, deleteCard } = await import('./dbUtils');
+
+            const [frontCard] = await addCards([{ name: 'Front', isUserUpload: false }]);
+            const backId = await createLinkedBackCard(frontCard.uuid, undefined, 'Back');
+
+            // Delete front - should also delete back
+            await deleteCard(frontCard.uuid);
+
+            const front = await db.cards.get(frontCard.uuid);
+            const back = await db.cards.get(backId);
+
+            expect(front).toBeUndefined();
+            expect(back).toBeUndefined();
+        });
+
+        it('deleteCard should NOT cascade delete front when back is deleted', async () => {
+            const { addCards, createLinkedBackCard, deleteCard } = await import('./dbUtils');
+
+            const [frontCard] = await addCards([{ name: 'Front', isUserUpload: false }]);
+            const backId = await createLinkedBackCard(frontCard.uuid, undefined, 'Back');
+
+            // Delete back - should NOT delete front
+            await deleteCard(backId);
+
+            const front = await db.cards.get(frontCard.uuid);
+            const back = await db.cards.get(backId);
+
+            expect(front).toBeDefined();
+            expect(front?.linkedBackId).toBeUndefined(); // Link should be cleared
+            expect(back).toBeUndefined();
+        });
+
+        it('back cards should have linkedFrontId, front cards should have linkedBackId', async () => {
+            const { addCards, createLinkedBackCard } = await import('./dbUtils');
+
+            const [frontCard] = await addCards([{ name: 'Front', isUserUpload: false }]);
+            const backId = await createLinkedBackCard(frontCard.uuid, undefined, 'Back');
+
+            const front = await db.cards.get(frontCard.uuid);
+            const back = await db.cards.get(backId);
+
+            // Front has linkedBackId, back has linkedFrontId
+            expect(front?.linkedBackId).toBe(backId);
+            expect(front?.linkedFrontId).toBeUndefined();
+            expect(back?.linkedFrontId).toBe(frontCard.uuid);
+            expect(back?.linkedBackId).toBeUndefined();
+        });
+
+        it('should set usesDefaultCardback flag when specified', async () => {
+            const { addCards, createLinkedBackCard } = await import('./dbUtils');
+            const cards = await addCards([
+                { name: 'Front Card', isUserUpload: false },
+            ]);
+            const frontCard = cards[0];
+
+            const backId = await createLinkedBackCard(
+                frontCard.uuid,
+                'test-cardback-id',
+                'Test Cardback',
+                { usesDefaultCardback: true }
+            );
+
+            const back = await db.cards.get(backId);
+            expect(back?.usesDefaultCardback).toBe(true);
+        });
+
+        it('should set usesDefaultCardback to false when explicitly specified', async () => {
+            const { addCards, createLinkedBackCard } = await import('./dbUtils');
+            const cards = await addCards([
+                { name: 'Front Card', isUserUpload: false },
+            ]);
+            const frontCard = cards[0];
+
+            const backId = await createLinkedBackCard(
+                frontCard.uuid,
+                'test-cardback-id',
+                'Test Cardback',
+                { usesDefaultCardback: false }
+            );
+
+            const back = await db.cards.get(backId);
+            expect(back?.usesDefaultCardback).toBe(false);
+        });
+    });
+
+    describe('Cardbacks vs Regular Images', () => {
+        it('should delete regular images when refCount reaches 0', async () => {
+            // Add a regular image (not a cardback)
+            await db.images.add({
+                id: 'test-regular-image',
+                refCount: 1,
+                sourceUrl: 'https://example.com/image.jpg',
+            });
+
+            // Use removeImageRef to decrement
+            const { removeImageRef } = await import('./dbUtils');
+            await removeImageRef('test-regular-image');
+
+            // Image should be deleted
+            const image = await db.images.get('test-regular-image');
+            expect(image).toBeUndefined();
+        });
+
+        it('cardbacks in db.cardbacks table are separate from db.images', async () => {
+            // Add a cardback to db.cardbacks
+            await db.cardbacks.add({
+                id: 'cardback_test_1',
+                sourceUrl: 'cardback://test',
+            });
+
+            // Add an image with same-ish id to db.images
+            await db.images.add({
+                id: 'image_test_1',
+                refCount: 1,
+                sourceUrl: 'https://example.com/image.jpg',
+            });
+
+            // They should be in separate tables
+            const cardback = await db.cardbacks.get('cardback_test_1');
+            const image = await db.images.get('image_test_1');
+
+            expect(cardback).toBeDefined();
+            expect(image).toBeDefined();
+
+            // Cardbacks don't have refCount
+            expect((cardback as unknown as { refCount?: number }).refCount).toBeUndefined();
+            expect(image?.refCount).toBe(1);
+        });
+    });
 });
 

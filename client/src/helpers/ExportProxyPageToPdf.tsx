@@ -34,6 +34,8 @@ export async function exportProxyPagesToPdf({
   onProgress,
   pagesPerPdf,
   cancellationPromise,
+  filenameSuffix = '',
+  returnBuffer = false,
 }: {
   cards: CardOption[];
   imagesById: Map<string, import("../db").Image>;
@@ -41,9 +43,11 @@ export async function exportProxyPagesToPdf({
   onProgress?: (progress: number) => void;
   pagesPerPdf: number;
   cancellationPromise: Promise<void>;
-}): Promise<void> {
+  filenameSuffix?: string;
+  returnBuffer?: boolean;
+}): Promise<Uint8Array | void> {
   if (!cards || !cards.length) {
-    return;
+    return returnBuffer ? new Uint8Array() : undefined;
   }
 
   // Extract settings from the unified object
@@ -67,6 +71,7 @@ export async function exportProxyPagesToPdf({
     cutLineStyle,
     perCardGuideStyle,
     guidePlacement,
+    rightAlignRows,
   } = pdfSettings;
 
   const perPage = Math.max(1, columns * rows);
@@ -231,6 +236,8 @@ export async function exportProxyPagesToPdf({
                       // Pass normalized source settings directly (no legacy conversion)
                       sourceSettings,
                       withBleedSourceAmount,
+                      // Right-align incomplete rows for backs export
+                      rightAlignRows,
                     };
 
                     idleWorker.worker.postMessage({
@@ -338,8 +345,14 @@ export async function exportProxyPagesToPdf({
   }
 
   const mergedPdfFile = await mergedPdf.save();
+
+  // Return buffer if requested (for duplex merging)
+  if (returnBuffer) {
+    return mergedPdfFile;
+  }
+
   const date = new Date().toISOString().slice(0, 10);
-  const filename = `proxxies_${date}.pdf`;
+  const filename = `proxxies_${date}${filenameSuffix}.pdf`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const blob = new Blob([mergedPdfFile as any], { type: "application/pdf" });

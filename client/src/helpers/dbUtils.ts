@@ -1,5 +1,7 @@
 import { db, type Image } from "@/db";
 import type { CardOption } from "../../../shared/types";
+import { parseImageIdFromUrl } from "./ImageHelper";
+import { isCardbackId } from "./cardbackLibrary";
 
 /**
  * Calculates the SHA-256 hash of a file or blob.
@@ -64,7 +66,7 @@ export async function addRemoteImage(
 ): Promise<string | undefined> {
   if (!imageUrls || imageUrls.length === 0) return undefined;
 
-  const imageId = imageUrls[0].includes("scryfall") ? imageUrls[0].split("?")[0] : imageUrls[0].split("id=")[1];
+  const imageId = parseImageIdFromUrl(imageUrls[0]);
 
   await db.transaction("rw", db.images, async () => {
     const existingImage = await db.images.get(imageId);
@@ -119,11 +121,9 @@ export async function addRemoteImages(
   for (const img of images) {
     if (!img.imageUrls || img.imageUrls.length === 0) continue;
 
-    // Use consistent ID generation logic matching addRemoteImage
+    // Use consistent ID generation logic
     const firstUrl = img.imageUrls[0];
-    const imageId = firstUrl.includes("scryfall")
-      ? firstUrl.split("?")[0]
-      : (firstUrl.includes("id=") ? firstUrl.split("id=")[1] : firstUrl);
+    const imageId = parseImageIdFromUrl(firstUrl);
 
     result.set(firstUrl, imageId);
 
@@ -193,6 +193,7 @@ async function _removeImageRef_transactional(imageId: string): Promise<void> {
       await db.images.update(imageId, { refCount: image.refCount - 1 });
     } else {
       // Delete the image if it's the last reference
+      // Note: cardbacks are in db.cardbacks, not db.images
       await db.images.delete(imageId);
     }
   }
@@ -218,19 +219,22 @@ export async function removeImageRef(imageId: string): Promise<void> {
  * Adds a new card to the database, linking it to an image.
  * This function assumes the image reference has already been accounted for.
  * @param cardData The card data to add.
- * @param imageId The ID of the image to link.
+ * @param options.startOrder Explicit starting order for the first card. If provided, cards will be ordered sequentially from this value.
  */
 export async function addCards(
   cardsData: Array<
     Omit<CardOption, "uuid" | "order"> & { imageId?: string }
-  >
+  >,
+  options?: { startOrder?: number }
 ): Promise<CardOption[]> {
-  const maxOrder = (await db.cards.orderBy("order").last())?.order ?? 0;
+  // Use explicit startOrder if provided, otherwise append after all existing cards
+  const baseOrder = options?.startOrder ?? ((await db.cards.orderBy("order").last())?.order ?? 0) + 10;
 
   const newCards: CardOption[] = cardsData.map((cardData, i) => ({
     ...cardData,
     uuid: crypto.randomUUID(),
-    order: maxOrder + (i + 1) * 10,
+    // When startOrder is provided, use it directly; otherwise use traditional incremental ordering
+    order: options?.startOrder !== undefined ? baseOrder + i * 10 : baseOrder + i * 10 - 10 + 10,
   }));
 
   if (newCards.length > 0) {
@@ -241,12 +245,30 @@ export async function addCards(
 
 /**
  * Deletes a card from the database and decrements the reference count of its image.
+ * If the card has a linkedBackId, the back card will also be deleted (cascade).
+ * If the card is a back (has linkedFrontId), the front's linkedBackId will be cleared.
  * @param uuid The UUID of the card to delete.
  */
 export async function deleteCard(uuid: string): Promise<void> {
-  await db.transaction("rw", db.cards, db.images, async () => {
+  await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
     const card = await db.cards.get(uuid);
     if (card) {
+      // If this is a front card with a linked back, cascade delete the back
+      if (card.linkedBackId) {
+        const backCard = await db.cards.get(card.linkedBackId);
+        if (backCard) {
+          await db.cards.delete(card.linkedBackId);
+          if (backCard.imageId) {
+            await _removeImageRef_transactional(backCard.imageId);
+          }
+        }
+      }
+
+      // If this is a back card, clear the front's linkedBackId
+      if (card.linkedFrontId) {
+        await db.cards.update(card.linkedFrontId, { linkedBackId: undefined });
+      }
+
       await db.cards.delete(uuid);
       if (card.imageId) {
         // Safely call the non-transactional helper from within the transaction.
@@ -257,12 +279,286 @@ export async function deleteCard(uuid: string): Promise<void> {
 }
 
 /**
+ * Creates a back card linked to a front card.
+ * Creates bidirectional links: front.linkedBackId -> back, back.linkedFrontId -> front
+ * @param frontUuid The UUID of the front card to link to.
+ * @param backImageId Optional image ID for the back card.
+ * @param backName Name for the back card (e.g., DFC back face name).
+ * @param options Additional options for the back card.
+ * @returns The UUID of the newly created back card.
+ */
+export async function createLinkedBackCard(
+  frontUuid: string,
+  backImageId: string | undefined,
+  backName: string,
+  options?: {
+    hasBuiltInBleed?: boolean;
+    usesDefaultCardback?: boolean;
+  }
+): Promise<string> {
+  const backUuid = crypto.randomUUID();
+
+  await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+    const frontCard = await db.cards.get(frontUuid);
+    if (!frontCard) {
+      throw new Error(`Front card not found: ${frontUuid}`);
+    }
+
+    // Create back card with link to front
+    // Back cards NEVER need Scryfall enrichment
+    const backCard: CardOption = {
+      uuid: backUuid,
+      name: backName,
+      order: frontCard.order + 0.001, // Place just after front in order
+      isUserUpload: frontCard.isUserUpload,
+      imageId: backImageId,
+      linkedFrontId: frontUuid,
+      needsEnrichment: false,  // Back cards never need Scryfall metadata
+      hasBuiltInBleed: options?.hasBuiltInBleed,
+      usesDefaultCardback: options?.usesDefaultCardback,
+    };
+
+    await db.cards.add(backCard);
+
+    // Update front card with link to back
+    await db.cards.update(frontUuid, { linkedBackId: backUuid });
+
+    // Only increment ref count for custom back images (not cardbacks)
+    // Cardbacks don't need ref counting - they're only deleted explicitly
+    if (backImageId && !options?.usesDefaultCardback) {
+      const image = await db.images.get(backImageId);
+      if (image) {
+        await db.images.update(backImageId, { refCount: image.refCount + 1 });
+      }
+    }
+  });
+
+  return backUuid;
+}
+
+/**
+ * Creates multiple linked back cards in a single transaction.
+ * @param items Array of back card definitions.
+ * @returns Array of new back card UUIDs.
+ */
+export async function createLinkedBackCardsBulk(
+  items: Array<{
+    frontUuid: string;
+    backImageId: string | undefined;
+    backName: string;
+    options?: {
+      hasBuiltInBleed?: boolean;
+      usesDefaultCardback?: boolean;
+    };
+  }>
+): Promise<string[]> {
+  const newUuids: string[] = [];
+
+  await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+    // 1. Fetch all front cards 
+    const frontUuids = items.map(i => i.frontUuid);
+    const frontCards = await db.cards.bulkGet(frontUuids);
+
+    const backCardsToAdd: CardOption[] = [];
+    const frontUpdates: { key: string; changes: Partial<CardOption>; }[] = [];
+    // Only track ref counts for non-cardback images (cardbacks don't need ref counting)
+    const imageRefIncrements = new Map<string, number>();
+    // Track existing backs that need updating (when front already has a linked back)
+    const existingBackIdsToUpdate: Array<{
+      backUuid: string;
+      newImageId: string | undefined;
+      newName: string;
+      options?: {
+        hasBuiltInBleed?: boolean;
+        usesDefaultCardback?: boolean;
+      };
+    }> = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const front = frontCards[i];
+
+      if (!front) continue; // Should not happen in valid flow
+
+      // If front already has a linked back (e.g., from default cardback creation),
+      // update the existing back's imageId instead of creating a new one
+      if (front.linkedBackId) {
+        existingBackIdsToUpdate.push({
+          backUuid: front.linkedBackId,
+          newImageId: item.backImageId,
+          newName: item.backName,
+          options: item.options,
+        });
+        newUuids.push(front.linkedBackId);
+        continue;
+      }
+
+      const backUuid = crypto.randomUUID();
+      newUuids.push(backUuid);
+
+      // Prepare back card - back cards NEVER need Scryfall enrichment
+      backCardsToAdd.push({
+        uuid: backUuid,
+        name: item.backName,
+        order: front.order + 0.001,
+        isUserUpload: front.isUserUpload,
+        imageId: item.backImageId,
+        linkedFrontId: item.frontUuid,
+        needsEnrichment: false,  // Back cards never need Scryfall metadata
+        hasBuiltInBleed: item.options?.hasBuiltInBleed,
+        usesDefaultCardback: item.options?.usesDefaultCardback,
+      });
+
+      // Prepare front update
+      frontUpdates.push({
+        key: item.frontUuid,
+        changes: { linkedBackId: backUuid }
+      });
+
+      // Only tally ref counts for non-cardback images (cardbacks don't need ref counting)
+      if (item.backImageId && !isCardbackId(item.backImageId)) {
+        imageRefIncrements.set(item.backImageId, (imageRefIncrements.get(item.backImageId) || 0) + 1);
+      }
+    }
+
+    // 2. Perform bulk operations
+    if (backCardsToAdd.length > 0) {
+      await db.cards.bulkAdd(backCardsToAdd);
+    }
+
+    if (frontUpdates.length > 0) {
+      await db.cards.bulkUpdate(frontUpdates);
+    }
+
+    // 3. Update image ref counts for NEW back cards using bulk operations
+    // Only for non-cardback images (cardbacks don't need ref counting)
+    if (imageRefIncrements.size > 0) {
+      const imageIds = Array.from(imageRefIncrements.keys());
+      const images = await db.images.bulkGet(imageIds);
+      const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+
+      for (let i = 0; i < imageIds.length; i++) {
+        const image = images[i];
+        if (image) {
+          const increment = imageRefIncrements.get(imageIds[i]) || 0;
+          imageUpdates.push({
+            key: imageIds[i],
+            changes: { refCount: image.refCount + increment },
+          });
+        }
+      }
+
+      if (imageUpdates.length > 0) {
+        await db.images.bulkUpdate(imageUpdates);
+      }
+    }
+
+    // 4. Update existing back cards (replace their imageId and properties) using bulk operations
+    if (existingBackIdsToUpdate.length > 0) {
+      // Get all existing back cards at once
+      const backUuids = existingBackIdsToUpdate.map(u => u.backUuid);
+      const existingBacks = await db.cards.bulkGet(backUuids);
+
+      // Collect old image IDs to decrement and new image IDs to increment
+      // Only for non-cardback images (cardbacks don't need ref counting)
+      const oldImageIds = new Set<string>();
+      const newImageIds = new Set<string>();
+
+      for (let i = 0; i < existingBackIdsToUpdate.length; i++) {
+        const update = existingBackIdsToUpdate[i];
+        const existingBack = existingBacks[i];
+        // Only track non-cardback images
+        if (existingBack?.imageId && existingBack.imageId !== update.newImageId && !isCardbackId(existingBack.imageId)) {
+          oldImageIds.add(existingBack.imageId);
+        }
+        if (update.newImageId && !isCardbackId(update.newImageId)) {
+          newImageIds.add(update.newImageId);
+        }
+      }
+
+      // Get all images at once
+      const allImageIds = [...Array.from(oldImageIds), ...Array.from(newImageIds)];
+      const allImages = await db.images.bulkGet(allImageIds);
+      const imageMap = new Map<string, typeof allImages[0]>();
+      for (let i = 0; i < allImageIds.length; i++) {
+        if (allImages[i]) {
+          imageMap.set(allImageIds[i], allImages[i]);
+        }
+      }
+
+      // Calculate ref count changes
+      const imageRefDecrements = new Map<string, number>();
+      const imageRefIncrements = new Map<string, number>();
+
+      for (let i = 0; i < existingBackIdsToUpdate.length; i++) {
+        const update = existingBackIdsToUpdate[i];
+        const existingBack = existingBacks[i];
+        if (existingBack?.imageId && existingBack.imageId !== update.newImageId && !isCardbackId(existingBack.imageId)) {
+          imageRefDecrements.set(existingBack.imageId, (imageRefDecrements.get(existingBack.imageId) || 0) + 1);
+        }
+        if (update.newImageId && !isCardbackId(update.newImageId)) {
+          imageRefIncrements.set(update.newImageId, (imageRefIncrements.get(update.newImageId) || 0) + 1);
+        }
+      }
+
+      // Prepare image updates
+      const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+
+      for (const [imageId, decrement] of imageRefDecrements.entries()) {
+        const image = imageMap.get(imageId);
+        if (image) {
+          const newRefCount = Math.max(0, image.refCount - decrement);
+          imageUpdates.push({ key: imageId, changes: { refCount: newRefCount } });
+        }
+      }
+
+      for (const [imageId, increment] of imageRefIncrements.entries()) {
+        const image = imageMap.get(imageId);
+        if (image) {
+          // Check if already in updates (from decrement)
+          const existing = imageUpdates.find(u => u.key === imageId);
+          if (existing) {
+            existing.changes.refCount += increment;
+          } else {
+            imageUpdates.push({ key: imageId, changes: { refCount: image.refCount + increment } });
+          }
+        }
+      }
+
+      // Prepare card updates
+      const cardUpdates = existingBackIdsToUpdate.map(update => ({
+        key: update.backUuid,
+        changes: {
+          imageId: update.newImageId,
+          name: update.newName,
+          needsEnrichment: false,
+          hasBuiltInBleed: update.options?.hasBuiltInBleed,
+          usesDefaultCardback: update.options?.usesDefaultCardback,
+        },
+      }));
+
+      // Perform bulk updates
+      if (cardUpdates.length > 0) {
+        await db.cards.bulkUpdate(cardUpdates);
+      }
+      if (imageUpdates.length > 0) {
+        await db.images.bulkUpdate(imageUpdates);
+      }
+    }
+  });
+
+  return newUuids;
+}
+
+
+/**
  * Duplicates a card, creating a new card entry and incrementing the
- * reference count of the shared image.
+ * reference count of the shared image. If the card has a linked back,
+ * the back card is also duplicated with proper bidirectional links.
  * @param uuid The UUID of the card to duplicate.
  */
 export async function duplicateCard(uuid: string): Promise<void> {
-  await db.transaction("rw", db.cards, db.images, async () => {
+  await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
     const cardToCopy = await db.cards.get(uuid);
     if (!cardToCopy) return;
 
@@ -285,10 +581,45 @@ export async function duplicateCard(uuid: string): Promise<void> {
       newOrder = currentIndex + 2;
     }
 
+    const newFrontUuid = crypto.randomUUID();
+    let newBackUuid: string | undefined;
+
+    // If the card has a linked back, duplicate it too
+    if (cardToCopy.linkedBackId) {
+      const backCard = await db.cards.get(cardToCopy.linkedBackId);
+      if (backCard) {
+        newBackUuid = crypto.randomUUID();
+
+        // Create duplicated back card with link to new front
+        const newBackCard: CardOption = {
+          ...backCard,
+          uuid: newBackUuid,
+          order: newOrder + 0.001, // Place just after front
+          linkedFrontId: newFrontUuid,
+          linkedBackId: undefined,
+        };
+        await db.cards.add(newBackCard);
+
+        // Increment back image ref count if it has a non-cardback image
+        // Cardbacks don't need ref counting
+        if (backCard.imageId && !isCardbackId(backCard.imageId)) {
+          const backImage = await db.images.get(backCard.imageId);
+          if (backImage) {
+            await db.images.update(backCard.imageId, {
+              refCount: backImage.refCount + 1,
+            });
+          }
+        }
+      }
+    }
+
+    // Create duplicated front card with link to new back (if any)
     const newCard: CardOption = {
       ...cardToCopy,
-      uuid: crypto.randomUUID(),
+      uuid: newFrontUuid,
       order: newOrder,
+      linkedBackId: newBackUuid,
+      linkedFrontId: undefined, // Front cards shouldn't have linkedFrontId
     };
 
     await db.cards.add(newCard);
@@ -314,6 +645,7 @@ export async function duplicateCard(uuid: string): Promise<void> {
  * @param newName Optional new name for the card.
  * @param newImageUrls Optional new image URLs array.
  * @param cardMetadata Optional metadata to update (set, number, colors, etc.)
+ * @param hasBuiltInBleed Optional override for hasBuiltInBleed flag (e.g., for cardbacks with bleed).
  */
 export async function changeCardArtwork(
   oldImageId: string | undefined,
@@ -322,9 +654,10 @@ export async function changeCardArtwork(
   applyToAll: boolean,
   newName?: string,
   newImageUrls?: string[],
-  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>
+  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>,
+  hasBuiltInBleed?: boolean
 ): Promise<void> {
-  await db.transaction("rw", db.cards, db.images, async () => {
+  await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
     if (oldImageId === newImageId && !newName && !newImageUrls && !cardMetadata) {
       return;
     }
@@ -347,16 +680,23 @@ export async function changeCardArtwork(
       }
     }
 
-    // 2. Get the new image record to determine its type and update cards
-    const newImage = await db.images.get(newImageId);
-    const newImageIsCustom = newImage ? !!newImage.originalBlob : false;
+    // 2. Determine if new image is custom (has originalBlob)
+    // For cardbacks, check db.cardbacks; for regular images, check db.images
+    let newImageIsCustom = false;
+    if (isCardbackId(newImageId)) {
+      const cardback = await db.cardbacks.get(newImageId);
+      newImageIsCustom = cardback ? !!cardback.originalBlob : false;
+    } else {
+      const newImage = await db.images.get(newImageId);
+      newImageIsCustom = newImage ? !!newImage.originalBlob : false;
+    }
 
     const changes: Partial<CardOption> = {
       imageId: newImageId,
       isUserUpload: newImageIsCustom,
-      // Reset built in bleed flag because we are switching to a specific image
-      // (usually Scryfall) which we assume does NOT have built in bleed.
-      hasBuiltInBleed: false,
+      // Use provided hasBuiltInBleed if specified, otherwise default to false
+      // (Scryfall images don't have built-in bleed, but cardbacks might)
+      hasBuiltInBleed: hasBuiltInBleed ?? false,
       // Reset enrichment flags since user manually selected this
       needsEnrichment: false,
       enrichmentRetryCount: undefined,
@@ -377,34 +717,54 @@ export async function changeCardArtwork(
       }))
     );
 
-    // 3. Increment the new image's refCount or create the new image
-    if (newImage) {
-      const updates: Partial<import("../db").Image> = {
-        refCount: newImage.refCount + cardsToUpdate.length,
-      };
-      if (newImageUrls && newImageUrls.length > 0) {
-        updates.imageUrls = newImageUrls;
-      }
-      await db.images.update(newImageId, updates);
-    } else {
-      // This case handles a new remote image
-      const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
-      // Use provided newImageUrls if available.
-      // If not provided, and we are NOT renaming, fallback to oldImage.imageUrls.
-      // If renaming, we assume it's a different card, so we default to just the newImageId.
-      const imageUrls = newImageUrls || (newName ? [newImageId] : (oldImage?.imageUrls || [newImageId]));
+    // 3. Handle new image ref counting
+    // Skip ref counting for cardbacks - they're in db.cardbacks and don't need ref counting
+    const newIsCardback = isCardbackId(newImageId);
+    if (!newIsCardback) {
+      const newImage = await db.images.get(newImageId);
+      if (newImage) {
+        const updates: Partial<import("../db").Image> = {
+          refCount: newImage.refCount + cardsToUpdate.length,
+        };
+        if (newImageUrls && newImageUrls.length > 0) {
+          updates.imageUrls = newImageUrls;
+        }
+        // If this is a cardback selection (hasBuiltInBleed specified) and the image changes,
+        // clear displayBlob to force reprocessing with correct bleed settings
+        // Also clear generation parameters to invalidate fast path cache
+        if (hasBuiltInBleed !== undefined && oldImageId !== newImageId) {
+          updates.displayBlob = undefined;
+          updates.displayBlobDarkened = undefined;
+          updates.exportBlob = undefined;
+          updates.exportBlobDarkened = undefined;
+          updates.generatedHasBuiltInBleed = undefined;
+          updates.generatedBleedMode = undefined;
+        }
+        await db.images.update(newImageId, updates);
+      } else {
+        // This case handles a new remote image
+        const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
+        // Use provided newImageUrls if available.
+        // If not provided, and we are NOT renaming, fallback to oldImage.imageUrls.
+        // If renaming, we assume it's a different card, so we default to just the newImageId.
+        const imageUrls = newImageUrls || (newName ? [newImageId] : (oldImage?.imageUrls || [newImageId]));
 
-      await db.images.add({
-        id: newImageId,
-        sourceUrl: newImageId,
-        imageUrls: imageUrls,
-        refCount: cardsToUpdate.length,
-      });
+        await db.images.add({
+          id: newImageId,
+          sourceUrl: newImageId,
+          imageUrls: imageUrls,
+          refCount: cardsToUpdate.length,
+        });
+      }
     }
 
     // 4. Decrement the old images' refCounts, only if the image is actually changing
+    // Skip cardbacks - they're in db.cardbacks and don't need ref counting
     if (oldImageId !== newImageId) {
       for (const [id, count] of oldImageIdCounts.entries()) {
+        // Skip cardback IDs - they're in a separate table and don't need ref counting
+        if (isCardbackId(id)) continue;
+
         const oldImage = await db.images.get(id);
         if (oldImage) {
           const newRefCount = oldImage.refCount - count;

@@ -435,12 +435,30 @@ export async function getCardDataForCardInfo(
     if (cards.length) return cards[0];
   }
 
+  // Helper to filter out Art Series cards (they have type_line: "Card // Card" and cmc: 0)
+  const isRealCard = (card: ScryfallApiCard) => {
+    if (card.type_line === 'Card // Card') return false;
+    if (card.set?.startsWith('ac') && card.rarity === 'common' && card.cmc === 0) return false;
+    return true;
+  };
+
   // Strategy 3: Name-only exact match
+  // DO NOT use include:extras here - it matches Art Series cards with cmc:0, type:"Card // Card"
   // We use unique:art to get different art options, and order:released to prefer newer cards
-  const cards = await executeStrategy((lang) =>
-    `!"${name}" include:extras unique:art order:released lang:${lang}`
+  const exactCards = await executeStrategy((lang) =>
+    `!"${name}" unique:art order:released lang:${lang}`
   );
-  return cards[0] || null;
+  const realExactCards = exactCards.filter(isRealCard);
+  if (realExactCards.length) return realExactCards[0];
+
+  // Strategy 4: Fuzzy name search (for MPC names with missing punctuation like "Conjurers Closet")
+  // Uses name: operator which does partial/fuzzy matching
+  // DO NOT use include:extras - it matches Art Series cards
+  const fuzzyCards = await executeStrategy((lang) =>
+    `name:"${name}" unique:art order:released lang:${lang}`
+  );
+  const realFuzzyCards = fuzzyCards.filter(isRealCard);
+  return realFuzzyCards[0] || null;
 }
 
 export async function getScryfallPngImagesForCard(

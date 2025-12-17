@@ -17,6 +17,30 @@ export function usePageViewHotkeys(allCardUuids: string[], active: boolean = tru
             if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
                 return;
             }
+            // Escape key clears selection (no modifier needed)
+            if (e.key === "Escape") {
+                const { selectedCards, clearSelection } = useSelectionStore.getState();
+                if (selectedCards.size > 0) {
+                    e.preventDefault();
+                    clearSelection();
+                }
+                return;
+            }
+
+            // F key flips selected cards (no modifier needed)
+            if (e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey) {
+                const { selectedCards, toggleFlip } = useSelectionStore.getState();
+                if (selectedCards.size > 0) {
+                    e.preventDefault();
+                    // toggleFlip already handles multi-select internally
+                    // Just call it once with the first selected card
+                    const firstUuid = selectedCards.values().next().value;
+                    if (firstUuid) {
+                        toggleFlip(firstUuid);
+                    }
+                }
+                return;
+            }
 
             // Use Cmd on macOS, Ctrl on Windows/Linux
             const isMac = navigator.platform.toUpperCase().includes('MAC');

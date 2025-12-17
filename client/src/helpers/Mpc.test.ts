@@ -8,11 +8,13 @@ import {
   processMpcImport,
 } from './Mpc';
 import * as constants from '../constants';
-import { addRemoteImage, addRemoteImages, addCards } from "./dbUtils";
+import { addRemoteImage, addRemoteImages } from "./dbUtils";
+import { undoableAddCards } from "./undoableActions";
 import { searchCards } from "./scryfallApi";
 
 // Mocks
 vi.mock("./dbUtils");
+vi.mock("./undoableActions");
 vi.mock("./scryfallApi"); // Mock Scryfall API
 vi.mock('../constants', async () => {
   const originalConstants = await vi.importActual('../constants');
@@ -102,7 +104,8 @@ describe('Mpc', () => {
         </order>
       `;
       const result = tryParseMpcSchemaXml(xml);
-      expect(result).toEqual([
+      expect(result).not.toBeNull();
+      expect(result!.items).toEqual([
         { qty: 2, name: 'Sol Ring', filename: undefined, frontId: 'a-valid-looking-id' },
         { qty: 1, name: 'Island', filename: 'Island.png', frontId: undefined },
       ]);
@@ -191,8 +194,8 @@ describe('Mpc', () => {
       const result = tryParseMpcSchemaXml(xml);
       expect(result).not.toBeNull();
       if (result) {
-        expect(result[0].name).toBe('Sol Ring');
-        expect(result[0].backId).toBe('back-id-123456');
+        expect(result.items[0].name).toBe('Sol Ring');
+        expect(result.items[0].backId).toBe('back-id-123456');
       }
     });
 
@@ -217,8 +220,8 @@ describe('Mpc', () => {
       const result = tryParseMpcSchemaXml(xml);
       expect(result).not.toBeNull();
       if (result) {
-        expect(result[0].qty).toBe(2); // 1 and 2 are valid
-        expect(result[0].backId).toBe('back-id-123456789');
+        expect(result.items[0].qty).toBe(2); // 1 and 2 are valid
+        expect(result.items[0].backId).toBe('back-id-123456789');
       }
     });
 
@@ -243,9 +246,9 @@ describe('Mpc', () => {
       const result = tryParseMpcSchemaXml(xml);
       expect(result).not.toBeNull();
       if (result) {
-        expect(result[0].name).toBe('Multi Slot Card');
-        expect(result[0].qty).toBe(2);
-        expect(result[0].backId).toBe('back-id-123456789');
+        expect(result.items[0].name).toBe('Multi Slot Card');
+        expect(result.items[0].qty).toBe(2);
+        expect(result.items[0].backId).toBe('back-id-123456789');
       }
     });
 
@@ -265,7 +268,7 @@ describe('Mpc', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe("Failed to parse MPC XML");
       expect(addRemoteImage).not.toHaveBeenCalled();
-      expect(addCards).not.toHaveBeenCalled();
+      expect(undoableAddCards).not.toHaveBeenCalled();
     });
 
     it("should process valid MPC XML and add cards", async () => {
@@ -291,7 +294,7 @@ describe('Mpc', () => {
       mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=123456789013`, "imgId2");
       (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
 
-      (addCards as Mock).mockResolvedValue([
+      (undoableAddCards as Mock).mockResolvedValue([
         { uuid: 'uuid1', name: 'MPC Import 1' },
         { uuid: 'uuid2', name: 'MPC Import 2' }
       ]);
@@ -313,8 +316,8 @@ describe('Mpc', () => {
       ]));
 
       // Should add cards
-      expect(addCards).toHaveBeenCalledTimes(1);
-      expect(addCards).toHaveBeenCalledWith([
+      expect(undoableAddCards).toHaveBeenCalledTimes(1);
+      expect(undoableAddCards).toHaveBeenCalledWith([
         expect.objectContaining({ name: "MPC Import 1", imageId: "imgId1", isUserUpload: true, hasBuiltInBleed: true }),
         expect.objectContaining({ name: "MPC Import 2", imageId: "imgId2", isUserUpload: true, hasBuiltInBleed: true }),
       ]);
@@ -335,7 +338,7 @@ describe('Mpc', () => {
 
       expect(result.success).toBe(true);
       expect(result.count).toBe(0);
-      expect(addCards).not.toHaveBeenCalled();
+      expect(undoableAddCards).not.toHaveBeenCalled();
     });
 
     it("should defer enrichment to background", async () => {
@@ -355,14 +358,14 @@ describe('Mpc', () => {
       mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=front1`, "imgId");
       (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
 
-      (addCards as Mock).mockResolvedValue([
+      (undoableAddCards as Mock).mockResolvedValue([
         { uuid: 'uuid-sol-ring', name: 'Sol Ring' }
       ]);
 
       const result = await processMpcImport(xml);
 
       expect(result.success).toBe(true);
-      expect(addCards).toHaveBeenCalledWith([
+      expect(undoableAddCards).toHaveBeenCalledWith([
         expect.objectContaining({
           name: "Sol Ring",
           needsEnrichment: true,
@@ -388,7 +391,7 @@ describe('Mpc', () => {
       mockUrlMap.set(`${constants.API_BASE}/api/cards/images/mpc?id=forest-id-123`, "forestImgId");
       (addRemoteImages as Mock).mockResolvedValue(mockUrlMap);
 
-      (addCards as Mock).mockResolvedValue([
+      (undoableAddCards as Mock).mockResolvedValue([
         { uuid: 'uuid1', name: 'Forest' },
         { uuid: 'uuid2', name: 'Forest' },
         { uuid: 'uuid3', name: 'Forest' },
@@ -410,8 +413,8 @@ describe('Mpc', () => {
       ]);
 
       // Should add 5 cards
-      expect(addCards).toHaveBeenCalledTimes(1);
-      const cardArgs = (addCards as Mock).mock.calls[0][0];
+      expect(undoableAddCards).toHaveBeenCalledTimes(1);
+      const cardArgs = (undoableAddCards as Mock).mock.calls[0][0];
       expect(cardArgs).toHaveLength(5);
       cardArgs.forEach((card: { name: string; imageId: string }) => {
         expect(card.name).toBe("Forest");

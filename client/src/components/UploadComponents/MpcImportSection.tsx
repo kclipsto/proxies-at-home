@@ -1,6 +1,5 @@
 import React from "react";
 import { processMpcImport } from "@/helpers/Mpc";
-import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
 
 type Props = {
@@ -17,21 +16,16 @@ async function readText(file: File): Promise<string> {
 }
 
 export function MpcImportSection({ mobile, onUploadComplete }: Props) {
-    const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
-    const setLoadingMessage = useLoadingStore((state) => state.setLoadingMessage);
 
     const handleImportMpcXml = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        setLoadingTask("Processing Images");
+        // No loading modal needed - the processing toast shows progress
         try {
             const text = await readText(file);
 
-            const result = await processMpcImport(text, (_current, _total, message) => {
-                setLoadingTask("Fetching cards");
-                setLoadingMessage(message);
-            });
+            const result = await processMpcImport(text);
 
             if (result.success) {
                 onUploadComplete?.();
@@ -48,7 +42,6 @@ export function MpcImportSection({ mobile, onUploadComplete }: Props) {
         } catch {
             alert("Failed to parse file.");
         } finally {
-            setLoadingTask(null);
             if (e.target) e.target.value = "";
         }
     };

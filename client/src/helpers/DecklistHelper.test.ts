@@ -52,6 +52,26 @@ describe('DecklistHelper', () => {
       const cardBack = grouped.find(c => c.name.toLowerCase().includes('card back'));
       expect(cardBack).toBeUndefined();
     });
+
+    it('should ignore linked back cards (cards with linkedFrontId)', () => {
+      const cardsWithLinkedBack: CardOption[] = [
+        { uuid: '1', name: 'Lightning Bolt', order: 1, isUserUpload: false },
+        { uuid: '2', name: 'Default Cardback', order: 2, isUserUpload: false, linkedFrontId: '1' }, // Linked back card
+        { uuid: '3', name: 'Counterspell', order: 3, isUserUpload: false },
+        { uuid: '4', name: 'Proxxied', order: 4, isUserUpload: false, linkedFrontId: '3' }, // Another linked back card
+      ];
+
+      const grouped = groupCardsForDecklist(cardsWithLinkedBack);
+
+      // Should only have the front cards, not the linked backs
+      expect(grouped).toHaveLength(2);
+      expect(grouped.find(c => c.name === 'Lightning Bolt')).toBeDefined();
+      expect(grouped.find(c => c.name === 'Counterspell')).toBeDefined();
+
+      // Linked back cards should NOT appear
+      expect(grouped.find(c => c.name === 'Default Cardback')).toBeUndefined();
+      expect(grouped.find(c => c.name === 'Proxxied')).toBeUndefined();
+    });
   });
 
   describe('formatDecklistLine', () => {

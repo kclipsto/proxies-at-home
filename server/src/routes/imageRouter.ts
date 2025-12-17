@@ -201,7 +201,7 @@ function extractEnrichedCard(
   }
 
   return {
-    name: card.name,
+    name: data.name ?? card.name, // Use canonical Scryfall name, fall back to query name
     set: data.set || card.set,
     number: data.collector_number || card.number,
     colors,
@@ -238,6 +238,9 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
     const results: (EnrichedCard | null)[] = [];
     const notFoundCards: Array<{ index: number; card: { name: string; set?: string; number?: string } }> = [];
 
+    // Helper to normalize names for loose matching (remove punctuation, lowercase)
+    const normalizeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
 
@@ -253,6 +256,19 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
       // Fall back to name lookup
       if (!found) {
         found = batchResults.get(card.name.toLowerCase());
+      }
+
+      // Validate that found card name loosely matches query name
+      // This catches cases where MPC names differ from Scryfall (e.g., "Conjurers Closet" vs "Conjurer's Closet")
+      if (found && found.name) {
+        const queryNorm = normalizeName(card.name);
+        const foundNorm = normalizeName(found.name);
+        // Also check DFC face names
+        const faceNames = found.card_faces?.map(f => normalizeName(f.name || '')) || [];
+        if (foundNorm !== queryNorm && !faceNames.includes(queryNorm)) {
+          // Name doesn't match - treat as not found to trigger individual search
+          found = undefined;
+        }
       }
 
       if (found) {

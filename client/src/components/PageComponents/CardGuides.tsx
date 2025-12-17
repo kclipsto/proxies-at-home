@@ -24,7 +24,7 @@ export const CardGuides = memo(function CardGuides({
 
     return (
         <div className="pointer-events-none z-10 absolute inset-0">
-            {perCardGuideStyle === 'corners' ? (
+            {(perCardGuideStyle === 'corners' || perCardGuideStyle === 'dashed-corners') ? (
                 /* Corner marks - L-shaped tick marks at each corner */
                 (() => {
                     if (guideWidth <= 0) return null;
@@ -38,6 +38,19 @@ export const CardGuides = memo(function CardGuides({
                         : (val: number | string) => typeof val === 'number' ? `${val}px` : val;
 
                     const length = guidePlacement === 'outside' ? `calc(2mm + ${guideWidthPx}px)` : '2mm';
+                    const isDashed = perCardGuideStyle === 'dashed-corners';
+
+                    // For dashed corners, use repeating linear gradient to simulate dashed lines
+                    const dashSize = Math.max(2, guideWidthPx);
+                    const getBackgroundStyle = (isHorizontal: boolean): React.CSSProperties => {
+                        if (isDashed) {
+                            const direction = isHorizontal ? 'to right' : 'to bottom';
+                            return {
+                                background: `repeating-linear-gradient(${direction}, ${guideColor} 0px, ${guideColor} ${dashSize}px, transparent ${dashSize}px, transparent ${dashSize * 2}px)`,
+                            };
+                        }
+                        return { backgroundColor: guideColor };
+                    };
 
                     return (
                         <>
@@ -50,7 +63,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(true),
                                 }}
                             />
                             <div
@@ -61,7 +74,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(false),
                                 }}
                             />
 
@@ -74,7 +87,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(true),
                                 }}
                             />
                             <div
@@ -85,7 +98,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(false),
                                 }}
                             />
 
@@ -98,7 +111,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(true),
                                 }}
                             />
                             <div
@@ -109,7 +122,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(false),
                                 }}
                             />
 
@@ -122,7 +135,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(true),
                                 }}
                             />
                             <div
@@ -133,13 +146,13 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    backgroundColor: guideColor,
+                                    ...getBackgroundStyle(false),
                                 }}
                             />
                         </>
                     );
                 })()
-            ) : perCardGuideStyle === 'rounded-corners' ? (
+            ) : (perCardGuideStyle === 'rounded-corners' || perCardGuideStyle === 'dashed-rounded-corners') ? (
                 /* Rounded corner marks using 4 CSS quarter-circle borders */
                 (() => {
                     if (guideWidth <= 0) return null;
@@ -198,26 +211,29 @@ export const CardGuides = memo(function CardGuides({
                         pointerEvents: 'none',
                     };
 
+                    const isDashedCorner = perCardGuideStyle === 'dashed-rounded-corners';
+                    const strokeDash = isDashedCorner ? `${Math.max(3, w)}` : undefined;
+
                     return (
                         <>
                             {/* Top Left */}
                             <svg style={{ ...commonStyle, top: `${pos}px`, left: `${pos}px` }}>
-                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" />
+                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" strokeDasharray={strokeDash} />
                             </svg>
 
                             {/* Top Right - Rotate 90deg */}
                             <svg style={{ ...commonStyle, top: `${pos}px`, right: `${pos}px`, transform: 'rotate(90deg)' }}>
-                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" />
+                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" strokeDasharray={strokeDash} />
                             </svg>
 
                             {/* Bottom Right - Rotate 180deg */}
                             <svg style={{ ...commonStyle, bottom: `${pos}px`, right: `${pos}px`, transform: 'rotate(180deg)' }}>
-                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" />
+                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" strokeDasharray={strokeDash} />
                             </svg>
 
                             {/* Bottom Left - Rotate 270deg */}
                             <svg style={{ ...commonStyle, bottom: `${pos}px`, left: `${pos}px`, transform: 'rotate(270deg)' }}>
-                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" />
+                                <path d={pathData} fill="none" stroke={guideColor} strokeWidth={w} strokeLinecap="butt" strokeDasharray={strokeDash} />
                             </svg>
                         </>
                     );

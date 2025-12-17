@@ -5,16 +5,16 @@ import {
   SortableContext,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
+import { useSelectionStore } from "../store/selection";
 import { Label } from "flowbite-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
+import { NotFoundCard } from "./PageComponents/NotFoundCard";
 import fullLogo from "../assets/fullLogo.png";
 import CardCellLazy from "../components/CardCellLazy";
 import EdgeCutLines from "../components/FullPageGuides";
-import SortableCard from "../components/SortableCard";
 import { type Image } from "../db";
 import type { CardOption } from "../../../shared/types";
 import type { useImageProcessing } from "../hooks/useImageProcessing";
-import { useArtworkModalStore } from "../store";
 import { ArtworkModal } from "./ArtworkModal";
 import { PullToRefresh } from "./PullToRefresh";
 import {
@@ -35,7 +35,7 @@ import { PageViewDragOverlay } from "./PageComponents/PageViewDragOverlay";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 
 type PageViewProps = {
-  loadingMap: ReturnType<typeof useImageProcessing>["loadingMap"];
+  getLoadingState: ReturnType<typeof useImageProcessing>["getLoadingState"];
   ensureProcessed: ReturnType<typeof useImageProcessing>["ensureProcessed"];
   images: Image[];
   cards: CardOption[];
@@ -51,7 +51,7 @@ function chunkCards<T>(cards: T[], size: number): T[][] {
   return chunks;
 }
 
-export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, active = true }: PageViewProps) {
+export function PageView({ getLoadingState, ensureProcessed, cards, images, mobile, active = true }: PageViewProps) {
   const {
     pageSizeUnit,
     pageWidth,
@@ -70,7 +70,6 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   } = usePageViewSettings();
 
   const { processedImageUrls } = useImageCache(images, darkenNearBlack);
-  const openArtworkModal = useArtworkModalStore((state) => state.openModal);
   const pageCapacity = columns * rows;
 
   const [contextMenu, setContextMenu] = useState({
@@ -106,7 +105,42 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
   });
 
   const { filteredAndSortedCards } = useFilteredAndSortedCards(localCards);
-  const allCardUuids = useMemo(() => filteredAndSortedCards.map(c => c.uuid), [filteredAndSortedCards]);
+
+  // Note: Selection state is now handled directly in SortableCard and NotFoundCard components
+  // to prevent PageView re-renders on selection changes
+
+  // Filter out back cards (linkedFrontId set) - they're shown via the flip button
+  const visibleCards = useMemo(() =>
+    filteredAndSortedCards.filter(c => !c.linkedFrontId),
+    [filteredAndSortedCards]
+  );
+
+  // Create a map from front card UUID to back card for quick lookup
+  const backCardMap = useMemo(() => {
+    const map = new Map<string, typeof filteredAndSortedCards[0]>();
+    for (const card of filteredAndSortedCards) {
+      if (card.linkedFrontId) {
+        map.set(card.linkedFrontId, card);
+      }
+    }
+    return map;
+  }, [filteredAndSortedCards]);
+
+  // Create a stable callback for range selection that doesn't trigger re-renders
+  // We use a ref to access the latest allCardUuids without making the callback dependent on it
+  const allCardUuidsRef = useRef<string[]>([]);
+  allCardUuidsRef.current = useMemo(() => visibleCards.map(c => c.uuid), [visibleCards]);
+
+  // Stable identity for hotkeys hook
+  const allCardUuids = allCardUuidsRef.current;
+
+  // Memoize the callback itself with NO dependencies so props don't change
+  const handleRangeSelect = useCallback((index: number) => {
+    const currentUuids = allCardUuidsRef.current;
+    if (currentUuids && currentUuids.length > 0) {
+      useSelectionStore.getState().selectRange(currentUuids, index);
+    }
+  }, []);
 
   usePageViewHotkeys(allCardUuids, active);
 
@@ -153,7 +187,7 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
                 items={filteredAndSortedCards.map((card) => card.uuid)}
                 strategy={rectSortingStrategy}
               >
-                {chunkCards(filteredAndSortedCards, pageCapacity).map((page, pageIndex) => (
+                {chunkCards(visibleCards, pageCapacity).map((page, pageIndex) => (
                   <div
                     key={pageIndex}
                     className="proxy-page bg-white dark:bg-gray-700"
@@ -201,48 +235,15 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
                                 // If the card has no imageId, it's permanently not found.
                                 if (!card.imageId) {
                                   return (
-                                    <div
+                                    <NotFoundCard
                                       key={globalIndex}
-                                      className="flex items-center justify-center"
-                                      style={{
-                                        width: `${layout.cardWidthMm}mm`,
-                                        height: `${layout.cardHeightMm}mm`,
-                                        justifySelf: 'center',
-                                        alignSelf: 'center',
-                                      }}
-                                    >
-                                      <div
-                                        onContextMenu={(e) => {
-                                          e.preventDefault();
-                                          setContextMenu({
-                                            visible: true,
-                                            x: e.clientX,
-                                            y: e.clientY,
-                                            cardUuid: card.uuid,
-                                          });
-                                        }}
-                                        onClick={() => {
-                                          openArtworkModal({
-                                            card,
-                                            index: globalIndex,
-                                          });
-                                        }}
-                                        className="flex items-center justify-center border-2 border-dashed border-red-500 bg-gray-50 text-center p-2 select-none w-full h-full"
-                                        style={{
-                                          boxSizing: "border-box",
-                                        }}
-                                        title={`"${card.name}" not found`}
-                                      >
-                                        <div>
-                                          <div className="font-semibold text-red-700">
-                                            "{card.name}"
-                                          </div>
-                                          <div className="text-xs text-gray-600">
-                                            Image not available
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
+                                      card={card}
+                                      globalIndex={globalIndex}
+                                      onRangeSelect={handleRangeSelect}
+                                      cardWidthMm={layout.cardWidthMm}
+                                      cardHeightMm={layout.cardHeightMm}
+                                      setContextMenu={setContextMenu}
+                                    />
                                   );
                                 }
 
@@ -258,27 +259,26 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
                                   >
                                     <CardCellLazy
                                       card={card}
-                                      state={loadingMap[card.uuid] ?? "idle"}
+                                      backCard={backCardMap.get(card.uuid)}
+                                      state={getLoadingState(card.imageId)}
                                       hasImage={!!processedBlobUrl}
                                       ensureProcessed={ensureProcessed}
-                                    >
-                                      <SortableCard
-                                        card={card}
-                                        index={index}
-                                        globalIndex={globalIndex}
-                                        imageSrc={processedBlobUrl!}
-                                        totalCardWidth={layout.cardWidthMm}
-                                        totalCardHeight={layout.cardHeightMm}
-                                        guideOffset={`${layout.bleedMm}mm`}
-                                        imageBleedWidth={layout.bleedMm}
-                                        allCardUuids={allCardUuids}
-                                        setContextMenu={setContextMenu}
-                                        disabled={dndDisabled}
-                                        mobile={mobile}
-                                        scale={mobile ? zoom * mobileZoomFactor : zoom}
-                                        dropped={droppedId === card.uuid}
-                                      />
-                                    </CardCellLazy>
+                                      index={index}
+                                      globalIndex={globalIndex}
+                                      imageSrc={processedBlobUrl!}
+                                      backImageSrc={backCardMap.get(card.uuid)?.imageId ? processedImageUrls[backCardMap.get(card.uuid)!.imageId!] : undefined}
+                                      backImageId={backCardMap.get(card.uuid)?.imageId}
+                                      totalCardWidth={layout.cardWidthMm}
+                                      totalCardHeight={layout.cardHeightMm}
+                                      guideOffset={`${layout.bleedMm}mm`}
+                                      imageBleedWidth={layout.bleedMm}
+                                      onRangeSelect={handleRangeSelect}
+                                      setContextMenu={setContextMenu}
+                                      disabled={dndDisabled}
+                                      mobile={!!mobile}
+                                      scale={mobile ? zoom * mobileZoomFactor : zoom}
+                                      dropped={droppedId === card.uuid}
+                                    />
                                   </div>
                                 );
                               })}
@@ -297,10 +297,12 @@ export function PageView({ loadingMap, ensureProcessed, cards, images, mobile, a
               activeId={activeId}
               multiDragState={multiDragState}
               localCards={localCards}
+              backCardMap={backCardMap}
               sourceSettings={sourceSettings}
               effectiveBleedWidth={effectiveBleedWidth}
               processedImageUrls={processedImageUrls}
               mobile={mobile}
+              scale={mobile ? zoom * mobileZoomFactor : zoom}
               setContextMenu={setContextMenu}
             />
           </DndContext>

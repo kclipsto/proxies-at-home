@@ -80,7 +80,7 @@ export class ImageProcessor {
   }
 
   private baseMaxWorkers: number;
-  static mockProcess: unknown;
+
 
   private constructor() {
     // Cap at 8 workers to prevent network request storms and memory issues
@@ -97,21 +97,19 @@ export class ImageProcessor {
     return worker;
   }
 
+  private notifyActivityChange(isActive: boolean) {
+    this.activityCallbacks.forEach(cb => cb(isActive));
+  }
+
   /**
-   * Subscribe to activity state changes.
-   * Callback fires with true when first task starts processing,
-   * and false when all tasks complete.
-   * @returns Unsubscribe function
+   * Register a callback to be notified when processing activity starts/stops.
+   * Returns an unsubscribe function.
    */
   onActivityChange(callback: ActivityCallback): () => void {
     this.activityCallbacks.add(callback);
-    // Immediately notify of current state
-    callback(this.activeTaskCount > 0);
-    return () => this.activityCallbacks.delete(callback);
-  }
-
-  private notifyActivityChange(isActive: boolean) {
-    this.activityCallbacks.forEach(cb => cb(isActive));
+    return () => {
+      this.activityCallbacks.delete(callback);
+    };
   }
 
   private taskStarted() {
@@ -204,6 +202,7 @@ export class ImageProcessor {
       worker.postMessage(currentTask.message);
     } else {
       // No worker available, put task back at the front of its respective queue
+      // console.log('[PerfTrace] ImageProcessor: No worker available, queuing task', task.message.uuid);
       if (task.priority === Priority.HIGH) {
         this.highPriorityQueue.unshift(task);
       } else {

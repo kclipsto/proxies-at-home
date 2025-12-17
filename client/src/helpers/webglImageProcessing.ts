@@ -277,17 +277,27 @@ export async function processCardImageWebGL(
     const targetCardWidth = IN(2.48, exportDpi);
     const targetCardHeight = IN(3.47, exportDpi);
 
-    // The input image represents card + inputHasBleedMm, so calculate its expected dimensions
-    const inputBleedPx = Math.round(getBleedInPixels(inputHasBleedMm, 'mm', exportDpi));
-    const inputExpectedWidth = targetCardWidth + inputBleedPx * 2;
-    const inputExpectedHeight = targetCardHeight + inputBleedPx * 2;
+    // When input has existing bleed, use actual input dimensions instead of forcing to expected
+    // This prevents shrinking when aspect ratios don't exactly match
+    let inputWidth: number;
+    let inputHeight: number;
 
-    // The additional bleed to generate around the input
+    if (inputHasBleedMm > 0) {
+        // Use actual input image dimensions - the image already has bleed built in
+        inputWidth = img.width;
+        inputHeight = img.height;
+    } else {
+        // No existing bleed - use standard card dimensions
+        inputWidth = targetCardWidth;
+        inputHeight = targetCardHeight;
+    }
+
+    // The additional bleed to generate around the input (in export pixels)
     const additionalBleedPx = Math.round(getBleedInPixels(additionalBleedMm, 'mm', exportDpi));
 
     // Final output dimensions: input dimensions + additional bleed on each side
-    const finalWidth = Math.ceil(inputExpectedWidth + additionalBleedPx * 2);
-    const finalHeight = Math.ceil(inputExpectedHeight + additionalBleedPx * 2);
+    const finalWidth = Math.ceil(inputWidth + additionalBleedPx * 2);
+    const finalHeight = Math.ceil(inputHeight + additionalBleedPx * 2);
 
     // Create WebGL context once for all processing
     const canvas = new OffscreenCanvas(finalWidth, finalHeight);
@@ -308,12 +318,11 @@ export async function processCardImageWebGL(
     const quadBuffer = createQuadBuffer(gl);
 
     // Calculate image placement
-    // When input has existing bleed, the image represents card + existing bleed, not just the card
-    const { drawWidth, drawHeight, offsetX, offsetY } = calculateImagePlacement(
-        img,
-        inputExpectedWidth,  // Use input dimensions (card + existing bleed)
-        inputExpectedHeight
-    );
+    // When input has existing bleed, use actual dimensions (no scaling needed)
+    // When input has no bleed, fit to standard card dimensions
+    const { drawWidth, drawHeight, offsetX, offsetY } = inputHasBleedMm > 0
+        ? { drawWidth: inputWidth, drawHeight: inputHeight, offsetX: 0, offsetY: 0 }
+        : calculateImagePlacement(img, inputWidth, inputHeight);
 
     const scaleX = drawWidth / img.width;
     const scaleY = drawHeight / img.height;
@@ -353,7 +362,7 @@ export async function processCardImageWebGL(
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
     gl.uniform1i(gl.getUniformLocation(progs.init, "u_image"), 0);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
-    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), inputExpectedWidth, inputExpectedHeight);
+    gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), inputWidth, inputHeight);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), additionalBleedPx, additionalBleedPx);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
@@ -416,7 +425,7 @@ export async function processCardImageWebGL(
         glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_image"), 1);
 
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
-        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_imageSize"), inputExpectedWidth, inputExpectedHeight);
+        glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_imageSize"), inputWidth, inputHeight);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_offset"), additionalBleedPx, additionalBleedPx);
         glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_darken"), darken ? 1 : 0);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
