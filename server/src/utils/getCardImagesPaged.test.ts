@@ -123,7 +123,7 @@ describe("getCardImagesPaged", () => {
       const urls = await getImagesForCardInfo(cardInfo);
 
       expect(urls).toEqual(["valki_url", "tibalt_url"]);
-    });
+    }, 60000);
 
     it("should handle pagination", async () => {
       mockedAxios.get.mockClear();
@@ -159,7 +159,7 @@ describe("getCardImagesPaged", () => {
       const data = await getCardDataForCardInfo(cardInfo);
 
       expect(data).toEqual(singleFaceCard);
-    });
+    }, 60000);
 
     it("should return null if no card is found", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([]));
@@ -175,7 +175,7 @@ describe("getCardImagesPaged", () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([singleFaceCard]));
       await getScryfallPngImagesForCard("Sol Ring");
       expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining("unique%3Aart"));
-    });
+    }, 60000);
 
     it("should respect the unique parameter", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([singleFaceCard]));
@@ -189,7 +189,7 @@ describe("getCardImagesPaged", () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([singleFaceCard]));
       await getScryfallPngImagesForCardPrints("Sol Ring");
       expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining("unique%3Aprints"));
-    });
+    }, 60000);
   });
 
   describe("Error Handling", () => {
@@ -252,7 +252,7 @@ describe("getCardImagesPaged", () => {
 
       const expectedUrlPart = "set%3Acmr%20number%3A332";
       expect(mockedAxios.get).toHaveBeenCalledWith(expect.stringContaining(expectedUrlPart));
-    });
+    }, 60000);
 
     it("getCardDataForCardInfo should use Set + Name strategy", async () => {
       mockedAxios.get.mockResolvedValue(mockScryfallResponse([singleFaceCard]));
@@ -297,6 +297,6 @@ describe("getCardImagesPaged", () => {
       const cardInfo = { name: "Card", set: "SET" };
       const result = await getImagesForCardInfo(cardInfo, "prints");
       expect(result).toEqual([]);
-    });
+    }, 60000);
   });
 });

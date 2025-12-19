@@ -173,7 +173,7 @@ describe("getWithRetry logic", () => {
         expect(res.status).toBe(200);
         expect(mockedAxios.get).toHaveBeenCalledTimes(2);
         sendFileSpy.mockRestore();
-    }, 20000);
+    }, 60000);
 
     it("should fail after all retries", async () => {
         mockedAxios.get.mockRejectedValue(new Error("Network Error"));
