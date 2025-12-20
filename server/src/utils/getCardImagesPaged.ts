@@ -1,5 +1,6 @@
 import axios, { type AxiosResponse } from "axios";
 import type { CardInfo } from "../../../shared/types.js";
+import { lookupCardBySetNumber, lookupCardByName, insertOrUpdateCard } from "../db/proxxiedCardLookup.js";
 
 const SCRYFALL_API = "https://api.scryfall.com/cards/search";
 
@@ -152,10 +153,8 @@ interface CollectionResponse {
 
 /**
  * Batch fetch cards using Scryfall's /cards/collection endpoint.
- * Much faster than individual searches - up to 75 cards per request.
- * Returns a Map keyed by a normalized identifier for easy lookup.
- * 
- * For non-English languages, fetches localized versions after the initial batch.
+ * Checks local Proxxied DB first, only fetches missing cards from Scryfall.
+ * Caches Scryfall results to DB asynchronously.
  */
 export async function batchFetchCards(
   cardInfos: CardInfo[],
@@ -165,74 +164,114 @@ export async function batchFetchCards(
   if (!cardInfos || cardInfos.length === 0) return results;
 
   const lang = language.toLowerCase();
-  const batches = chunkArray(cardInfos, 75);
 
-  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-    const batch = batches[batchIdx];
-    await delayScryfallRequest();
+  // Step 1: Check local DB first for all cards
+  const cardsToFetch: CardInfo[] = [];
+  let localHits = 0;
 
-    const identifiers = batch.map(ci => {
-      // Build identifier based on available info
-      // Priority: set+number > name+set > name only
-      if (ci.set && ci.number) {
-        return { set: ci.set.toLowerCase(), collector_number: String(ci.number) };
-      } else if (ci.set) {
-        return { name: ci.name, set: ci.set.toLowerCase() };
-      } else {
-        return { name: ci.name };
+  for (const ci of cardInfos) {
+    // For set+number lookups, language doesn't matter (the printing determines the language)
+    // For name lookups, use the requested language
+    const local = ci.set && ci.number
+      ? lookupCardBySetNumber(ci.set, ci.number)
+      : lookupCardByName(ci.name, lang);
+
+    if (local && local.name) {
+      // Found in local DB
+      localHits++;
+      const key = local.name.toLowerCase();
+      results.set(key, local);
+
+      if (local.set && local.collector_number) {
+        const setNumKey = `${local.set.toLowerCase()}:${local.collector_number}`;
+        results.set(setNumKey, local);
       }
-    });
 
-    try {
-      const response = await AX.post<CollectionResponse>(
-        'https://api.scryfall.com/cards/collection',
-        { identifiers }
-      );
-
-      if (response.data?.data) {
-        for (let i = 0; i < response.data.data.length; i++) {
-          const card = response.data.data[i];
-          if (!card.name) continue; // Skip cards without name
-
-          // Store by lowercase name for lookup
-          const key = card.name.toLowerCase();
-          results.set(key, card);
-
-          // Also store by set+number if available for precise lookups
-          if (card.set && card.collector_number) {
-            const setNumKey = `${card.set.toLowerCase()}:${card.collector_number}`;
-            results.set(setNumKey, card);
-          }
-
-          // Store by individual face names for DFCs (double-faced cards)
-          // This allows lookups by front face name (e.g., "Bala Ged Recovery")
-          // to find the full card ("Bala Ged Recovery // Bala Ged Sanctuary")
-          if (card.card_faces && Array.isArray(card.card_faces)) {
-            for (const face of card.card_faces) {
-              if (face.name) {
-                const faceKey = face.name.toLowerCase();
-                // Only set if not already present (prefer full name match)
-                if (!results.has(faceKey)) {
-                  results.set(faceKey, card);
-                }
-              }
+      // Store by face names for DFCs
+      if (local.card_faces && Array.isArray(local.card_faces)) {
+        for (const face of local.card_faces) {
+          if (face.name) {
+            const faceKey = face.name.toLowerCase();
+            if (!results.has(faceKey)) {
+              results.set(faceKey, local);
             }
           }
         }
       }
-
-
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[Scryfall Batch] Batch ${batchIdx + 1} failed:`, msg);
+    } else {
+      // Not found locally, need to fetch from Scryfall
+      cardsToFetch.push(ci);
     }
   }
 
+  if (localHits > 0) {
+    console.log(`[Proxxied DB] Found ${localHits}/${cardInfos.length} cards locally`);
+  }
 
+  // Step 2: Fetch missing cards from Scryfall
+  if (cardsToFetch.length > 0) {
+    console.log(`[Scryfall API] Fetching ${cardsToFetch.length} missing cards...`);
+    const batches = chunkArray(cardsToFetch, 75);
 
-  // For non-English, fetch localized versions in parallel
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      const batch = batches[batchIdx];
+      await delayScryfallRequest();
+
+      const identifiers = batch.map(ci => {
+        if (ci.set && ci.number) {
+          return { set: ci.set.toLowerCase(), collector_number: String(ci.number) };
+        } else if (ci.set) {
+          return { name: ci.name, set: ci.set.toLowerCase() };
+        } else {
+          return { name: ci.name };
+        }
+      });
+
+      try {
+        const response = await AX.post<CollectionResponse>(
+          'https://api.scryfall.com/cards/collection',
+          { identifiers }
+        );
+
+        if (response.data?.data) {
+          for (const card of response.data.data) {
+            if (!card.name) continue;
+
+            // Store by lowercase name for lookup
+            const key = card.name.toLowerCase();
+            results.set(key, card);
+
+            // Store by set+number if available
+            if (card.set && card.collector_number) {
+              const setNumKey = `${card.set.toLowerCase()}:${card.collector_number}`;
+              results.set(setNumKey, card);
+            }
+
+            // Store by face names for DFCs
+            if (card.card_faces && Array.isArray(card.card_faces)) {
+              for (const face of card.card_faces) {
+                if (face.name) {
+                  const faceKey = face.name.toLowerCase();
+                  if (!results.has(faceKey)) {
+                    results.set(faceKey, card);
+                  }
+                }
+              }
+            }
+
+            // Cache to DB asynchronously (fire-and-forget)
+            insertOrUpdateCard(card);
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Scryfall Batch] Batch ${batchIdx + 1} failed:`, msg);
+      }
+    }
+  }
+
+  // Step 3: For non-English, fetch localized versions
   if (lang !== "en" && results.size > 0) {
-    // Get unique cards by set+number (to avoid duplicate fetches)
     const uniqueCards = new Map<string, ScryfallApiCard>();
     for (const card of results.values()) {
       if (card.set && card.collector_number) {
@@ -243,25 +282,24 @@ export async function batchFetchCards(
       }
     }
 
-    // Fetch localized versions sequentially with proper rate limiting
     for (const [key, card] of uniqueCards.entries()) {
       await delayScryfallRequest();
       try {
-        // GET /cards/:set/:number/:lang
         const url = `https://api.scryfall.com/cards/${card.set}/${card.collector_number}/${lang}`;
         const response = await AX.get<ScryfallApiCard>(url);
 
         if (response.data && response.data.image_uris?.png) {
-          // Replace English card with localized version
           const nameKey = response.data.name?.toLowerCase();
           if (nameKey) results.set(nameKey, response.data);
           results.set(key, response.data);
+
+          // Cache localized version to DB
+          insertOrUpdateCard(response.data);
         }
       } catch {
         // Localized version not available, keep English
       }
     }
-
   }
 
   return results;

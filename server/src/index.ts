@@ -4,6 +4,14 @@ import { archidektRouter } from "./routes/archidektRouter.js";
 import { moxfieldRouter } from "./routes/moxfieldRouter.js";
 import { imageRouter } from "./routes/imageRouter.js";
 import { streamRouter } from "./routes/streamRouter.js";
+import { initDatabase } from "./db/db.js";
+import { startImportScheduler } from "./services/importScheduler.js";
+
+// Initialize database (creates tables if needed)
+initDatabase();
+
+// Start import scheduler (triggers cold-start import if needed)
+startImportScheduler();
 
 const app = express();
 
