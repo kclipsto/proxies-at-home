@@ -1,6 +1,7 @@
 import {
   DndContext,
 } from "@dnd-kit/core";
+import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   rectSortingStrategy,
@@ -180,7 +181,7 @@ export function PageView({ getLoadingState, ensureProcessed, cards, images, mobi
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
-            modifiers={[]}
+            modifiers={[restrictToFirstScrollableAncestor]}
           >
             <div className="flex flex-col gap-[1rem] m-auto" style={{ zoom: mobile ? zoom * mobileZoomFactor : zoom }}>
               <SortableContext

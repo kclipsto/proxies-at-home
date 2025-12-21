@@ -11,6 +11,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import {
   arrayMove,
   SortableContext,
@@ -320,6 +321,7 @@ export function PageSettingsControls({
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
         >
           <SortableContext
             items={settingsPanelState.order}
@@ -345,33 +347,17 @@ export function PageSettingsControls({
     </>
   );
 
-  // Use PullToRefresh only on mobile
-  if (mobile) {
-    return (
-      <PullToRefresh
-        ref={scrollContainerRef}
-        onScroll={(e) => {
-          scrollPosRef.current = e.currentTarget.scrollTop;
-        }}
-        disabled={!!activeId}
-        hideScrollbars={true}
-        className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden"
-      >
-        {settingsContent}
-      </PullToRefresh>
-    );
-  }
-
-  // Desktop: regular scrollable div
   return (
-    <div
+    <PullToRefresh
       ref={scrollContainerRef}
       onScroll={(e) => {
         scrollPosRef.current = e.currentTarget.scrollTop;
       }}
-      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-y-auto overflow-x-hidden"
+      disabled={!!activeId}
+      hideScrollbars={true}
+      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden overscroll-x-none"
     >
       {settingsContent}
-    </div>
+    </PullToRefresh>
   );
 }
