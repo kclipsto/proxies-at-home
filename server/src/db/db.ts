@@ -11,6 +11,17 @@ const DB_PATH = path.join(__dirname, '..', 'proxxied-cards.db');
 let db: Database.Database | null = null;
 
 /**
+ * Ensure a column exists (idempotent add).
+ */
+function ensureColumn(table: string, column: string, type: string): void {
+    if (!db) return;
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!info.some((c) => c.name === column)) {
+        db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`).run();
+    }
+}
+
+/**
  * Initialize the SQLite database and create tables if they don't exist.
  */
 export function initDatabase(): Database.Database {
@@ -41,6 +52,7 @@ export function initDatabase(): Database.Database {
       type_line TEXT,                   -- e.g., "Sorcery // Land"
       rarity TEXT,                      -- common, uncommon, rare, mythic
       layout TEXT,                      -- normal, transform, mdfc, split, etc.
+      all_parts TEXT,                   -- JSON array of related parts (tokens/emblems/etc.)
       
       -- Image data
       image_uris TEXT,                  -- JSON: { "png": "https://...", ... }
@@ -55,6 +67,9 @@ export function initDatabase(): Database.Database {
       value TEXT
     );
   `);
+
+    // Backfill new columns for existing installs
+    ensureColumn('cards', 'all_parts', 'TEXT');
 
     // Create indexes (IF NOT EXISTS for idempotency)
     db.exec(`

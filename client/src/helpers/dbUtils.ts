@@ -654,7 +654,7 @@ export async function changeCardArtwork(
   applyToAll: boolean,
   newName?: string,
   newImageUrls?: string[],
-  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>,
+  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang' | 'token_parts' | 'needs_token'>>,
   hasBuiltInBleed?: boolean
 ): Promise<void> {
   await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {

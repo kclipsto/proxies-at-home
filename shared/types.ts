@@ -29,6 +29,9 @@ export interface CardOption {
   usesDefaultCardback?: boolean;  // If true, follows default cardback changes. If false, keeps specific selection.
   // Visual state
   isFlipped?: boolean;  // If true, card displays back face
+  // Token metadata
+  token_parts?: TokenPart[];
+  needs_token?: boolean;
 }
 
 export interface PrintInfo {
@@ -57,6 +60,8 @@ export interface ScryfallCard {
     name: string;
     imageUrl?: string;
   }>;
+  token_parts?: TokenPart[];
+  needs_token?: boolean;
 }
 
 export type CardInfo = {
@@ -67,3 +72,10 @@ export type CardInfo = {
   language?: string | undefined;
   category?: string | undefined; // Archidekt deck category
 };
+
+export interface TokenPart {
+  id?: string;
+  name: string;
+  type_line?: string;
+  uri?: string;
+}

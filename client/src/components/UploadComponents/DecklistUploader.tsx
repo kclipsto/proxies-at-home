@@ -21,6 +21,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     const [deckText, setDeckText] = useState("");
     const fetchController = useRef<AbortController | null>(null);
     const enrichmentController = useRef<AbortController | null>(null);
+    const tokenFetchController = useRef<AbortController | null>(null);
 
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
 
@@ -78,6 +79,86 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
 
     const handleAddCard = async (cardName: string, set?: string, number?: string) => {
         await processCardFetch([{ name: cardName, set, number, quantity: 1 }]);
+    };
+
+    // --- Token Logic ---
+
+    const normalizeKey = (name: string, set?: string, number?: string) =>
+        `${name.toLowerCase()}|${(set || "").toLowerCase()}|${number || ""}`;
+
+    const extractTokenPrintFromUri = (uri?: string): { set?: string; number?: string } => {
+        if (!uri) return {};
+        try {
+            const u = new URL(uri);
+            const parts = u.pathname.split("/").filter(Boolean);
+            // Look for token segment (token/tokens/tok/tk)
+            const tokenIdx = parts.findIndex((p) => ["token", "tokens", "tok", "tk"].includes(p));
+            if (tokenIdx >= 0 && parts[tokenIdx + 1] && parts[tokenIdx + 2]) {
+                return { set: parts[tokenIdx + 1], number: parts[tokenIdx + 2] };
+            }
+            // Fallback: cards/{set}/{number}
+            const cardsIdx = parts.findIndex((p) => p === "cards");
+            if (cardsIdx >= 0 && parts[cardsIdx + 1] && parts[cardsIdx + 2]) {
+                return { set: parts[cardsIdx + 1], number: parts[cardsIdx + 2] };
+            }
+        } catch {
+            // Ignore parsing errors
+        }
+        return {};
+    };
+
+    const handleSearchTokens = async () => {
+        // Prevent overlapping token fetches
+        if (tokenFetchController.current) {
+            tokenFetchController.current.abort();
+        }
+        tokenFetchController.current = new AbortController();
+
+        try {
+            const cards = await db.cards.toArray();
+            if (cards.length === 0) {
+                alert("No cards available to inspect for tokens.");
+                return;
+            }
+
+            const existingKeys = new Set<string>();
+            for (const card of cards) {
+                existingKeys.add(normalizeKey(card.name, card.set, card.number));
+            }
+
+            const tokenMap = new Map<string, CardInfo>();
+            for (const card of cards) {
+                if (!card.token_parts || card.token_parts.length === 0) continue;
+                for (const token of card.token_parts) {
+                    if (!token.name) continue;
+                    const { set, number } = extractTokenPrintFromUri(token.uri);
+                    const key = normalizeKey(token.name, set, number);
+                    if (existingKeys.has(key) || tokenMap.has(key)) continue;
+                    tokenMap.set(key, { name: token.name, set, number, quantity: 1 });
+                }
+            }
+
+            if (tokenMap.size === 0) {
+                alert("No tokens were detected on the current cards.");
+                return;
+            }
+
+            await streamCards({
+                cardInfos: Array.from(tokenMap.values()),
+                language: globalLanguage,
+                importType: "scryfall",
+                signal: tokenFetchController.current.signal,
+                onComplete: () => {
+                    onUploadComplete?.();
+                },
+            });
+        } catch (err: unknown) {
+            if (err instanceof Error && err.name !== "AbortError") {
+                alert(err.message || "Something went wrong while fetching tokens.");
+            }
+        } finally {
+            tokenFetchController.current = null;
+        }
     };
 
     // --- Clear Logic ---
@@ -174,6 +255,14 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     Advanced Search
+                </Button>
+                <Button
+                    color="light"
+                    size="lg"
+                    onClick={handleSearchTokens}
+                    className="flex-1"
+                >
+                    Search Tokens
                 </Button>
             </div>
 

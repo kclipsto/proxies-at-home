@@ -57,6 +57,15 @@ interface ScryfallCardFace {
   mana_cost?: string;
 }
 
+export interface ScryfallRelatedCard {
+  id?: string;
+  object?: string;
+  component?: string;
+  name?: string;
+  type_line?: string;
+  uri?: string;
+}
+
 export interface ScryfallApiCard {
   name?: string;
   image_uris?: {
@@ -72,6 +81,7 @@ export interface ScryfallApiCard {
   set?: string;
   collector_number?: string;
   lang?: string;
+  all_parts?: ScryfallRelatedCard[];
 }
 
 interface ScryfallResponse {

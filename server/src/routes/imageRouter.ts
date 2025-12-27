@@ -5,6 +5,8 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { getCardDataForCardInfo, batchFetchCards } from "../utils/getCardImagesPaged.js";
+import { extractTokenParts, cardNeedsToken } from "../utils/tokenUtils.js";
+import type { TokenPart } from "../../../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -182,6 +184,8 @@ interface EnrichedCard {
   type_line?: string;
   rarity?: string;
   lang?: string;
+  token_parts?: TokenPart[];
+  needs_token?: boolean;
 }
 
 /**
@@ -200,6 +204,8 @@ function extractEnrichedCard(
     if (!mana_cost) mana_cost = data.card_faces[0].mana_cost;
   }
 
+  const token_parts = extractTokenParts(data);
+
   return {
     name: data.name ?? card.name, // Use canonical Scryfall name, fall back to query name
     set: data.set || card.set,
@@ -210,6 +216,8 @@ function extractEnrichedCard(
     type_line: data.type_line,
     rarity: data.rarity,
     lang: data.lang,
+    token_parts: token_parts.length ? token_parts : undefined,
+    needs_token: cardNeedsToken(data),
   };
 }
 

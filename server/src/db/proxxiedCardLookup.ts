@@ -77,11 +77,11 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
         const stmt = db.prepare(`
       INSERT OR REPLACE INTO cards (
         id, oracle_id, name, set_code, collector_number, lang,
-        colors, mana_cost, cmc, type_line, rarity, layout,
+        colors, mana_cost, cmc, type_line, rarity, layout, all_parts,
         image_uris, card_faces
       ) VALUES (
         @id, @oracle_id, @name, @set_code, @collector_number, @lang,
-        @colors, @mana_cost, @cmc, @type_line, @rarity, @layout,
+        @colors, @mana_cost, @cmc, @type_line, @rarity, @layout, @all_parts,
         @image_uris, @card_faces
       )
     `);
@@ -99,6 +99,7 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
             type_line: card.type_line || null,
             rarity: card.rarity || null,
             layout: card.layout || null,
+            all_parts: card.all_parts ? JSON.stringify(card.all_parts) : null,
             image_uris: card.image_uris ? JSON.stringify(card.image_uris) : null,
             card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
         };
@@ -119,11 +120,11 @@ export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; 
     const insertStmt = db.prepare(`
     INSERT OR REPLACE INTO cards (
       id, oracle_id, name, set_code, collector_number, lang,
-      colors, mana_cost, cmc, type_line, rarity, layout,
+      colors, mana_cost, cmc, type_line, rarity, layout, all_parts,
       image_uris, card_faces
     ) VALUES (
       @id, @oracle_id, @name, @set_code, @collector_number, @lang,
-      @colors, @mana_cost, @cmc, @type_line, @rarity, @layout,
+      @colors, @mana_cost, @cmc, @type_line, @rarity, @layout, @all_parts,
       @image_uris, @card_faces
     )
   `);
@@ -151,6 +152,7 @@ export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; 
                 type_line: card.type_line || null,
                 rarity: card.rarity || null,
                 layout: card.layout || null,
+                all_parts: card.all_parts ? JSON.stringify(card.all_parts) : null,
                 image_uris: card.image_uris ? JSON.stringify(card.image_uris) : null,
                 card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
             });
@@ -220,6 +222,7 @@ interface CardRow {
     type_line: string | null;
     rarity: string | null;
     layout: string | null;
+    all_parts?: string | null;
     image_uris: string | null;
     card_faces: string | null;
 }
@@ -244,6 +247,7 @@ function rowToScryfallCard(row: CardRow): ScryfallApiCard {
         type_line: row.type_line || undefined,
         rarity: row.rarity || undefined,
         layout: row.layout || undefined,
+        all_parts: row.all_parts ? JSON.parse(row.all_parts) : undefined,
         image_uris: row.image_uris ? JSON.parse(row.image_uris) : undefined,
         card_faces: row.card_faces ? JSON.parse(row.card_faces) : undefined,
     };
