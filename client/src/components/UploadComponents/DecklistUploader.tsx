@@ -98,6 +98,14 @@ export function DecklistUploader({
   const normalizeKey = (name: string, set?: string, number?: string) =>
     `${name.toLowerCase()}|${(set || "").toLowerCase()}|${number || ""}`;
 
+  const addExistingKeys = (
+    set: Set<string>,
+    card: { name: string; set?: string; number?: string }
+  ) => {
+    set.add(normalizeKey(card.name, card.set, card.number));
+    set.add(normalizeKey(card.name)); // name-only fallback
+  };
+
   const extractTokenPrintFromUri = (
     uri?: string
   ): { set?: string; number?: string } => {
@@ -139,28 +147,41 @@ export function DecklistUploader({
 
       const existingKeys = new Set<string>();
       for (const card of cards) {
-        existingKeys.add(normalizeKey(card.name, card.set, card.number));
+        addExistingKeys(existingKeys, card);
       }
 
-      const tokenMap = new Map<string, CardInfo>();
+      const seenKeys = new Set<string>();
+      const tokensToFetch: CardInfo[] = [];
       for (const card of cards) {
+        // Skip already-added token cards to avoid chaining into their token_parts
+        const setCode = card.set?.toLowerCase() || "";
+        if (setCode.startsWith("t")) continue;
+        if (card.type_line?.toLowerCase().includes("token")) continue;
+
         if (!card.token_parts || card.token_parts.length === 0) continue;
         for (const token of card.token_parts) {
           if (!token.name) continue;
           const { set, number } = extractTokenPrintFromUri(token.uri);
-          const key = normalizeKey(token.name, set, number);
-          if (existingKeys.has(key) || tokenMap.has(key)) continue;
-          tokenMap.set(key, { name: token.name, set, number, quantity: 1 });
+          const keyWithPrint = normalizeKey(token.name, set, number);
+          const keyNameOnly = normalizeKey(token.name);
+
+          if (existingKeys.has(keyWithPrint) || existingKeys.has(keyNameOnly))
+            continue;
+          if (seenKeys.has(keyWithPrint) || seenKeys.has(keyNameOnly)) continue;
+
+          seenKeys.add(keyWithPrint);
+          seenKeys.add(keyNameOnly);
+          tokensToFetch.push({ name: token.name, set, number, quantity: 1 });
         }
       }
 
-      if (tokenMap.size === 0) {
+      if (tokensToFetch.length === 0) {
         alert("No tokens were detected on the current cards.");
         return;
       }
 
       await streamCards({
-        cardInfos: Array.from(tokenMap.values()),
+        cardInfos: tokensToFetch,
         language: globalLanguage,
         importType: "scryfall",
         signal: tokenFetchController.current.signal,
