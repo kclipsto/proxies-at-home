@@ -39,6 +39,7 @@ export function DecklistUploader({
   );
 
   const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+  const [showNoTokensModal, setShowNoTokensModal] = useState(false);
   const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
 
   // --- Fetch Logic ---
@@ -141,7 +142,7 @@ export function DecklistUploader({
     try {
       const cards = await db.cards.toArray();
       if (cards.length === 0) {
-        alert("No cards available to inspect for tokens.");
+        setShowNoTokensModal(true);
         return;
       }
 
@@ -176,7 +177,7 @@ export function DecklistUploader({
       }
 
       if (tokensToFetch.length === 0) {
-        alert("No tokens were detected on the current cards.");
+        setShowNoTokensModal(true);
         return;
       }
 
@@ -348,6 +349,27 @@ export function DecklistUploader({
           keepOpenOnAdd={true}
         />
       )}
+
+      {/* No Tokens Modal */}
+      {showNoTokensModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+              <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                No tokens found
+              </div>
+              <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                No tokens were found for the cards in preview, or all tokens are already added.
+              </div>
+              <div className="flex justify-center gap-3">
+                <Button color="light" onClick={() => setShowNoTokensModal(false)}>
+                  OK
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Language Selector - Hidden in Landscape (moved to left col), Visible in Portrait */}
       <div className={`space-y-1 ${mobile ? "landscape:hidden" : ""}`}>
