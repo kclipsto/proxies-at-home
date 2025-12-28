@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 import { batchFetchCards, lookupCardFromBatch, getCardsWithImagesForCardInfo, type ScryfallApiCard } from "../utils/getCardImagesPaged.js";
 import { normalizeCardInfos } from "../utils/cardUtils.js";
 import { type ScryfallCard } from "../../../shared/types.js";
+import { extractTokenParts, cardNeedsToken } from "../utils/tokenUtils.js";
 
 const streamRouter = express.Router();
 
@@ -108,6 +109,8 @@ function buildCardResponse(
     }
   }
 
+  const token_parts = extractTokenParts(card);
+
   return {
     name: canonicalName,
     set: responseSet,
@@ -121,6 +124,8 @@ function buildCardResponse(
     type_line: card.type_line,
     rarity: card.rarity,
     card_faces,
+    token_parts: token_parts.length ? token_parts : undefined,
+    needs_token: cardNeedsToken(card),
   };
 }
 
@@ -246,4 +251,3 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 });
 
 export { streamRouter };
-

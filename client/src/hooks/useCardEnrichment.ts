@@ -6,6 +6,7 @@ import { getCurrentSession } from "../helpers/ImportSession";
 import { useToastStore } from "../store/toast";
 import { getEnrichmentAbortController } from "../helpers/cancellationService";
 import { isCardbackId } from "../helpers/cardbackLibrary";
+import type { TokenPart } from "../../../shared/types";
 
 // Retry configuration with exponential backoff
 const ENRICHMENT_RETRY_CONFIG = {
@@ -46,6 +47,8 @@ interface EnrichedCardData {
     type_line?: string;
     rarity?: string;
     lang?: string;
+    token_parts?: TokenPart[];
+    needs_token?: boolean;
 }
 
 export function useCardEnrichment() {
@@ -216,14 +219,16 @@ export function useCardEnrichment() {
                                         colors: data.colors,
                                         cmc: data.cmc,
                                         type_line: data.type_line,
-                                        rarity: data.rarity,
-                                        mana_cost: data.mana_cost,
-                                        lang: data.lang,
-                                        set: data.set || card.set,
-                                        number: data.number || card.number,
-                                        needsEnrichment: false,
-                                        enrichmentRetryCount: undefined,
-                                        enrichmentNextRetryAt: undefined,
+                                    rarity: data.rarity,
+                                    mana_cost: data.mana_cost,
+                                    lang: data.lang,
+                                    token_parts: data.token_parts,
+                                    needs_token: data.needs_token,
+                                    set: data.set || card.set,
+                                    number: data.number || card.number,
+                                    needsEnrichment: false,
+                                    enrichmentRetryCount: undefined,
+                                    enrichmentNextRetryAt: undefined,
                                     },
                                 });
                                 processedCardsRef.current.add(card.uuid);

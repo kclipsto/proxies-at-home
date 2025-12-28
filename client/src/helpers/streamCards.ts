@@ -169,6 +169,8 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                         type_line: card.type_line,
                         rarity: card.rarity,
                         mana_cost: card.mana_cost,
+                        token_parts: card.token_parts,
+                        needs_token: card.needs_token,
                         category,
                     });
                 }

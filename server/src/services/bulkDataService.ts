@@ -161,6 +161,13 @@ interface ScryfallBulkCard {
         mana_cost?: string;
         image_uris?: { png?: string;[key: string]: string | undefined };
     }>;
+    all_parts?: Array<{
+        id?: string;
+        component?: string;
+        name?: string;
+        type_line?: string;
+        uri?: string;
+    }>;
 }
 
 /**
@@ -182,5 +189,6 @@ function convertBulkCard(bulk: ScryfallBulkCard): ScryfallApiCard & { id: string
         layout: bulk.layout,
         image_uris: bulk.image_uris,
         card_faces: bulk.card_faces,
+        all_parts: bulk.all_parts,
     };
 }

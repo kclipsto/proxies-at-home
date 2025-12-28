@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { API_BASE } from '@/constants';
-import type { ScryfallCard } from '../../../shared/types';
+import type { ScryfallCard, TokenPart } from '../../../shared/types';
 
 function translateAxiosError(error: unknown): string {
     if (axios.isCancel(error)) {
@@ -61,6 +61,15 @@ export interface RawScryfallCard {
             normal?: string;
         };
     }[];
+    all_parts?: ScryfallRelatedCard[];
+}
+
+interface ScryfallRelatedCard {
+    id?: string;
+    component?: string;
+    name?: string;
+    type_line?: string;
+    uri?: string;
 }
 
 export function getImages(data: RawScryfallCard): string[] {
@@ -80,7 +89,31 @@ export function getImages(data: RawScryfallCard): string[] {
     return imageUrls;
 }
 
+function extractTokenParts(data: RawScryfallCard): TokenPart[] {
+    const related = data.all_parts || [];
+    const tokens = related
+        .filter((part) => part && (part.component === "token" || part.type_line?.toLowerCase().includes("token")))
+        .map((part) => ({
+            id: part.id,
+            name: part.name || "",
+            type_line: part.type_line,
+            uri: part.uri,
+        }))
+        .filter((part) => part.name);
+
+    const seen = new Set<string>();
+    const unique: TokenPart[] = [];
+    for (const token of tokens) {
+        const key = token.id || token.name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(token);
+    }
+    return unique;
+}
+
 function mapScryfallDataToCard(data: RawScryfallCard): ScryfallCard {
+    const token_parts = extractTokenParts(data);
     return {
         name: data.name,
         set: data.set,
@@ -92,6 +125,8 @@ function mapScryfallDataToCard(data: RawScryfallCard): ScryfallCard {
         cmc: data.cmc,
         type_line: data.type_line,
         rarity: data.rarity,
+        token_parts: token_parts.length ? token_parts : undefined,
+        needs_token: token_parts.length > 0,
     };
 }
 
