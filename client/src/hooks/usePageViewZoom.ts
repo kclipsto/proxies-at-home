@@ -90,35 +90,6 @@ export function usePageViewZoom({
         return () => window.removeEventListener("resize", updateCenterOffset);
     }, [updateCenterOffset]);
 
-    // Handle Ctrl+Scroll to zoom
-    useEffect(() => {
-        const handleWheel = (e: WheelEvent) => {
-            if (e.ctrlKey) {
-                const container = scrollContainerRef.current;
-                const isInside = container && container.contains(e.target as Node);
-
-                if (isInside) {
-                    e.preventDefault();
-                    const sensitivity = 0.001;
-                    const delta = -e.deltaY * sensitivity;
-
-                    const newZoom = Math.min(Math.max(0.1, zoom + delta), 5); // Read current zoom from prop/ref if closure issue?
-                    // Note: `zoom` in effect dependency might cause re-bind.
-                    // Better to use functional update or ref for zoom if we want to avoid re-binding listener constantly
-                    // But here we rely on the effect re-running on zoom change, or use setZoom(z => ...)
-                    // However, setZoom uses store state in the original code: useSettingsStore.getState().zoom
-                    setZoom(newZoom);
-                }
-            }
-        };
-
-        document.addEventListener("wheel", handleWheel, { passive: false });
-
-        return () => {
-            document.removeEventListener("wheel", handleWheel);
-        };
-    }, [setZoom, zoom]);
-
     // Handle Pinch-to-Zoom on Mobile
     usePinch(
         ({ offset: [s], origin: [ox, oy], first, last, event }) => {
@@ -184,6 +155,7 @@ export function usePageViewZoom({
             target: document,
             eventOptions: { passive: false, capture: true },
             enabled: active,
+            pointer: { touch: false }, // Desktop only - suppress touch-action warning
         }
     );
 

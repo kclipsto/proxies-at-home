@@ -6,6 +6,7 @@ import { useUndoRedoStore } from "./undoRedo";
 
 export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid" | "Legal" | "ArchA" | "ArchB" | "SuperB" | "A2" | "A1" | "Custom";
 export type PageOrientation = "portrait" | "landscape";
+export type DarkenMode = 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full';
 
 type Store = {
   pageSizeUnit: "mm" | "in";
@@ -47,8 +48,18 @@ type Store = {
   setNoBleedTargetMode: (value: 'global' | 'manual' | 'none') => void;
   noBleedTargetAmount: number;
   setNoBleedTargetAmount: (value: number) => void;
-  darkenNearBlack: boolean;
-  setDarkenNearBlack: (value: boolean) => void;
+  darkenMode: DarkenMode;
+  setDarkenMode: (value: DarkenMode) => void;
+  darkenContrast: number;
+  setDarkenContrast: (value: number) => void;
+  darkenEdgeWidth: number;
+  setDarkenEdgeWidth: (value: number) => void;
+  darkenAmount: number;
+  setDarkenAmount: (value: number) => void;
+  darkenBrightness: number;
+  setDarkenBrightness: (value: number) => void;
+  darkenAutoDetect: boolean;
+  setDarkenAutoDetect: (value: boolean) => void;
   guideColor: string;
   setGuideColor: (value: string) => void;
   guideWidth: number;
@@ -68,8 +79,8 @@ type Store = {
   setCutLineStyle: (value: 'none' | 'edges' | 'full') => void;
   perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none';
   setPerCardGuideStyle: (value: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none') => void;
-  guidePlacement: 'inside' | 'outside';
-  setGuidePlacement: (value: 'inside' | 'outside') => void;
+  guidePlacement: 'inside' | 'outside' | 'center';
+  setGuidePlacement: (value: 'inside' | 'outside' | 'center') => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
   settingsPanelState: {
@@ -113,6 +124,11 @@ type Store = {
   setDefaultCardbackId: (id: string) => void;
   exportMode: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs';
   setExportMode: (value: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs') => void;
+  // Card Editor section state (all expanded by default)
+  cardEditorSectionCollapsed: Record<string, boolean>;
+  setCardEditorSectionCollapsed: (section: string, collapsed: boolean) => void;
+  cardEditorSectionOrder: string[];
+  setCardEditorSectionOrder: (order: string[]) => void;
   hasHydrated: boolean;
   setHasHydrated: (value: boolean) => void;
 };
@@ -144,7 +160,12 @@ const defaultPageSettings = {
   // noBleedSourceAmount is implicitly 0
   noBleedTargetMode: 'global' as 'global' | 'manual' | 'none', // 'global' | 'manual' | 'none'
   noBleedTargetAmount: 1,
-  darkenNearBlack: true,
+  darkenMode: 'contrast-edges' as DarkenMode,
+  darkenContrast: 2.0,
+  darkenEdgeWidth: 0.08,
+  darkenAmount: 1.0,
+  darkenBrightness: -50,
+  darkenAutoDetect: true,
   guideColor: "#39FF14",
   guideWidth: 1,
   cardSpacingMm: 0,
@@ -157,7 +178,7 @@ const defaultPageSettings = {
   guidePlacement: "outside" as "inside" | "outside",
   globalLanguage: "en",
   settingsPanelState: {
-    order: ["layout", "bleed", "guides", "card", "filterSort", "application"],
+    order: ["layout", "bleed", "darken", "guides", "card", "filterSort", "application"],
     collapsed: {},
   },
   settingsPanelWidth: 320,
@@ -176,6 +197,9 @@ const defaultPageSettings = {
   showProcessingToasts: true,
   defaultCardbackId: "cardback_builtin_mtg",  // Default to MTG cardback
   exportMode: "fronts" as 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs',
+  // Card Editor section state - all expanded by default (empty = not collapsed)
+  cardEditorSectionCollapsed: {} as Record<string, boolean>,
+  cardEditorSectionOrder: ['basic', 'darkPixels', 'enhance', 'holographic', 'colorReplace', 'gamma', 'colorEffects', 'borderEffects'],
 };
 
 const layoutPresetsSizes: Record<
@@ -319,9 +343,29 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("noBleedTargetAmount", state.noBleedTargetAmount);
         return { noBleedTargetAmount: value };
       }),
-      setDarkenNearBlack: (value) => set((state) => {
-        recordSettingChange("darkenNearBlack", state.darkenNearBlack);
-        return { darkenNearBlack: value };
+      setDarkenMode: (value) => set((state) => {
+        recordSettingChange("darkenMode", state.darkenMode);
+        return { darkenMode: value };
+      }),
+      setDarkenContrast: (value) => set((state) => {
+        recordSettingChange("darkenContrast", state.darkenContrast);
+        return { darkenContrast: value };
+      }),
+      setDarkenEdgeWidth: (value) => set((state) => {
+        recordSettingChange("darkenEdgeWidth", state.darkenEdgeWidth);
+        return { darkenEdgeWidth: value };
+      }),
+      setDarkenAmount: (value) => set((state) => {
+        recordSettingChange("darkenAmount", state.darkenAmount);
+        return { darkenAmount: value };
+      }),
+      setDarkenBrightness: (value) => set((state) => {
+        recordSettingChange("darkenBrightness", state.darkenBrightness);
+        return { darkenBrightness: value };
+      }),
+      setDarkenAutoDetect: (value) => set((state) => {
+        recordSettingChange("darkenAutoDetect", state.darkenAutoDetect);
+        return { darkenAutoDetect: value };
       }),
       setGuideColor: (value) => set((state) => {
         recordSettingChange("guideColor", state.guideColor);
@@ -459,6 +503,13 @@ export const useSettingsStore = create<Store>()(
       setDefaultCardbackId: (id) => set({ defaultCardbackId: id }),
       exportMode: "fronts",
       setExportMode: (value) => set({ exportMode: value }),
+      // Card Editor section state
+      cardEditorSectionCollapsed: {},
+      setCardEditorSectionCollapsed: (section, collapsed) => set((state) => ({
+        cardEditorSectionCollapsed: { ...state.cardEditorSectionCollapsed, [section]: collapsed }
+      })),
+      cardEditorSectionOrder: ['basic', 'darkPixels', 'enhance', 'holographic', 'colorReplace', 'gamma', 'colorEffects', 'borderEffects'],
+      setCardEditorSectionOrder: (order) => set({ cardEditorSectionOrder: order }),
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
@@ -474,7 +525,7 @@ export const useSettingsStore = create<Store>()(
           rows: currentState.rows,
           bleedEdge: currentState.bleedEdge,
           bleedEdgeWidth: currentState.bleedEdgeWidth,
-          darkenNearBlack: currentState.darkenNearBlack,
+          darkenMode: currentState.darkenMode,
           guideColor: currentState.guideColor,
           guideWidth: currentState.guideWidth,
           cardSpacingMm: currentState.cardSpacingMm,
@@ -511,7 +562,7 @@ export const useSettingsStore = create<Store>()(
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 8, // Increment version for Source/Target bleed
+      version: 9, // Increment from main (v8) for advanced editor features
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars

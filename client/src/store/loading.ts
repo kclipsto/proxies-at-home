@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type LoadingTask =
+type LoadingTask =
   | "Fetching cards"
   | "Processing Images"
   | "Generating PDF"

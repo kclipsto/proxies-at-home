@@ -10,6 +10,72 @@ import {
     createQuadBuffer,
 } from "./webgl/webglUtils";
 import { VS_QUAD, FS_INIT, FS_STEP, FS_FINAL } from "./webgl/shaders";
+import type { DarkenMode } from "../store/settings";
+
+/**
+ * Convert darkenMode string to shader int value
+ * 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
+ */
+function darkenModeToInt(mode: DarkenMode | undefined): number {
+    switch (mode) {
+        case 'none': return 0;
+        case 'darken-all': return 1;
+        case 'contrast-edges': return 2;
+        case 'contrast-full': return 3;
+        default: return 0;
+    }
+}
+
+/**
+ * Compute the darknessFactor from an ImageBitmap by building a luminance histogram.
+ * Returns a value 0-1 where:
+ * - 0 = very dark image (10th percentile luminance near 90)
+ * - 1 = light image (10th percentile luminance near 20 or below)
+ * 
+ * This is used for adaptive edge contrast - darker images get less aggressive
+ * darkening to avoid crushing details.
+ */
+function computeDarknessFactor(img: ImageBitmap): number {
+    // Create a small canvas to sample the image (we don't need full resolution)
+    const sampleSize = 256; // Sample at max 256x256 for performance
+    const scale = Math.min(1, sampleSize / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const d = imageData.data;
+
+    // Build luminance histogram (sample every 4th pixel for speed)
+    const hist = new Uint32Array(256);
+    const sampleStep = 4 * 4; // every 4th pixel (4 bytes per pixel)
+
+    for (let i = 0; i < d.length; i += sampleStep) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        hist[Math.max(0, Math.min(255, l | 0))]++;
+    }
+
+    // Find 10th percentile luminance
+    const total = hist.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    let p10 = 0;
+
+    for (let i = 0; i < 256; i++) {
+        acc += hist[i];
+        if (acc >= total * 0.1) {
+            p10 = i;
+            break;
+        }
+    }
+
+    // Convert to darknessFactor: (90 - p10) / 70, clamped to 0-1
+    // Dark images (high p10) → lower factor → less aggressive darkening
+    // Light images (low p10) → higher factor → more aggressive darkening
+    return Math.min(1, Math.max(0, (90 - p10) / 70));
+}
 
 /**
  * WebGL programs for JFA-based bleed generation
@@ -23,7 +89,7 @@ export interface WebGLPrograms {
 /**
  * Initialize WebGL programs for bleed generation using Jump Flood Algorithm
  */
-export function initWebGLPrograms(gl: WebGL2RenderingContext): WebGLPrograms {
+function initWebGLPrograms(gl: WebGL2RenderingContext): WebGLPrograms {
     const vs = createShader(gl, gl.VERTEX_SHADER, VS_QUAD);
     const fsInit = createShader(gl, gl.FRAGMENT_SHADER, FS_INIT);
     const fsStep = createShader(gl, gl.FRAGMENT_SHADER, FS_STEP);
@@ -49,7 +115,7 @@ export function initWebGLPrograms(gl: WebGL2RenderingContext): WebGLPrograms {
 /**
  * Calculate image placement for aspect-ratio-preserving fit
  */
-export function calculateImagePlacement(
+function calculateImagePlacement(
     img: ImageBitmap,
     targetWidth: number,
     targetHeight: number
@@ -86,7 +152,7 @@ export function calculateImagePlacement(
 export async function generateBleedCanvasWebGL(
     img: ImageBitmap,
     bleedWidth: number,
-    opts: { unit?: "mm" | "in"; dpi?: number; darkenNearBlack?: boolean }
+    opts: { unit?: "mm" | "in"; dpi?: number; darkenMode?: DarkenMode }
 ): Promise<OffscreenCanvas> {
     const dpi = opts?.dpi ?? 300;
     const targetCardWidth = IN(2.48, dpi);
@@ -220,10 +286,15 @@ export async function generateBleedCanvasWebGL(
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_image"), 1);
 
+    // Compute darknessFactor for adaptive edge contrast
+    const darkenModeInt = darkenModeToInt(opts.darkenMode);
+    const darknessFactor = darkenModeInt > 0 ? computeDarknessFactor(img) : 0.5;
+
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_imageSize"), targetCardWidth, targetCardHeight);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_offset"), bleed, bleed);
-    gl.uniform1i(gl.getUniformLocation(progs.final, "u_darken"), opts.darkenNearBlack ? 1 : 0);
+    gl.uniform1i(gl.getUniformLocation(progs.final, "u_darkenMode"), darkenModeInt);
+    gl.uniform1f(gl.getUniformLocation(progs.final, "u_darknessFactor"), darknessFactor);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
@@ -240,6 +311,9 @@ export async function generateBleedCanvasWebGL(
     gl.deleteProgram(progs.step);
     gl.deleteProgram(progs.final);
     gl.deleteBuffer(quadBuffer);
+
+    // Explicitly release WebGL context to avoid hitting browser context limits
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
 
     return canvas;
 }
@@ -259,8 +333,18 @@ export async function processCardImageWebGL(
     displayBlob: Blob;
     displayDpi: number;
     displayBleedWidth: number;
+    // Per-mode darkened blobs
+    exportBlobDarkenAll: Blob;
+    displayBlobDarkenAll: Blob;
+    exportBlobContrastEdges: Blob;
+    displayBlobContrastEdges: Blob;
+    exportBlobContrastFull: Blob;
+    displayBlobContrastFull: Blob;
+    // Legacy (kept for backwards compatibility)
     exportBlobDarkened: Blob;
     displayBlobDarkened: Blob;
+    // For Card Editor live preview
+    baseDisplayBlob: Blob;
 }> {
 
     const exportDpi = opts?.exportDpi ?? 300;
@@ -410,7 +494,8 @@ export async function processCardImageWebGL(
     // Helper function to render final pass and extract blobs
     async function renderFinalAndExtract(
         glCtx: WebGL2RenderingContext,
-        darken: boolean
+        darkenMode: number,
+        darknessFactor: number
     ): Promise<{ exportBlob: Blob; displayBlob: Blob }> {
         // Render to screen (null framebuffer)
         glCtx.bindFramebuffer(glCtx.FRAMEBUFFER, null);
@@ -427,7 +512,8 @@ export async function processCardImageWebGL(
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_imageSize"), inputWidth, inputHeight);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_offset"), additionalBleedPx, additionalBleedPx);
-        glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_darken"), darken ? 1 : 0);
+        glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_darkenMode"), darkenMode);
+        glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darknessFactor"), darknessFactor);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
@@ -448,12 +534,16 @@ export async function processCardImageWebGL(
         return { exportBlob, displayBlob };
     }
 
-    // --- PASS 3A: FINAL (normal, darken=false) ---
-    const normalResult = await renderFinalAndExtract(gl, false);
+    // Compute darknessFactor from the source image
+    const darknessFactor = computeDarknessFactor(img);
 
+    // --- PASS 3A: FINAL (normal, darkenMode=0) ---
+    const normalResult = await renderFinalAndExtract(gl, 0, darknessFactor);
 
-    // --- PASS 3B: FINAL (darkened, darken=true) ---
-    const darkenedResult = await renderFinalAndExtract(gl, true);
+    // --- PASS 3B-D: Generate all 3 darkening modes ---
+    const darkenAllResult = await renderFinalAndExtract(gl, 1, darknessFactor);
+    const contrastEdgesResult = await renderFinalAndExtract(gl, 2, darknessFactor);
+    const contrastFullResult = await renderFinalAndExtract(gl, 3, darknessFactor);
 
 
     // Cleanup WebGL resources
@@ -467,8 +557,8 @@ export async function processCardImageWebGL(
     gl.deleteProgram(progs.final);
     gl.deleteBuffer(quadBuffer);
 
-
-
+    // Explicitly release WebGL context to avoid hitting browser context limits
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
 
     return {
         exportBlob: normalResult.exportBlob,
@@ -477,7 +567,17 @@ export async function processCardImageWebGL(
         displayBlob: normalResult.displayBlob,
         displayDpi,
         displayBleedWidth: totalBleedMm,
-        exportBlobDarkened: darkenedResult.exportBlob,
-        displayBlobDarkened: darkenedResult.displayBlob,
+        // Per-mode blobs
+        exportBlobDarkenAll: darkenAllResult.exportBlob,
+        displayBlobDarkenAll: darkenAllResult.displayBlob,
+        exportBlobContrastEdges: contrastEdgesResult.exportBlob,
+        displayBlobContrastEdges: contrastEdgesResult.displayBlob,
+        exportBlobContrastFull: contrastFullResult.exportBlob,
+        displayBlobContrastFull: contrastFullResult.displayBlob,
+        // Legacy (maps to contrast-edges for backwards compatibility)
+        exportBlobDarkened: contrastEdgesResult.exportBlob,
+        displayBlobDarkened: contrastEdgesResult.displayBlob,
+        // For Card Editor live preview (undarkened version)
+        baseDisplayBlob: normalResult.displayBlob,
     };
 }

@@ -1,8 +1,44 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import type { CardOption } from "../../../shared/types";
+import type { CardOption, CardOverrides } from "../../../shared/types";
 import { API_BASE } from "@/constants";
-import type { Image } from "@/db";
+import { db, type Image, type EffectCacheEntry } from "@/db";
+import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesWorker } from "./cardCanvasWorker";
+import { useSettingsStore } from "@/store/settings";
+
+// --- Effect cache helpers (same logic as effectCache.ts) ---
+function hashString(str: string): string {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function computeEffectCacheKey(imageId: string, overrides: CardOverrides, dpi: number): string {
+  const sortedOverrides = Object.keys(overrides || {})
+    .sort()
+    .reduce((acc, k) => {
+      const value = overrides[k as keyof CardOverrides];
+      if (value !== undefined) {
+        acc[k] = value;
+      }
+      return acc;
+    }, {} as Record<string, unknown>);
+  const overridesHash = hashString(JSON.stringify(sortedOverrides));
+  return `${imageId}:${dpi}:${overridesHash}`;
+}
+
+async function cacheEffectBlob(imageId: string, overrides: CardOverrides, blob: Blob, dpi: number): Promise<void> {
+  const key = computeEffectCacheKey(imageId, overrides, dpi);
+  const entry: EffectCacheEntry = {
+    key,
+    blob,
+    size: blob.size,
+    cachedAt: Date.now(),
+  };
+  await db.effectCache.put(entry);
+}
 
 function sanitizeFilename(name: string): string {
   return (
@@ -72,7 +108,41 @@ export async function ExportImagesZip(opts: ExportOpts) {
       try {
         let blob: Blob;
 
-        if (image?.originalBlob) {
+        // Prefer exportBlob (has bleed/processing applied) over originalBlob
+        // Then select the appropriate darken mode version
+        const darkenMode = useSettingsStore.getState().darkenMode;
+        const cardDarkenMode = c.overrides?.darkenMode ?? darkenMode;
+
+        // Select the right export blob based on darken mode
+        let selectedBlob: Blob | undefined;
+        if (cardDarkenMode === 'none') {
+          selectedBlob = image?.exportBlob;
+        } else if (cardDarkenMode === 'darken-all') {
+          selectedBlob = image?.exportBlobDarkenAll ?? image?.exportBlobDarkened ?? image?.exportBlob;
+        } else if (cardDarkenMode === 'contrast-edges') {
+          selectedBlob = image?.exportBlobContrastEdges ?? image?.exportBlobDarkened ?? image?.exportBlob;
+        } else if (cardDarkenMode === 'contrast-full') {
+          selectedBlob = image?.exportBlobContrastFull ?? image?.exportBlobDarkened ?? image?.exportBlob;
+        } else {
+          selectedBlob = image?.exportBlob;
+        }
+
+        if (selectedBlob) {
+          blob = selectedBlob;
+
+          // Apply advanced overrides (brightness, contrast, etc.) if present
+          if (hasAdvancedOverrides(c.overrides)) {
+            const params = overridesToRenderParams(c.overrides!, cardDarkenMode);
+            const bitmap = await createImageBitmap(blob);
+            blob = await renderCardWithOverridesWorker(bitmap, params);
+            bitmap.close();
+            // Cache for future exports (fire-and-forget)
+            if (c.imageId && c.overrides) {
+              const dpi = useSettingsStore.getState().dpi;
+              void cacheEffectBlob(c.imageId, c.overrides, blob, dpi);
+            }
+          }
+        } else if (image?.originalBlob) {
           blob = image.originalBlob;
         } else if (url) {
           const res = await fetch(url, { mode: "cors", credentials: "omit" });

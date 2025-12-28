@@ -20,7 +20,7 @@ export function usePageViewSettings() {
             isSettingsPanelCollapsed: state.isSettingsPanelCollapsed,
             uploadPanelWidth: state.uploadPanelWidth,
             isUploadPanelCollapsed: state.isUploadPanelCollapsed,
-            darkenNearBlack: state.darkenNearBlack,
+            darkenMode: state.darkenMode,
             sortBy: state.sortBy,
             filterManaCost: state.filterManaCost,
             filterColors: state.filterColors,
@@ -33,6 +33,11 @@ export function usePageViewSettings() {
             noBleedTargetMode: state.noBleedTargetMode,
             noBleedTargetAmount: state.noBleedTargetAmount,
             cardSpacingMm: state.cardSpacingMm,
+            guideWidth: state.guideWidth,
+            cutLineStyle: state.cutLineStyle,
+            perCardGuideStyle: state.perCardGuideStyle,
+            guideColor: state.guideColor,
+            guidePlacement: state.guidePlacement,
         }))
     );
 

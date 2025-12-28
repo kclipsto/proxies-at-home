@@ -309,6 +309,7 @@ export async function processMpcImport(
       }
 
       // Skip Scryfall enrichment during import - will be done in background
+      // MPC imports default to no darken pixels (already optimized for print)
       cardsToAdd.push({
         name: cardInfo.name,
         set: cardInfo.set,
@@ -317,6 +318,10 @@ export async function processMpcImport(
         isUserUpload: true,
         hasBuiltInBleed: true,
         needsEnrichment: true,
+        overrides: {
+          darkenMode: 'none',
+          darkenUseGlobalSettings: false,
+        },
       });
     }
   });

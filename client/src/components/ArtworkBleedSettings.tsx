@@ -2,6 +2,7 @@ import { Button, Checkbox, Label } from "flowbite-react";
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useArtworkModalStore } from "@/store/artworkModal";
+import { useCardEditorModalStore } from "@/store/cardEditorModal";
 import { useSettingsStore } from "@/store/settings";
 import { useSelectionStore } from "@/store/selection";
 import { undoableUpdateCardBleedSettings } from "@/helpers/undoableActions";
@@ -9,6 +10,7 @@ import { BleedModeControl } from "@/components/BleedModeControl";
 import { getHasBuiltInBleed } from "@/helpers/imageSpecs";
 import { AutoTooltip } from "./AutoTooltip";
 import { db } from "@/db";
+import { Palette } from "lucide-react";
 
 interface ArtworkBleedSettingsProps {
     selectedFace: 'front' | 'back';
@@ -26,6 +28,12 @@ export function ArtworkBleedSettings({ selectedFace }: ArtworkBleedSettingsProps
 
     // Get the active card based on selected face - back cards have their own settings
     const activeCard = selectedFace === 'back' && linkedBackCard ? linkedBackCard : modalCard;
+
+    // Fetch image for active card (for Edit Card button)
+    const activeImage = useLiveQuery(
+        () => (activeCard?.imageId ? db.images.get(activeCard.imageId) : undefined),
+        [activeCard?.imageId]
+    );
 
     // Get global settings for display labels
     const globalBleedWidth = useSettingsStore((state) => state.bleedEdgeWidth);
@@ -126,7 +134,7 @@ export function ArtworkBleedSettings({ selectedFace }: ArtworkBleedSettingsProps
             };
 
             await undoableUpdateCardBleedSettings(
-                [activeCard.uuid],
+                [activeCard!.uuid],
                 frontSettings
             );
             closeModal();
@@ -162,7 +170,7 @@ export function ArtworkBleedSettings({ selectedFace }: ArtworkBleedSettingsProps
         // For front cards, allow multi-select
         const cardUuids = !isBackTab && selectedCards.size > 1 && modalCard && selectedCards.has(modalCard.uuid)
             ? Array.from(selectedCards)
-            : [activeCard.uuid];
+            : [activeCard!.uuid];
 
         await undoableUpdateCardBleedSettings(
             cardUuids,
@@ -264,7 +272,24 @@ export function ArtworkBleedSettings({ selectedFace }: ArtworkBleedSettingsProps
                 </div>
             )}
 
-            <div className="pt-4 border-t border-gray-200 dark:border-gray-600">
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-600 space-y-2">
+                {/* Adjust Art button - opens Card Editor Modal */}
+                {activeCard && (
+                    <Button
+                        color="light"
+                        className="w-full"
+                        onClick={() => {
+                            closeModal();
+                            useCardEditorModalStore.getState().openModal({
+                                card: activeCard,
+                                image: activeImage ?? null,
+                            });
+                        }}
+                    >
+                        <Palette className="w-4 h-4 mr-2" />
+                        Adjust Art
+                    </Button>
+                )}
                 <Button color="blue" className="w-full" onClick={handleSave}>
                     Save Settings
                 </Button>

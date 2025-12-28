@@ -137,13 +137,14 @@ export function ArtworkModal() {
     );
 
     // Auto-select the correct face tab when modal opens for DFC cards ONLY
-    // (Non-DFC cards with linked backs use initialFace from the store, set by SortableCard)
+    // (Non-DFC cards with linked backs use initialFace from the store, set by PageView)
+    // Skip auto-selection if user explicitly opened modal on the back face (initialFace='back')
     useEffect(() => {
-        if (isModalOpen && isDFC && !hasAutoSelectedFace.current) {
+        if (isModalOpen && isDFC && !hasAutoSelectedFace.current && initialFace !== 'back') {
             setSelectedFace(currentCardFace);
             hasAutoSelectedFace.current = true;
         }
-    }, [isModalOpen, isDFC, currentCardFace]);
+    }, [isModalOpen, isDFC, currentCardFace, initialFace]);
 
     useEffect(() => {
         if (!isModalOpen) {

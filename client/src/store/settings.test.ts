@@ -508,10 +508,10 @@ describe("useSettingsStore", () => {
             expect(useSettingsStore.getState().bleedEdgeUnit).toBe("in");
         });
 
-        it("setDarkenNearBlack should update setting", () => {
-            const { setDarkenNearBlack } = useSettingsStore.getState();
-            setDarkenNearBlack(false);
-            expect(useSettingsStore.getState().darkenNearBlack).toBe(false);
+        it("setDarkenMode should update setting", () => {
+            const { setDarkenMode } = useSettingsStore.getState();
+            setDarkenMode('darken-all');
+            expect(useSettingsStore.getState().darkenMode).toBe('darken-all');
         });
     });
 

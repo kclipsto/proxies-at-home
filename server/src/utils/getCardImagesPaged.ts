@@ -167,7 +167,6 @@ export async function batchFetchCards(
 
   // Step 1: Check local DB first for all cards
   const cardsToFetch: CardInfo[] = [];
-  let localHits = 0;
 
   for (const ci of cardInfos) {
     // For set+number lookups, language doesn't matter (the printing determines the language)
@@ -178,7 +177,6 @@ export async function batchFetchCards(
 
     if (local && local.name) {
       // Found in local DB
-      localHits++;
       const key = local.name.toLowerCase();
       results.set(key, local);
 
@@ -204,13 +202,8 @@ export async function batchFetchCards(
     }
   }
 
-  if (localHits > 0) {
-    console.log(`[Proxxied DB] Found ${localHits}/${cardInfos.length} cards locally`);
-  }
-
   // Step 2: Fetch missing cards from Scryfall
   if (cardsToFetch.length > 0) {
-    console.log(`[Scryfall API] Fetching ${cardsToFetch.length} missing cards...`);
     const batches = chunkArray(cardsToFetch, 75);
 
     for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {

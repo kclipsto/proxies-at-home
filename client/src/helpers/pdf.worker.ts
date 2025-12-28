@@ -7,13 +7,51 @@ import {
 import { generateBleedCanvasWebGL } from "./webglImageProcessing";
 import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
-import type { CardOption } from "../../../shared/types";
+import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesWorker } from "./cardCanvasWorker";
+import { generatePerCardGuide, type GuideStyle } from "./cutGuideUtils";
+import { db, type EffectCacheEntry } from "../db";
+import type { CardOption, CardOverrides } from "../../../shared/types";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
 
 function getLocalBleedImageUrl(originalUrl: string, apiBase: string) {
     return toProxied(originalUrl, apiBase);
+}
+
+// --- Effect cache helpers (same logic as effectCache.ts) ---
+
+function hashString(str: string): string {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function computeEffectCacheKey(imageId: string, overrides: CardOverrides, dpi: number): string {
+    const sortedOverrides = Object.keys(overrides || {})
+        .sort()
+        .reduce((acc, k) => {
+            const value = overrides[k as keyof CardOverrides];
+            if (value !== undefined) {
+                acc[k] = value;
+            }
+            return acc;
+        }, {} as Record<string, unknown>);
+    const overridesHash = hashString(JSON.stringify(sortedOverrides));
+    return `${imageId}:${dpi}:${overridesHash}`;
+}
+
+async function cacheEffectBlob(imageId: string, overrides: CardOverrides, blob: Blob, dpi: number): Promise<void> {
+    const key = computeEffectCacheKey(imageId, overrides, dpi);
+    const entry: EffectCacheEntry = {
+        key,
+        blob,
+        size: blob.size,
+        cachedAt: Date.now(),
+    };
+    await db.effectCache.put(entry);
 }
 
 
@@ -142,10 +180,9 @@ function scaleGuideWidthForDPI(screenPx: number, screenPPI = 96, targetDPI: numb
 // MTG card corner radius: 2.5mm
 const CARD_CORNER_RADIUS_MM = 2.5;
 
-type GuideStyle = 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
-
 /**
  * Create a reusable guide overlay canvas that can be stamped onto each card
+ * Uses shared cut guide utility for consistent rendering with PixiJS canvas
  */
 function createGuideCanvas(
     contentW: number,
@@ -155,117 +192,69 @@ function createGuideCanvas(
     guideWidthPx: number,
     dpi: number,
     style: GuideStyle = 'corners',
-    placement: 'inside' | 'outside' = 'outside'
+    placement: 'inside' | 'outside' | 'center' = 'outside'
 ): OffscreenCanvas | null {
     if (style === 'none' || guideWidthPx <= 0) return null;
 
     const w = Math.max(1, Math.round(guideWidthPx));
+    const radiusPx = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
+    // Explicit 6.25mm extension for square guides (matches 2.5 * 2.5mm radius extent)
+    const targetLegExtendPx = MM_TO_PX(6.25, dpi);
 
     const cardW = contentW + 2 * bleedPx;
     const cardH = contentH + 2 * bleedPx;
     const canvas = new OffscreenCanvas(cardW, cardH);
     const ctx = canvas.getContext('2d')!;
 
-    const gx = bleedPx;
-    const gy = bleedPx;
-
-    ctx.fillStyle = guideColor;
     ctx.strokeStyle = guideColor;
     ctx.lineWidth = w;
+    ctx.lineCap = 'round';
 
-    // Calculate offset based on placement
-    // For outside: offset outward by guideWidth (so inner edge touches cut line)
-    // For inside: no offset (so outer edge touches cut line)
-    // REMOVED CLAMP to prevent outside guides from invading content area when bleed is small
-    const offset = placement === 'outside' ? -w : 0;
+    // Generate path commands using shared utility
+    const commands = generatePerCardGuide(contentW, contentH, radiusPx, w, style, placement, targetLegExtendPx);
 
-    if (style === 'corners' || style === 'dashed-corners') {
-        const len = MM_TO_PX(2, dpi);
-        const isDashed = style === 'dashed-corners';
-        if (isDashed) {
-            const dashLen = MM_TO_PX(1, dpi);
-            ctx.setLineDash([dashLen, dashLen]);
-            ctx.lineWidth = w;
-        }
-        // TL
-        ctx.fillRect(gx + offset, gy + offset, w, len);
-        ctx.fillRect(gx + offset, gy + offset, len, w);
-        // TR
-        ctx.fillRect(gx + contentW - len - offset, gy + offset, len, w);
-        ctx.fillRect(gx + contentW - w - offset, gy + offset, w, len);
-        // BL
-        ctx.fillRect(gx + offset, gy + contentH - len - offset, w, len);
-        ctx.fillRect(gx + offset, gy + contentH - w - offset, len, w);
-        // BR
-        ctx.fillRect(gx + contentW - len - offset, gy + contentH - w - offset, len, w);
-        ctx.fillRect(gx + contentW - w - offset, gy + contentH - len - offset, w, len);
-    } else if (style === 'rounded-corners' || style === 'dashed-rounded-corners') {
-        const r = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
-        const isDashed = style === 'dashed-rounded-corners';
-        if (isDashed) {
-            const dashLen = MM_TO_PX(1, dpi);
-            ctx.setLineDash([dashLen, dashLen]);
-        }
-        // For rounded corners, the offset logic is slightly different because we draw arcs
-        // The arc path is at radius + halfWidth
-        // If outside: we want inner edge at radius, so path is at radius + halfWidth (offset = 0 relative to corner center)
-        // If inside: we want outer edge at radius, so path is at radius - halfWidth??
-
-        // For rounded corners:
-        // Arc center C = gx + r + posOffset
-        // Arc path radius R = r + w/2
-        // Leftmost point of arc path = C - R = gx + r + posOffset - (r + w/2) = gx + posOffset - w/2
-
-        // We want:
-        // Outside: path at gx - w/2 (stroke gx-w to gx) => posOffset = 0
-        // Inside: path at gx + w/2 (stroke gx to gx+w) => posOffset = w
-
-        const posOffset = placement === 'outside' ? 0 : w;
-
+    // If we got commands, draw them
+    if (commands.length > 0) {
+        ctx.save();
+        ctx.translate(bleedPx, bleedPx); // Offset by bleed
         ctx.beginPath();
-        // TL
-        ctx.arc(gx + r + posOffset, gy + r + posOffset, r + w / 2, Math.PI, 1.5 * Math.PI);
-        // TR
-        ctx.moveTo(gx + contentW - r - posOffset, gy + posOffset);
-        ctx.arc(gx + contentW - r - posOffset, gy + r + posOffset, r + w / 2, 1.5 * Math.PI, 2 * Math.PI);
-        // BR
-        ctx.moveTo(gx + contentW - posOffset, gy + contentH - r - posOffset);
-        ctx.arc(gx + contentW - r - posOffset, gy + contentH - r - posOffset, r + w / 2, 0, 0.5 * Math.PI);
-        // BL
-        ctx.moveTo(gx + r + posOffset, gy + contentH - posOffset);
-        ctx.arc(gx + r + posOffset, gy + contentH - r - posOffset, r + w / 2, 0.5 * Math.PI, Math.PI);
-        ctx.stroke();
-    } else {
-        const isSquare = style.includes('squared');
-        const isDashed = style.includes('dashed');
-        // CSS border-radius is outer edge; canvas stroke is centered on path
-        // To match CSS: path radius = cornerRadius + halfWidth (outer = path + w/2)
-        const halfWidth = w / 2;
-        const cornerRadius = isSquare ? 0 : MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
 
-        // For rects:
-        // Outside: box is expanded by w on all sides
-        // Inside: box is exactly content size
+        // Execute path commands
+        for (const cmd of commands) {
+            switch (cmd.type) {
+                case 'moveTo':
+                    ctx.moveTo(cmd.x, cmd.y);
+                    break;
+                case 'lineTo':
+                    ctx.lineTo(cmd.x, cmd.y);
+                    break;
+                case 'arc':
+                    ctx.arc(cmd.cx, cmd.cy, cmd.r, cmd.startAngle, cmd.endAngle);
+                    break;
+            }
+        }
+
+        ctx.stroke();
+        ctx.restore();
+    } else {
+        // Fallback for solid rect styles (not using path commands)
+        const isSquare = style.includes('squared');
+        const halfWidth = w / 2;
+        const cornerRadius = isSquare ? 0 : radiusPx;
+
+        const gx = bleedPx;
+        const gy = bleedPx;
         const rectX = gx + (placement === 'outside' ? -w : 0);
         const rectY = gy + (placement === 'outside' ? -w : 0);
         const rectW = contentW + (placement === 'outside' ? 2 * w : 0);
         const rectH = contentH + (placement === 'outside' ? 2 * w : 0);
-
-        // Radius adjustment:
-        // Match SortableCard logic: both inside and outside use the same radius formula
-        // Outer edge = cornerRadius + w
-        // Path radius = cornerRadius + w/2
         const pathRadius = cornerRadius + halfWidth;
-
-        if (isDashed) {
-            const dashLen = MM_TO_PX(2, dpi);
-            ctx.setLineDash([dashLen, dashLen]);
-        }
 
         ctx.beginPath();
         ctx.roundRect(rectX + halfWidth, rectY + halfWidth, rectW - w, rectH - w, pathRadius);
         ctx.stroke();
     }
+
     return canvas;
 }
 
@@ -277,11 +266,13 @@ self.onmessage = async (event: MessageEvent) => {
         const {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
-            imagesById, API_BASE, darkenNearBlack, cutLineStyle, perCardGuideStyle, guidePlacement,
+            imagesById, API_BASE, darkenMode, cutLineStyle, perCardGuideStyle, guidePlacement,
             // Receive pre-normalized source settings directly (no legacy conversion)
             sourceSettings, withBleedSourceAmount,
             // Right-align incomplete rows (for backs export)
-            rightAlignRows
+            rightAlignRows,
+            // Pre-rendered effect cache (cardUuid -> Blob)
+            effectCacheById
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -411,8 +402,22 @@ self.onmessage = async (event: MessageEvent) => {
             let finalCardCanvas: OffscreenCanvas | ImageBitmap;
             const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
 
-            // Select appropriate blob based on darkenNearBlack setting
-            const selectedExportBlob = darkenNearBlack ? imageInfo?.exportBlobDarkened : imageInfo?.exportBlob;
+            // Select appropriate blob based on per-card darkenMode override OR global darkenMode setting
+            const cardDarkenMode = card.overrides?.darkenMode;
+            const effectiveDarkenMode = cardDarkenMode ?? darkenMode ?? 'none';
+            let selectedExportBlob: Blob | undefined;
+            if (effectiveDarkenMode === 'none') {
+                selectedExportBlob = imageInfo?.exportBlob;
+            } else if (effectiveDarkenMode === 'darken-all') {
+                selectedExportBlob = imageInfo?.exportBlobDarkenAll ?? imageInfo?.exportBlobDarkened ?? imageInfo?.exportBlob;
+            } else if (effectiveDarkenMode === 'contrast-edges') {
+                selectedExportBlob = imageInfo?.exportBlobContrastEdges ?? imageInfo?.exportBlobDarkened ?? imageInfo?.exportBlob;
+            } else if (effectiveDarkenMode === 'contrast-full') {
+                selectedExportBlob = imageInfo?.exportBlobContrastFull ?? imageInfo?.exportBlobDarkened ?? imageInfo?.exportBlob;
+            } else {
+                // Fallback for unexpected mode values
+                selectedExportBlob = imageInfo?.exportBlob;
+            }
 
             // Compute bleed mode and amounts
             const effectiveMode = getEffectiveBleedMode(card, sourceSettings);
@@ -424,7 +429,9 @@ self.onmessage = async (event: MessageEvent) => {
             const imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
 
             // Cache is valid if we have the blob at the right DPI
-            const isCacheValid = selectedExportBlob && imageInfo?.exportDpi === DPI;
+            // For cardbacks (which don't track exportDpi), accept if exportBlob exists
+            const isCardback = card.imageId?.startsWith('cardback_');
+            const isCacheValid = selectedExportBlob && (isCardback || imageInfo?.exportDpi === DPI);
 
             // Calculate centering offset if image has different bleed than card's target
             const slotBleedPx = cardLayout.bleedPx;
@@ -436,10 +443,31 @@ self.onmessage = async (event: MessageEvent) => {
 
             if (isCacheValid) {
                 // Fast path: use pre-processed blob directly
-                finalCardCanvas = await createImageBitmap(selectedExportBlob!);
+                let bitmap = await createImageBitmap(selectedExportBlob!);
+
+                // If card has advanced overrides (brightness, contrast, etc.), apply them with WebGL
+                if (hasAdvancedOverrides(card.overrides)) {
+                    // Check pre-rendered effect cache first
+                    const cachedEffectBlob = effectCacheById?.get(card.uuid);
+                    if (cachedEffectBlob) {
+                        bitmap.close();
+                        bitmap = await createImageBitmap(cachedEffectBlob);
+                    } else {
+                        const params = overridesToRenderParams(card.overrides!, effectiveDarkenMode as 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full');
+                        const renderedBlob = await renderCardWithOverridesWorker(bitmap, params);
+                        bitmap.close();
+                        bitmap = await createImageBitmap(renderedBlob);
+                        // Cache for future exports (fire-and-forget, don't block export)
+                        if (card.imageId && card.overrides) {
+                            void cacheEffectBlob(card.imageId, card.overrides, renderedBlob, DPI);
+                        }
+                    }
+                }
+
+                finalCardCanvas = bitmap;
             } else {
                 // Check cache
-                const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${darkenNearBlack}` : null;
+                const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${effectiveDarkenMode}` : null;
                 if (cacheKey && canvasCache.has(cacheKey)) {
                     finalCardCanvas = canvasCache.get(cacheKey)!;
                 } else {
@@ -499,11 +527,11 @@ self.onmessage = async (event: MessageEvent) => {
                                     if (trimmed !== img) { img.close(); img = trimmed; }
                                 }
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, 0, {
-                                    unit: 'mm', dpi: DPI, darkenNearBlack,
+                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode,
                                 });
                             } else if (effectiveMode === 'existing' || !needsBleedChange) {
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
-                                    unit: 'mm', dpi: DPI, darkenNearBlack,
+                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode,
                                 });
                             } else {
                                 if (card.hasBuiltInBleed && existingBleedMm > 0) {
@@ -511,14 +539,29 @@ self.onmessage = async (event: MessageEvent) => {
                                     if (trimmed !== img) { img.close(); img = trimmed; }
                                 }
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedMm, {
-                                    unit: 'mm', dpi: DPI, darkenNearBlack,
+                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode,
                                 });
                             }
 
                             img.close();
+
+                            // Apply advanced overrides if present (same as fast path)
+                            if (hasAdvancedOverrides(card.overrides) && finalCardCanvas instanceof OffscreenCanvas) {
+                                const params = overridesToRenderParams(card.overrides!, effectiveDarkenMode as 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full');
+                                // Convert OffscreenCanvas to ImageBitmap for rendering
+                                const bitmap = await createImageBitmap(finalCardCanvas);
+                                const renderedBlob = await renderCardWithOverridesWorker(bitmap, params);
+                                bitmap.close();
+                                // Replace finalCardCanvas with rendered result
+                                finalCardCanvas = await createImageBitmap(renderedBlob);
+                                // Cache for future exports (fire-and-forget)
+                                if (card.imageId && card.overrides) {
+                                    void cacheEffectBlob(card.imageId, card.overrides, renderedBlob, DPI);
+                                }
+                            }
                         }
 
-                        // Cache the result
+                        // Cache the result (only cache OffscreenCanvas, not ImageBitmap)
                         if (cacheKey && finalCardCanvas instanceof OffscreenCanvas) {
                             canvasCache.set(cacheKey, finalCardCanvas);
                         }

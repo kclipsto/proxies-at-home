@@ -62,12 +62,10 @@ export class ImportSession {
     markProcessed(uuid: string, fromPersistentCache: boolean) {
         if (this.isFinished) return;
         if (!this.cardUuids.has(uuid)) {
-            // console.log('[PerfTrace] ImportSession: Early processed', uuid);
             this.earlyProcessed.set(uuid, fromPersistentCache);
             return;
         }
         if (!this.processedUuids.has(uuid)) {
-            // console.log('[PerfTrace] ImportSession: Processed', uuid);
             this.processedUuids.add(uuid);
             (fromPersistentCache ? this.persistentCacheHitUuids : this.networkFetchUuids).add(uuid);
         }

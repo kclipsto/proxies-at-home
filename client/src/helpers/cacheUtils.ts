@@ -5,6 +5,8 @@ import type { Table } from "dexie";
 const IMAGE_CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024;
 // 100MB Cap for Metadata (Approx)
 const METADATA_CACHE_CAP_BYTES = 100 * 1024 * 1024;
+// 2GB Cap for Effect Cache (pre-rendered exports)
+const EFFECT_CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024; // 5GB for high-DPI effect caching
 
 /**
  * Generic LRU Enforcer for a Dexie Table.
@@ -67,6 +69,13 @@ export async function enforceImageCacheLimits(): Promise<number> {
  */
 export async function enforceMetadataCacheLimits(): Promise<number> {
     return enforceGenericLruLimit(db.cardMetadataCache, METADATA_CACHE_CAP_BYTES, "id");
+}
+
+/**
+ * Enforce Effect Cache Limits (2GB Cap)
+ */
+export async function enforceEffectCacheLimits(): Promise<number> {
+    return enforceGenericLruLimit(db.effectCache, EFFECT_CACHE_CAP_BYTES, "key");
 }
 
 /**

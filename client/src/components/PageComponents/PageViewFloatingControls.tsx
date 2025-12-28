@@ -4,6 +4,7 @@ import { ZoomControls } from "../ZoomControls";
 import { UndoRedoControls } from "../UndoRedoControls";
 import { usePageViewSettings } from "../../hooks/usePageViewSettings";
 import { useOnClickOutside } from "../../hooks/useOnClickOutside";
+import { useCardEditorModalStore } from "../../store";
 
 interface PageViewFloatingControlsProps {
     mobile?: boolean;
@@ -17,6 +18,9 @@ export function PageViewFloatingControls({ mobile, hasCards }: PageViewFloatingC
         uploadPanelWidth,
         isUploadPanelCollapsed,
     } = usePageViewSettings();
+
+    // Hide floating controls when CardEditorModal is open
+    const isCardEditorOpen = useCardEditorModalStore((state) => state.open);
 
     const [showMobileZoomControls, setShowMobileZoomControls] = useState(false);
     const mobileZoomControlsRef = useRef<HTMLDivElement>(null);
@@ -41,7 +45,8 @@ export function PageViewFloatingControls({ mobile, hasCards }: PageViewFloatingC
     }, [showMobileZoomControls]);
 
 
-    if (!hasCards) return null;
+    // Hide when no cards or when card editor modal is open
+    if (!hasCards || isCardEditorOpen) return null;
 
     return (
         <>

@@ -6,9 +6,10 @@ import { useMemo } from "react";
 
 interface PageViewSelectionBarProps {
     cards: CardOption[];
+    mobile?: boolean;
 }
 
-export function PageViewSelectionBar({ cards }: PageViewSelectionBarProps) {
+export function PageViewSelectionBar({ cards, mobile }: PageViewSelectionBarProps) {
     const selectedCards = useSelectionStore((state) => state.selectedCards);
     const selectAll = useSelectionStore((state) => state.selectAll);
     const clearSelection = useSelectionStore((state) => state.clearSelection);
@@ -29,8 +30,9 @@ export function PageViewSelectionBar({ cards }: PageViewSelectionBarProps) {
 
     return (
         <div
-            className="fixed bottom-6 z-40 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg flex items-center"
-            style={{
+            className={`fixed z-40 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg flex items-center ${mobile ? 'bottom-20 left-1/2 -translate-x-1/2 landscape:bottom-4 landscape:left-[calc(50%+48px)]' : 'bottom-6'}`}
+            style={mobile ? undefined : {
+                // On desktop, account for side panels for centering
                 left: `calc(50% + ${((isUploadPanelCollapsed ? 60 : uploadPanelWidth) - (isSettingsPanelCollapsed ? 60 : settingsPanelWidth)) / 2}px)`,
                 transform: 'translateX(-50%)'
             }}>
@@ -43,7 +45,7 @@ export function PageViewSelectionBar({ cards }: PageViewSelectionBarProps) {
                 title="Select All"
             >
                 <CheckSquare className="size-4" />
-                <span className="text-sm">Select All</span>
+                <span className="text-sm hidden sm:inline">Select All</span>
             </button>
             <button
                 onClick={clearSelection}
@@ -51,7 +53,7 @@ export function PageViewSelectionBar({ cards }: PageViewSelectionBarProps) {
                 title="Deselect All"
             >
                 <XSquare className="size-4" />
-                <span className="text-sm">Deselect</span>
+                <span className="text-sm hidden sm:inline">Deselect</span>
             </button>
         </div>
     );

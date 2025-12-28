@@ -73,12 +73,17 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
             const suffix = opts.hasBuiltInBleed ? "-mpc" : "-std";
             const imageId = await addCustomImage(file, suffix);
 
+            // Custom image uploads default to no darken pixels (already optimized for print)
             cardsToAdd.push({
                 name: inferCardNameFromFilename(file.name) || `Custom Art`,
                 imageId: imageId,
                 isUserUpload: true,
                 hasBuiltInBleed: opts.hasBuiltInBleed,
                 needsEnrichment: true,
+                overrides: {
+                    darkenMode: 'none',
+                    darkenUseGlobalSettings: false,
+                },
             });
         }
 

@@ -64,6 +64,69 @@ export async function undoableDeleteCard(uuid: string): Promise<void> {
 }
 
 /**
+ * Batch deletes multiple cards with a single undo action.
+ * All deletions can be undone with one Ctrl+Z.
+ */
+export async function undoableDeleteCardsBatch(uuids: string[]): Promise<void> {
+    if (uuids.length === 0) return;
+
+    // Get all cards and their images before deletion
+    const cards = await db.cards.bulkGet(uuids);
+    const validCards = cards.filter((c): c is NonNullable<typeof c> => c != null);
+    if (validCards.length === 0) return;
+
+    // Capture image data for each card
+    const cardImageData: Map<string, { card: typeof validCards[0]; imageData?: Image }> = new Map();
+    for (const card of validCards) {
+        let imageData: Image | undefined;
+        if (card.imageId) {
+            imageData = await db.images.get(card.imageId);
+        }
+        cardImageData.set(card.uuid, { card, imageData });
+    }
+
+    // Perform all deletions
+    for (const uuid of uuids) {
+        await deleteCard(uuid);
+    }
+
+    // Build description
+    const description = validCards.length === 1
+        ? `Delete "${validCards[0].name}"`
+        : `Delete ${validCards.length} cards`;
+
+    // Record the batch action for undo
+    useUndoRedoStore.getState().pushAction({
+        type: "DELETE_CARDS_BATCH",
+        description,
+        undo: async () => {
+            // Restore all cards
+            for (const [, { card, imageData }] of cardImageData) {
+                await db.cards.add(card);
+
+                // Restore or increment image ref
+                if (card.imageId && imageData) {
+                    const existingImage = await db.images.get(card.imageId);
+                    if (existingImage) {
+                        await db.images.update(card.imageId, {
+                            refCount: existingImage.refCount + 1,
+                        });
+                    } else {
+                        await db.images.add({ ...imageData, refCount: 1 });
+                    }
+                }
+            }
+        },
+        redo: async () => {
+            // Re-delete all cards
+            for (const uuid of uuids) {
+                await deleteCard(uuid);
+            }
+        },
+    });
+}
+
+/**
  * Duplicates a card with undo support.
  * Tracks the new card's UUID so it can be deleted on undo.
  */
@@ -103,6 +166,66 @@ export async function undoableDuplicateCard(uuid: string): Promise<string | unde
     });
 
     return newCard.uuid;
+}
+
+/**
+ * Batch duplicates multiple cards with a single undo action.
+ * All duplications can be undone with one Ctrl+Z.
+ */
+export async function undoableDuplicateCardsBatch(uuids: string[]): Promise<string[]> {
+    if (uuids.length === 0) return [];
+
+    // Get all cards before duplication
+    const cardsBefore = await db.cards.toArray();
+    const uuidsBefore = new Set(cardsBefore.map((c) => c.uuid));
+
+    // Get original card names for description
+    const originalCards = await db.cards.bulkGet(uuids);
+    const validOriginals = originalCards.filter((c): c is NonNullable<typeof c> => c != null);
+    if (validOriginals.length === 0) return [];
+
+    // Perform all duplications
+    for (const uuid of uuids) {
+        await duplicateCard(uuid);
+    }
+
+    // Find all new card UUIDs
+    const cardsAfter = await db.cards.toArray();
+    const newCards = cardsAfter.filter((c) => !uuidsBefore.has(c.uuid));
+    const newUuids = newCards.map((c) => c.uuid);
+
+    if (newUuids.length === 0) {
+        console.warn("[undoableDuplicateCardsBatch] No new cards found after duplication");
+        return [];
+    }
+
+    // Build description
+    const description = validOriginals.length === 1
+        ? `Duplicate "${validOriginals[0].name}"`
+        : `Duplicate ${validOriginals.length} cards`;
+
+    // Capture uuids for undo/redo closures
+    const originalUuids = [...uuids];
+
+    // Record the batch action for undo
+    useUndoRedoStore.getState().pushAction({
+        type: "DUPLICATE_CARDS_BATCH",
+        description,
+        undo: async () => {
+            // Delete all duplicated cards
+            for (const newUuid of newUuids) {
+                await deleteCard(newUuid);
+            }
+        },
+        redo: async () => {
+            // Re-duplicate all original cards
+            for (const uuid of originalUuids) {
+                await duplicateCard(uuid);
+            }
+        },
+    });
+
+    return newUuids;
 }
 
 /**
@@ -327,101 +450,7 @@ export async function undoableReorderMultipleCards(
     });
 }
 
-/**
- * Changes card artwork with undo support.
- */
-export async function undoableChangeArtwork(
-    oldImageId: string,
-    newImageId: string,
-    cardToUpdate: CardOption,
-    applyToAll: boolean,
-    newName?: string,
-    newImageUrls?: string[],
-    cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>
-): Promise<void> {
-    // Capture old state for the affected cards
-    const oldCardsState = applyToAll
-        ? await db.cards.where("name").equals(cardToUpdate.name).toArray()
-        : [cardToUpdate];
 
-    // Capture old image data
-    const oldImages = new Map<string, Image>();
-    for (const card of oldCardsState) {
-        if (card.imageId && !oldImages.has(card.imageId)) {
-            const img = await db.images.get(card.imageId);
-            if (img) oldImages.set(card.imageId, img);
-        }
-    }
-
-    // Perform the artwork change
-    await changeCardArtwork(
-        oldImageId,
-        newImageId,
-        cardToUpdate,
-        applyToAll,
-        newName,
-        newImageUrls,
-        cardMetadata
-    );
-
-    // Record the action for undo
-    useUndoRedoStore.getState().pushAction({
-        type: "CHANGE_ARTWORK",
-        description: `Change artwork for "${cardToUpdate.name}"`,
-        undo: async () => {
-            // Restore old card states
-            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
-                for (const oldCard of oldCardsState) {
-                    await db.cards.update(oldCard.uuid, {
-                        imageId: oldCard.imageId,
-                        name: oldCard.name,
-                        set: oldCard.set,
-                        number: oldCard.number,
-                        colors: oldCard.colors,
-                        cmc: oldCard.cmc,
-                        type_line: oldCard.type_line,
-                        rarity: oldCard.rarity,
-                        mana_cost: oldCard.mana_cost,
-                        lang: oldCard.lang,
-                        isUserUpload: oldCard.isUserUpload,
-                    });
-                }
-
-                // Restore old image refs
-                for (const [imageId, img] of oldImages) {
-                    const current = await db.images.get(imageId);
-                    if (current) {
-                        await db.images.update(imageId, { refCount: current.refCount + oldCardsState.length });
-                    } else {
-                        await db.images.add({ ...img, refCount: oldCardsState.length });
-                    }
-                }
-
-                // Decrement new image refs
-                const newImage = await db.images.get(newImageId);
-                if (newImage) {
-                    const newRefCount = newImage.refCount - oldCardsState.length;
-                    if (newRefCount > 0) {
-                        await db.images.update(newImageId, { refCount: newRefCount });
-                    } else {
-                        await db.images.delete(newImageId);
-                    }
-                }
-            });
-        },
-        redo: async () => {
-            await changeCardArtwork(
-                oldImageId,
-                newImageId,
-                cardToUpdate,
-                applyToAll,
-                newName,
-                newImageUrls,
-                cardMetadata
-            );
-        },
-    });
-}
 
 /**
  * Undoable card bleed settings update.

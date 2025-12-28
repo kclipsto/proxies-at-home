@@ -16,8 +16,11 @@ import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
 import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/cacheUtils";
+import { queueBulkPreRender } from "../helpers/effectCache";
+import { hasActiveAdjustments } from "../helpers/adjustmentUtils";
 import { ensureBuiltinCardbacksInDb } from "../helpers/cardbackLibrary";
 import { initializeFlipState } from "../store/selection";
+import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 
 import { getExpectedBleedWidth, getHasBuiltInBleed, getEffectiveBleedMode, type GlobalSettings } from "../helpers/imageSpecs";
 
@@ -170,12 +173,8 @@ export default function ProxyBuilderPage() {
   // On startup, clean expired image cache entries (non-blocking)
   useEffect(() => {
     const timer = setTimeout(() => {
-      enforceImageCacheLimits().then(count => {
-        if (count > 0) console.log(`[ImageCache] Cleaned ${count} entries (TTL or Size Limit)`);
-      });
-      enforceMetadataCacheLimits().then(count => {
-        if (count > 0) console.log(`[MetadataCache] Cleaned ${count} entries (TTL or Size Limit)`);
-      });
+      enforceImageCacheLimits();
+      enforceMetadataCacheLimits();
     }, 500);
     return () => clearTimeout(timer);
   }, []);
@@ -192,6 +191,8 @@ export default function ProxyBuilderPage() {
 
 
   const allCards = allCardsQuery ?? EMPTY_CARDS;
+  // Apply filter/sort settings from store
+  const { filteredAndSortedCards } = useFilteredAndSortedCards(allCards);
   // Merge images and cardbacks for PageView - both have id, displayBlob, displayBlobDarkened
   const allImages = useMemo(() => {
     const images = allImagesQuery ?? EMPTY_IMAGES;
@@ -270,8 +271,6 @@ export default function ProxyBuilderPage() {
       }
 
       const uniqueUnprocessedCount = imageIdToRepresentativeCard.size;
-      // console.log('[PerfTrace] ProxyBuilderPage: processUnprocessed found', uniqueUnprocessedCount, 'unique images to process');
-
       if (uniqueUnprocessedCount > 0) {
         // Process once per unique imageId using representative card
         for (const card of imageIdToRepresentativeCard.values()) {
@@ -373,6 +372,29 @@ export default function ProxyBuilderPage() {
 
       if (cardsToReprocess.length > 0) {
         void reprocessSelectedImages(cardsToReprocess, bleedEdge ? bleedEdgeWidthMm : 0);
+
+        // After reprocessing, queue effect re-rendering for cards with active adjustments
+        // This is scheduled after a delay to let base image processing complete first
+        if (dpiChanged) {
+          setTimeout(async () => {
+            const freshImages = await db.images.toArray();
+            const freshImageMap = new Map(freshImages.map(i => [i.id, i]));
+
+            const effectTasks = cardsToReprocess
+              .filter(card => {
+                const img = card.imageId ? freshImageMap.get(card.imageId) : undefined;
+                return card.overrides && hasActiveAdjustments(card.overrides) && img?.exportBlob;
+              })
+              .map(card => ({
+                card,
+                exportBlob: freshImageMap.get(card.imageId!)!.exportBlob!,
+              }));
+
+            if (effectTasks.length > 0) {
+              queueBulkPreRender(effectTasks);
+            }
+          }, 2000); // Wait for base image reprocessing to complete
+        }
       }
     }, 500); // Debounce by 500ms
 
@@ -440,11 +462,21 @@ export default function ProxyBuilderPage() {
             />
           </div>
 
-          <div className={activeMobileView === "preview" ? "block h-full" : "hidden"}>
+          {/* Preview tab uses visibility:hidden instead of display:none to preserve WebGL context
+              on mobile when switching tabs. Using display:none corrupts the canvas on Android. */}
+          <div
+            className="h-full"
+            style={{
+              visibility: activeMobileView === "preview" ? "visible" : "hidden",
+              position: activeMobileView === "preview" ? "relative" : "absolute",
+              inset: 0,
+              pointerEvents: activeMobileView === "preview" ? "auto" : "none",
+            }}
+          >
             <PageView
               getLoadingState={getLoadingState}
               ensureProcessed={ensureProcessed}
-              cards={allCards}
+              cards={filteredAndSortedCards}
               images={allImages}
               mobile={true}
               active={activeMobileView === "preview"}
@@ -498,7 +530,7 @@ export default function ProxyBuilderPage() {
           <PageView
             getLoadingState={getLoadingState}
             ensureProcessed={ensureProcessed}
-            cards={allCards}
+            cards={filteredAndSortedCards}
             images={allImages}
           />
 

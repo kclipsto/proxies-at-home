@@ -141,18 +141,19 @@ export function PageViewDragOverlay({
 
                 const imageUrl = processedImageUrls[displayCard.imageId!] || "";
 
+                // Use CardView with CSS filters for per-card adjustments (simpler than PixiJS, avoids WebGL context)
                 return (
                     <CardView
                         card={displayCard}
-                        index={0} // Index doesn't matter for overlay
-                        globalIndex={0} // Global index doesn't matter for overlay
+                        index={0}
+                        globalIndex={0}
                         imageSrc={imageUrl}
                         totalCardWidth={cardWidthMm}
                         totalCardHeight={cardHeightMm}
                         guideOffset={`${bleedMm}mm`}
                         imageBleedWidth={bleedMm}
                         setContextMenu={setContextMenu}
-                        disabled={true} // Disable interactions on overlay
+                        disabled={true}
                         mobile={mobile}
                         style={{
                             width: `${cardWidthMm}mm`,

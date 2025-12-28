@@ -13,7 +13,7 @@
 import cardBack from '../assets/cardBack.png';
 import proxxiedBack from '../assets/proxxied-card-back.png';
 import classicDotsBack from '../assets/Classic Dots.png';
-import { db, type Cardback } from '../db';
+import { db } from '../db';
 
 export interface CardbackOption {
     id: string;
@@ -63,20 +63,7 @@ export const BUILTIN_CARDBACKS: CardbackOption[] = [
  */
 let builtinCardbacksEnsured = false;
 
-/**
- * Resets the builtin cardbacks flag so they will be re-initialized on next use.
- * Generally not needed since cardbacks table persists, but kept for edge cases.
- */
-export function resetBuiltinCardbacksFlag(): void {
-    builtinCardbacksEnsured = false;
-}
 
-/**
- * Checks if a cardback id belongs to a builtin cardback.
- */
-export function isBuiltinCardbackId(id: string): boolean {
-    return id.startsWith('cardback_builtin_');
-}
 
 /**
  * Checks if an imageId belongs to the cardbacks table (not images table).
@@ -195,31 +182,4 @@ export async function getAllCardbacks(): Promise<CardbackOption[]> {
     });
 }
 
-/**
- * Adds a cardback to the cardbacks table.
- * Used for user uploads and MPC imports.
- */
-export async function addCardback(cardback: Cardback): Promise<void> {
-    await db.cardbacks.put(cardback);
-}
 
-/**
- * Updates a cardback in the cardbacks table.
- */
-export async function updateCardback(id: string, updates: Partial<Cardback>): Promise<void> {
-    await db.cardbacks.update(id, updates);
-}
-
-/**
- * Deletes a cardback from the cardbacks table.
- */
-export async function deleteCardback(id: string): Promise<void> {
-    await db.cardbacks.delete(id);
-}
-
-/**
- * Gets a cardback by ID from the cardbacks table.
- */
-export async function getCardback(id: string): Promise<Cardback | undefined> {
-    return await db.cardbacks.get(id);
-}
