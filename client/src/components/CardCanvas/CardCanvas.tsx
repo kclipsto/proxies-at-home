@@ -382,6 +382,8 @@ export const CardCanvas = memo(function CardCanvas({
                 }
                 if (state.distanceTexture) gl.deleteTexture(state.distanceTexture);
                 state.distanceTexture = texture;
+                // Trigger re-render
+                doRender();
             });
         }
     }, [baseTexture, distanceField, doRender]);

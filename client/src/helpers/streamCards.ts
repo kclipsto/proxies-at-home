@@ -1,10 +1,12 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { undoableAddCards } from "./undoableActions";
 import { addCards, addRemoteImage, createLinkedBackCardsBulk } from "./dbUtils";
-import { createImportSession, getCurrentSession, type ImportType } from "./ImportSession";
+import { createImportSession, getCurrentSession, type ImportType } from "./importSession";
 import { useSettingsStore } from "../store";
+import { findBestMpcMatches, parseMpcCardLogic } from "./mpcImportIntegration";
 import { API_BASE } from "../constants";
 import { db } from "../db";
+import { getMpcAutofillImageUrl } from "./mpcAutofillApi";
 import type { CardOption, ScryfallCard } from "../../../shared/types";
 
 export interface CardInfo {
@@ -13,6 +15,7 @@ export interface CardInfo {
     number?: string;
     quantity?: number;
     category?: string;
+    mpcIdentifier?: string;
 }
 
 export interface StreamCardsOptions {
@@ -58,9 +61,134 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
         currentOrderBase += cardQty * 10;
     }
 
-    const uniqueInfos = Array.from(quantityByKey.values()).map(v => v.info);
+    // --- Handle cards with explicit MPC identifiers first ---
     let cardsAdded = 0;
     const addedCardUuids: string[] = [];
+
+    const cardsWithMpcId = Array.from(quantityByKey.values()).filter(v => v.info.mpcIdentifier);
+    const cardsWithoutMpcId = Array.from(quantityByKey.values()).filter(v => !v.info.mpcIdentifier);
+
+    // Process cards with explicit MPC identifiers directly
+    for (const entry of cardsWithMpcId) {
+        if (signal.aborted) break;
+
+        const { info, quantity, startOrder } = entry;
+        const imageUrl = getMpcAutofillImageUrl(info.mpcIdentifier!);
+        const imageId = await addRemoteImage([imageUrl], quantity);
+
+        const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
+        for (let q = 0; q < quantity; q++) {
+            cardsToAdd.push({
+                name: info.name,
+                set: undefined,
+                number: undefined,
+                lang: language,
+                isUserUpload: false,
+                imageId,
+                hasBuiltInBleed: true,
+                needsEnrichment: true,
+                colors: [],
+                cmc: 0,
+                type_line: "Card",
+                rarity: "common",
+                mana_cost: "",
+                category: info.category,
+            });
+        }
+
+        const added = await undoableAddCards(cardsToAdd, { startOrder });
+        cardsAdded += added.length;
+        addedCardUuids.push(...added.map(c => c.uuid));
+        if (cardsAdded === added.length) onFirstCard?.();
+
+        // Remove from quantityByKey so it's not processed again
+        quantityByKey.delete(cardKey(info));
+    }
+
+    let uniqueInfos = cardsWithoutMpcId.map(v => v.info);
+
+    // --- MPC Autofill Integration ---
+    const preferredArtSource = useSettingsStore.getState().preferredArtSource;
+    if (preferredArtSource === 'mpc') {
+        // Chunk cards for batch processing
+        const CHUNK_SIZE = 50;
+        const mpcInfos = [...uniqueInfos];
+        const failingInfos: CardInfo[] = [];
+
+        // Report progress base
+        let processedMpc = 0;
+
+        // Process chunks
+        for (let i = 0; i < mpcInfos.length; i += CHUNK_SIZE) {
+            if (signal.aborted) break;
+
+            const chunk = mpcInfos.slice(i, i + CHUNK_SIZE);
+            const matches = await findBestMpcMatches(chunk);
+
+            // Process matches
+            const matchedNames = new Set<string>();
+
+            for (const match of matches) {
+                matchedNames.add(cardKey(match.info));
+
+                // Construct card object and add to DB
+                const entry = quantityByKey.get(cardKey(match.info));
+                if (!entry) continue;
+
+                const quantity = entry.quantity;
+                const imageId = await addRemoteImage([match.imageUrl], quantity);
+
+                const { name: cardName, hasBuiltInBleed, needsEnrichment } = parseMpcCardLogic(match.mpcCard);
+
+                const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
+                for (let q = 0; q < quantity; q++) {
+                    cardsToAdd.push({
+                        name: cardName,
+                        set: undefined,
+                        number: undefined,
+                        lang: language,
+                        isUserUpload: false,
+                        imageId,
+                        hasBuiltInBleed,
+                        needsEnrichment,
+                        // Fill generic defaults for metadata not from Scryfall
+                        colors: [],
+                        cmc: 0,
+                        type_line: "Card",
+                        rarity: "common",
+                        mana_cost: "",
+                        category: entry.info.category,
+                    });
+                }
+
+                const startOrder = entry.startOrder;
+                const added = await undoableAddCards(cardsToAdd, { startOrder });
+                cardsAdded += added.length;
+                addedCardUuids.push(...added.map(c => c.uuid));
+                if (cardsAdded === added.length) onFirstCard?.();
+            }
+
+            // Collect failed lookups for Scryfall fallback
+            for (const info of chunk) {
+                if (!matchedNames.has(cardKey(info))) {
+                    failingInfos.push(info);
+                }
+            }
+
+            processedMpc += chunk.length;
+            onProgress?.(processedMpc, uniqueInfos.length); // Report progress as we search/add
+        }
+
+        // Fallback to Scryfall for cards not found in MPC
+        uniqueInfos = failingInfos;
+    }
+
+    if (uniqueInfos.length === 0) {
+        // All handled by MPC (or empty input)
+        onComplete?.();
+        return { addedCardUuids, totalCardsAdded: cardsAdded };
+    }
+    // --- End MPC Autofill Integration ---
 
     // Track pending async operations for race condition with SSE done event
     let pendingOperations = 0;

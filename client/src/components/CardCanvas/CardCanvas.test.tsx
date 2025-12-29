@@ -1,4 +1,4 @@
-import { render, cleanup, waitFor } from "@testing-library/react";
+import { render, cleanup, waitFor, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CardCanvas } from "./CardCanvas";
@@ -274,6 +274,33 @@ describe("CardCanvas", () => {
             await waitFor(() => {
                 expect((globalThis.createImageBitmap as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(initialCallCount);
                 expect(globalThis.createImageBitmap).toHaveBeenCalledWith(testBlob2);
+            });
+        });
+
+        it("should load distance field texture", async () => {
+            const testBlob = createTestBlob();
+            const distanceBlob = createTestBlob();
+
+            render(
+                <CardCanvas
+                    baseTexture={testBlob}
+                    distanceField={distanceBlob}
+                    darknessFactor={0.5}
+                    width={400}
+                    height={560}
+                    params={DEFAULT_RENDER_PARAMS}
+                />
+            );
+
+            await waitFor(() => {
+                expect(globalThis.createImageBitmap).toHaveBeenCalledWith(distanceBlob);
+            });
+
+            await waitFor(() => {
+                // Should have created texture for distance field
+                expect(mockGl.createTexture).toHaveBeenCalledTimes(2); // base + distance
+                expect(mockGl.activeTexture).toHaveBeenCalledWith(mockGl.TEXTURE1);
+                expect(mockGl.bindTexture).toHaveBeenCalledWith(mockGl.TEXTURE_2D, expect.anything());
             });
         });
     });
@@ -571,6 +598,144 @@ describe("CardCanvas", () => {
 
             await waitFor(() => {
                 expect(mockGl.viewport).toHaveBeenCalledWith(0, 0, 630, 880);
+            });
+        });
+        describe("WebGL Failure & Fallback", () => {
+            it("should set webglFailed when initWebGL fails", () => {
+                // Mock getContext to return null to simulate failure
+                vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+                const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+
+                const testBlob = createTestBlob();
+
+                render(
+                    <CardCanvas
+                        baseTexture={testBlob}
+                        darknessFactor={0.5}
+                        width={400}
+                        height={560}
+                        params={DEFAULT_RENDER_PARAMS}
+                    />
+                );
+
+                // Should verify that fallback logic is triggered (e.g., img tag rendered)
+                // The component uses an img tag when webglFailed is true
+                expect(screen.getByRole("img")).toBeDefined();
+
+                consoleErrorSpy.mockRestore();
+            });
+
+            it("should render fallback image with correct CSS filters", () => {
+                // Mock getContext to return null
+                vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+                const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+
+                const testBlob = createTestBlob();
+                const params = { ...DEFAULT_RENDER_PARAMS, brightness: 25.5, contrast: 1.2, saturation: 1.5 };
+
+                render(
+                    <CardCanvas
+                        baseTexture={testBlob}
+                        darknessFactor={0.5}
+                        width={400}
+                        height={560}
+                        params={params}
+                    />
+                );
+
+                const img = screen.getByRole("img");
+                expect(img).toHaveStyle({ display: "block" });
+
+                // brightness: 1 + (25.5 / 255) = 1.1
+                // contrast: 1.2
+                // saturate: 1.5
+                expect(img.style.filter).toContain("brightness(1.1)");
+                expect(img.style.filter).toContain("contrast(1.2)");
+                expect(img.style.filter).toContain("saturate(1.5)");
+
+                consoleErrorSpy.mockRestore();
+            });
+
+            it("should create and revoke object URL for fallback", () => {
+                // Mock getContext to return null
+                vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+                const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+                const createObjectURLSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test-url");
+                const revokeObjectURLSpy = vi.spyOn(URL, "revokeObjectURL");
+
+                const testBlob = createTestBlob();
+
+                const { unmount } = render(
+                    <CardCanvas
+                        baseTexture={testBlob}
+                        darknessFactor={0.5}
+                        width={400}
+                        height={560}
+                        params={DEFAULT_RENDER_PARAMS}
+                    />
+                );
+
+                expect(createObjectURLSpy).toHaveBeenCalledWith(testBlob);
+
+                unmount();
+                expect(revokeObjectURLSpy).toHaveBeenCalledWith("blob:test-url");
+
+                consoleErrorSpy.mockRestore();
+            });
+        });
+
+        describe("Context Loss Handling", () => {
+            it("should handle webglcontextrestored", async () => {
+                const testBlob = createTestBlob();
+                const { container } = render(
+                    <CardCanvas
+                        baseTexture={testBlob}
+                        darknessFactor={0.5}
+                        width={400}
+                        height={560}
+                        params={DEFAULT_RENDER_PARAMS}
+                    />
+                );
+
+                const canvas = container.querySelector("canvas");
+                if (!canvas) throw new Error("Canvas not found");
+
+                // Explicitly mock stateRef cleared on lost
+                fireEvent(canvas, new Event("webglcontextlost"));
+
+                // Re-init spy
+                // We can check if initWebGL is called again by spying on getContext
+                const getContextSpy = vi.spyOn(canvas, "getContext");
+
+                fireEvent(canvas, new Event("webglcontextrestored"));
+
+                // It should try to get context again
+                expect(getContextSpy).toHaveBeenCalled();
+            });
+
+            it("should handle error during re-initialization", () => {
+                const testBlob = createTestBlob();
+                const { container } = render(
+                    <CardCanvas
+                        baseTexture={testBlob}
+                        darknessFactor={0.5}
+                        width={400}
+                        height={560}
+                        params={DEFAULT_RENDER_PARAMS}
+                    />
+                );
+
+                const canvas = container.querySelector("canvas");
+                if (!canvas) throw new Error("Canvas not found");
+                const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+
+                // Make next getContext fail
+                vi.spyOn(canvas, "getContext").mockImplementationOnce(() => { throw new Error("Re-init failed"); });
+
+                fireEvent(canvas, new Event("webglcontextrestored"));
+
+                expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("WebGL re-init failed"), expect.anything());
+                consoleErrorSpy.mockRestore();
             });
         });
     });

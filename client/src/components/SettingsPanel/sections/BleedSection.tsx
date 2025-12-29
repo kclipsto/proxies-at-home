@@ -1,11 +1,11 @@
 import { useSettingsStore } from "@/store/settings";
 import { Checkbox, Label, Select } from "flowbite-react";
-import { NumberInput } from "../../NumberInput";
+import { NumberInput } from "@/components/common";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { SourceBleedInput } from "../../SourceBleedInput";
-import { BleedModeControl } from "@/components/BleedModeControl";
+import { SourceBleedInput } from "@/components/CardEditorModal/SourceBleedInput";
+import { BleedModeControl } from "@/components/CardEditorModal/BleedModeControl";
 
 
 export function BleedSection() {

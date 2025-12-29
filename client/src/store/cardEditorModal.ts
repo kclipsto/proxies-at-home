@@ -13,7 +13,7 @@ type CardEditorModalData = {
     initialFace?: 'front' | 'back';
 };
 
-type Store = {
+export type CardEditorModalStore = {
     open: boolean;
     card: CardOption | null;
     image: Image | null;
@@ -27,7 +27,7 @@ type Store = {
     closeModal: () => void;
 };
 
-export const useCardEditorModalStore = create<Store>((set) => ({
+export const useCardEditorModalStore = create<CardEditorModalStore>((set) => ({
     open: false,
     card: null,
     image: null,

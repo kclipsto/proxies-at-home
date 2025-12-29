@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { autocomplete, searchCards, getCardByName } from "@/helpers/scryfallApi";
-import { hasIncompleteTagSyntax } from "@/helpers/CardInfoHelper";
+import { hasIncompleteTagSyntax } from "@/helpers/cardInfoHelper";
 
 interface UseCardAutocompleteProps {
     onSelect: (value: string) => void;

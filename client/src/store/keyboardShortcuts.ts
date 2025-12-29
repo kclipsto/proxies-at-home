@@ -3,7 +3,7 @@
  */
 import { create } from 'zustand';
 
-interface KeyboardShortcutsState {
+export interface KeyboardShortcutsState {
     isOpen: boolean;
     openModal: () => void;
     closeModal: () => void;

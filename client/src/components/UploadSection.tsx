@@ -5,12 +5,14 @@ import {
   HR,
 } from "flowbite-react";
 import { ExternalLink, Download, MousePointerClick, Move, Copy, Upload, Layers } from "lucide-react";
-import { AutoTooltip } from "./AutoTooltip";
+import { AutoTooltip } from "./common";
 import { PullToRefresh } from "./PullToRefresh";
-import { DeckBuilderImporter } from "./UploadComponents/DeckBuilderImporter";
-import { DecklistUploader } from "./UploadComponents/DecklistUploader";
-import { FileUploader } from "./UploadComponents/FileUploader";
-import { MpcImportSection } from "./UploadComponents/MpcImportSection";
+import {
+  DeckBuilderImporter,
+  DecklistUploader,
+  FileUploader,
+  MpcImportSection
+} from "./Upload";
 
 type Props = {
   isCollapsed?: boolean;

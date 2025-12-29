@@ -32,18 +32,15 @@ type Store = {
   setBleedEdge: (value: boolean) => void;
   bleedEdgeUnit: 'mm' | 'in';
   setBleedEdgeUnit: (value: 'mm' | 'in') => void;
-  // Images with bleed already built in (e.g., MPC Autofill exports)
-  // --- Bleed Settings (New Source/Target Architecture) ---
-  // Images WITH built-in bleed (e.g., MPC Autofill exports)
+  // --- Bleed Settings (Source/Target Architecture) ---
+  // With bleed: Images that already have bleed built in (MPC Autofill, etc.)
   withBleedSourceAmount: number;
   setWithBleedSourceAmount: (value: number) => void;
   withBleedTargetMode: 'global' | 'manual' | 'none';
   setWithBleedTargetMode: (value: 'global' | 'manual' | 'none') => void;
   withBleedTargetAmount: number;
   setWithBleedTargetAmount: (value: number) => void;
-
-  // Images WITHOUT bleed built in (regular uploads, Scryfall)
-  // noBleedSourceAmount is implicitly 0
+  // Without bleed: Regular uploads, Scryfall (noBleedSourceAmount is implicitly 0)
   noBleedTargetMode: 'global' | 'manual' | 'none';
   setNoBleedTargetMode: (value: 'global' | 'manual' | 'none') => void;
   noBleedTargetAmount: number;
@@ -126,6 +123,24 @@ type Store = {
   setDefaultCardbackId: (id: string) => void;
   exportMode: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs';
   setExportMode: (value: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs') => void;
+  // MPC Autofill favorite sources
+  favoriteMpcSources: string[];
+  toggleFavoriteMpcSource: (source: string) => void;
+  // MPC Autofill favorite tags
+  favoriteMpcTags: string[];
+  toggleFavoriteMpcTag: (tag: string) => void;
+  // MPC Autofill favorite DPI (single value, for singleSelectMode)
+  favoriteMpcDpi: number | null;
+  setFavoriteMpcDpi: (dpi: number | null) => void;
+  // MPC Autofill favorite sort (single value, for singleSelectMode)
+  favoriteMpcSort: 'name' | 'dpi' | 'source' | null;
+  setFavoriteMpcSort: (sort: 'name' | 'dpi' | 'source' | null) => void;
+  // MPC Autofill fuzzy search toggle (default: true)
+  mpcFuzzySearch: boolean;
+  setMpcFuzzySearch: (enabled: boolean) => void;
+  // Preferred art source when opening artwork modal
+  preferredArtSource: 'scryfall' | 'mpc';
+  setPreferredArtSource: (value: 'scryfall' | 'mpc') => void;
   // Card Editor section state (all expanded by default)
   cardEditorSectionCollapsed: Record<string, boolean>;
   setCardEditorSectionCollapsed: (section: string, collapsed: boolean) => void;
@@ -149,11 +164,8 @@ const defaultPageSettings = {
   bleedEdgeWidth: 1,
   bleedEdge: true,
   bleedEdgeUnit: "mm" as "mm" | "in",
-  // --- Bleed Settings (New Source/Target Architecture) ---
-  // 1. Source Bleed: What the image has
-  // 2. Target Bleed: What the output should have
-
-  // Images WITH built-in bleed (e.g. MPC)
+  // --- Bleed Settings (Source/Target Architecture) ---
+  // With bleed: Images that already have bleed built in (MPC Autofill, etc.)
   withBleedSourceAmount: 3.175, // Default 1/8" for MPC/Uploads with bleed
   withBleedTargetMode: 'global' as 'global' | 'manual' | 'none', // 'global' | 'manual' | 'none'
   withBleedTargetAmount: 3.175, // Default to 1/8"
@@ -181,7 +193,7 @@ const defaultPageSettings = {
   cutGuideLengthMm: 6.25,
   globalLanguage: "en",
   settingsPanelState: {
-    order: ["layout", "bleed", "darken", "guides", "card", "filterSort", "application"],
+    order: ["layout", "bleed", "darken", "guides", "card", "filterSort", "export", "application"],
     collapsed: {},
   },
   settingsPanelWidth: 320,
@@ -200,6 +212,14 @@ const defaultPageSettings = {
   showProcessingToasts: true,
   defaultCardbackId: "cardback_builtin_mtg",  // Default to MTG cardback
   exportMode: "fronts" as 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs',
+  // MPC Autofill favorite sources
+  favoriteMpcSources: [] as string[],
+  favoriteMpcTags: [] as string[],
+  favoriteMpcDpi: null as number | null,
+  favoriteMpcSort: null as 'name' | 'dpi' | 'source' | null,
+  mpcFuzzySearch: true, // Default to fuzzy search enabled
+  // Preferred art source
+  preferredArtSource: 'scryfall' as 'scryfall' | 'mpc',
   // Card Editor section state - all expanded by default (empty = not collapsed)
   cardEditorSectionCollapsed: {} as Record<string, boolean>,
   cardEditorSectionOrder: ['basic', 'darkPixels', 'enhance', 'holographic', 'colorReplace', 'gamma', 'colorEffects', 'borderEffects'],
@@ -322,8 +342,7 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("bleedEdgeUnit", state.bleedEdgeUnit);
         return { bleedEdgeUnit: value };
       }),
-      // Images with bleed setters
-      // Images with bleed setters (New Source/Target)
+      // With bleed setters
       setWithBleedSourceAmount: (value) => set((state) => {
         recordSettingChange("withBleedSourceAmount", state.withBleedSourceAmount);
         return { withBleedSourceAmount: value };
@@ -510,6 +529,31 @@ export const useSettingsStore = create<Store>()(
       setDefaultCardbackId: (id) => set({ defaultCardbackId: id }),
       exportMode: "fronts",
       setExportMode: (value) => set({ exportMode: value }),
+      // MPC Autofill favorite sources
+      favoriteMpcSources: [],
+      toggleFavoriteMpcSource: (source) => set((state) => ({
+        favoriteMpcSources: state.favoriteMpcSources.includes(source)
+          ? state.favoriteMpcSources.filter(s => s !== source)
+          : [...state.favoriteMpcSources, source]
+      })),
+      favoriteMpcTags: [],
+      toggleFavoriteMpcTag: (tag) => set((state) => ({
+        favoriteMpcTags: state.favoriteMpcTags.includes(tag)
+          ? state.favoriteMpcTags.filter(t => t !== tag)
+          : [...state.favoriteMpcTags, tag]
+      })),
+      // MPC favorite DPI (single value for singleSelectMode)
+      favoriteMpcDpi: null,
+      setFavoriteMpcDpi: (dpi) => set({ favoriteMpcDpi: dpi }),
+      // MPC favorite sort (single value for singleSelectMode)
+      favoriteMpcSort: null,
+      setFavoriteMpcSort: (sort) => set({ favoriteMpcSort: sort }),
+      // MPC fuzzy search toggle
+      mpcFuzzySearch: true,
+      setMpcFuzzySearch: (enabled) => set({ mpcFuzzySearch: enabled }),
+      // Preferred art source
+      preferredArtSource: 'scryfall',
+      setPreferredArtSource: (value) => set({ preferredArtSource: value }),
       // Card Editor section state
       cardEditorSectionCollapsed: {},
       setCardEditorSectionCollapsed: (section, collapsed) => set((state) => ({
@@ -570,7 +614,7 @@ export const useSettingsStore = create<Store>()(
     {
       name: "proxxied:layout-settings:v1",
       storage: createJSONStorage(() => indexedDbStorage),
-      version: 9, // Increment from main (v8) for advanced editor features
+      version: 10, // v10: Added Export section to panel order
 
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -644,6 +688,28 @@ export const useSettingsStore = create<Store>()(
           }
 
           return newState;
+        }
+
+        if (version < 10) {
+          // v10: Add 'export' panel to panel order if missing
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const state = persistedState as any;
+          if (state.settingsPanelState?.order) {
+            const order = state.settingsPanelState.order as string[];
+            if (!order.includes('export')) {
+              // Insert 'export' before 'application'
+              const appIndex = order.indexOf('application');
+              if (appIndex !== -1) {
+                order.splice(appIndex, 0, 'export');
+              } else {
+                order.push('export');
+              }
+            }
+          }
+          return {
+            ...defaultPageSettings,
+            ...(persistedState as Partial<Store>),
+          };
         }
 
         return persistedState as Partial<Store>;

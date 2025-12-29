@@ -147,4 +147,5 @@ export type CardInfo = {
   quantity?: number | undefined;
   language?: string | undefined;
   category?: string | undefined; // Archidekt deck category
+  mpcIdentifier?: string | undefined; // MPC Autofill identifier for exact art matching
 };

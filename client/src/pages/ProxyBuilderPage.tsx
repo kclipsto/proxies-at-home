@@ -3,10 +3,9 @@ import { FileUp, Eye, Settings } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption } from "../../../shared/types";
 
-import { ResizeHandle } from "../components/ResizeHandle";
-import { ToastContainer } from "../components/ToastContainer";
-import { PageView } from "../components/PageView";
-import { PageSettingsControls } from "../components/PageSettingsControls";
+import { ResizeHandle } from "../components/CardEditorModal/ResizeHandle";
+import { ToastContainer } from "../components/common";
+import { PageView, PageSettingsControls } from "../components/PageView";
 import { UploadSection } from "../components/UploadSection";
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useProcessingMonitor } from "../hooks/useProcessingMonitor";
@@ -409,7 +408,7 @@ export default function ProxyBuilderPage() {
   // Mobile Layout
   if (isMobile) {
     return (
-      <div className={`flex ${isLandscape ? 'flex-row' : 'flex-col'} h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-900`}>
+      <div className={`flex ${isLandscape ? 'flex-row' : 'flex-col'} h-dvh overflow-hidden bg-gray-50 dark:bg-gray-900`}>
         {/* Navigation - Left for Landscape, Bottom for Portrait */}
         <div className={`
           ${isLandscape
@@ -500,7 +499,7 @@ export default function ProxyBuilderPage() {
   // Desktop Layout
   return (
     <>
-      <div className="flex flex-row h-[100dvh] justify-between overflow-hidden">
+      <div className="flex flex-row h-dvh justify-between overflow-hidden">
         <div
           className="relative transition-all duration-200 ease-in-out z-30 h-full overflow-hidden"
           style={{

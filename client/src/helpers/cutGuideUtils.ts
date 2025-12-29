@@ -23,17 +23,6 @@ type PathCommand =
 
 
 
-/**
- * Calculate dash/gap sizes based on guide width
- */
-
-
-/**
- * Generate dashed rounded corner path with exactly 5 equal dashes
- * Dashes are sized proportionally to corner path length for consistency
- */
-
-
 // Interface for drawing context (works with both Canvas2D and PixiJS GraphicsContext)
 export interface DrawingContext {
     moveTo(x: number, y: number): void;
@@ -542,62 +531,149 @@ export function generatePerCardGuide(
             // Return empty commands, caller will use native roundRect
         }
     } else if (isCorners) {
-        // For rounded corners, total extent from corner center = radiusPx + lineExtend
-        // For square corners, total extent = targetLegExtendPx
-        // So for rounded, we subtract the radius to get matching visual extent
+        // For rounded corners, the visual extent is measured from the corner vertex.
+        // When targetLegExtendPx >= radiusPx: use full arc + straight line extension
+        // When targetLegExtendPx < radiusPx: reduce the arc sweep angle proportionally
         const lineExtend = Math.max(0, targetLegExtendPx - radiusPx);
+
+        // Calculate how much of the arc to draw (1.0 = full 90°, 0.5 = 45°, etc.)
+        // When target < radius, we reduce the arc proportionally
+        const arcFraction = targetLegExtendPx >= radiusPx ? 1.0 : targetLegExtendPx / radiusPx;
 
         if (isRounded) {
             // Arc radius adjustment: outside extends outward, inside contracts inward, center straddles
             const arcR = Math.max(1, radiusPx + (placement === 'outside' ? halfStroke : placement === 'inside' ? -halfStroke : 0));
 
             if (isDashed) {
-                // Dashed rounded corners - function handles adaptive dash sizing internally
-                // lineExtend matches solid rounded for consistent total extent
-                commands.push(...generateDashedRoundedCorner(radiusPx, radiusPx, arcR, Math.PI, Math.PI * 1.5, lineExtend, 0,
-                    radiusPx - arcR, radiusPx + lineExtend, 0, -1,
-                    radiusPx + lineExtend, radiusPx - arcR, 1, 0));
+                // Dashed rounded corners
+                if (arcFraction >= 1) {
+                    // Full arc + line extensions - function handles adaptive dash sizing internally
+                    commands.push(...generateDashedRoundedCorner(radiusPx, radiusPx, arcR, Math.PI, Math.PI * 1.5, lineExtend, 0,
+                        radiusPx - arcR, radiusPx + lineExtend, 0, -1,
+                        radiusPx + lineExtend, radiusPx - arcR, 1, 0));
 
-                commands.push(...generateDashedRoundedCorner(contentW - radiusPx, radiusPx, arcR, -Math.PI / 2, 0, lineExtend, 0,
-                    contentW - radiusPx - lineExtend, radiusPx - arcR, 1, 0,
-                    contentW - radiusPx + arcR, radiusPx + lineExtend, 0, 1));
+                    commands.push(...generateDashedRoundedCorner(contentW - radiusPx, radiusPx, arcR, -Math.PI / 2, 0, lineExtend, 0,
+                        contentW - radiusPx - lineExtend, radiusPx - arcR, 1, 0,
+                        contentW - radiusPx + arcR, radiusPx + lineExtend, 0, 1));
 
-                commands.push(...generateDashedRoundedCorner(contentW - radiusPx, contentH - radiusPx, arcR, 0, Math.PI / 2, lineExtend, 0,
-                    contentW - radiusPx + arcR, contentH - radiusPx - lineExtend, 0, 1,
-                    contentW - radiusPx - lineExtend, contentH - radiusPx + arcR, -1, 0));
+                    commands.push(...generateDashedRoundedCorner(contentW - radiusPx, contentH - radiusPx, arcR, 0, Math.PI / 2, lineExtend, 0,
+                        contentW - radiusPx + arcR, contentH - radiusPx - lineExtend, 0, 1,
+                        contentW - radiusPx - lineExtend, contentH - radiusPx + arcR, -1, 0));
 
-                commands.push(...generateDashedRoundedCorner(radiusPx, contentH - radiusPx, arcR, Math.PI / 2, Math.PI, lineExtend, 0,
-                    radiusPx + lineExtend, contentH - radiusPx + arcR, -1, 0,
-                    radiusPx - arcR, contentH - radiusPx - lineExtend, 0, -1));
+                    commands.push(...generateDashedRoundedCorner(radiusPx, contentH - radiusPx, arcR, Math.PI / 2, Math.PI, lineExtend, 0,
+                        radiusPx + lineExtend, contentH - radiusPx + arcR, -1, 0,
+                        radiusPx - arcR, contentH - radiusPx - lineExtend, 0, -1));
+                } else {
+                    // Partial dashed arcs - draw 5 small dashes centered at the corner apex
+                    // This maintains the dashed appearance even for short arcs
+                    const totalArcAngle = (Math.PI / 2) * arcFraction;
+
+                    // Split into 5 dashes with 4 gaps: 5d + 4g = 5d + 2.4d = 7.4d
+                    const dashAngle = totalArcAngle / 7.4;
+                    const gapAngle = dashAngle * 0.6;
+
+                    // Helper to generate 5 dashes for a corner (centered at apex)
+                    const addDashedCorner = (cx: number, cy: number, apex: number) => {
+                        // Center dash (at apex)
+                        commands.push({
+                            type: 'arc', cx, cy, r: arcR,
+                            startAngle: apex - dashAngle / 2,
+                            endAngle: apex + dashAngle / 2
+                        });
+                        // Inner left dash
+                        const innerLeftStart = apex - dashAngle / 2 - gapAngle - dashAngle;
+                        commands.push({
+                            type: 'arc', cx, cy, r: arcR,
+                            startAngle: innerLeftStart,
+                            endAngle: innerLeftStart + dashAngle
+                        });
+                        // Outer left dash
+                        const outerLeftStart = innerLeftStart - gapAngle - dashAngle;
+                        commands.push({
+                            type: 'arc', cx, cy, r: arcR,
+                            startAngle: outerLeftStart,
+                            endAngle: outerLeftStart + dashAngle
+                        });
+                        // Inner right dash
+                        const innerRightStart = apex + dashAngle / 2 + gapAngle;
+                        commands.push({
+                            type: 'arc', cx, cy, r: arcR,
+                            startAngle: innerRightStart,
+                            endAngle: innerRightStart + dashAngle
+                        });
+                        // Outer right dash
+                        const outerRightStart = innerRightStart + dashAngle + gapAngle;
+                        commands.push({
+                            type: 'arc', cx, cy, r: arcR,
+                            startAngle: outerRightStart,
+                            endAngle: outerRightStart + dashAngle
+                        });
+                    };
+
+                    // Top-left corner: apex at 1.25π (225°)
+                    addDashedCorner(radiusPx, radiusPx, Math.PI * 1.25);
+                    // Top-right corner: apex at -0.25π (-45° = 315°)
+                    addDashedCorner(contentW - radiusPx, radiusPx, -Math.PI * 0.25);
+                    // Bottom-right corner: apex at 0.25π (45°)
+                    addDashedCorner(contentW - radiusPx, contentH - radiusPx, Math.PI * 0.25);
+                    // Bottom-left corner: apex at 0.75π (135°)
+                    addDashedCorner(radiusPx, contentH - radiusPx, Math.PI * 0.75);
+                }
             } else {
                 // Solid rounded corners
-                // Top-left
-                commands.push({ type: 'moveTo', x: radiusPx - arcR, y: radiusPx + lineExtend });
-                commands.push({ type: 'lineTo', x: radiusPx - arcR, y: radiusPx });
-                commands.push({ type: 'arc', cx: radiusPx, cy: radiusPx, r: arcR, startAngle: Math.PI, endAngle: Math.PI * 1.5 });
-                commands.push({ type: 'moveTo', x: radiusPx, y: radiusPx - arcR });
-                commands.push({ type: 'lineTo', x: radiusPx + lineExtend, y: radiusPx - arcR });
+                // When arcFraction < 1, we draw partial arcs (no straight extensions)
+                // Each leg draws from its edge toward the corner apex
+                const halfArc = (Math.PI / 2) * arcFraction * 0.5; // Half the arc per leg
 
-                // Top-right
-                commands.push({ type: 'moveTo', x: contentW - radiusPx - lineExtend, y: radiusPx - arcR });
-                commands.push({ type: 'lineTo', x: contentW - radiusPx, y: radiusPx - arcR });
-                commands.push({ type: 'arc', cx: contentW - radiusPx, cy: radiusPx, r: arcR, startAngle: -Math.PI / 2, endAngle: 0 });
-                commands.push({ type: 'moveTo', x: contentW - radiusPx + arcR, y: radiusPx });
-                commands.push({ type: 'lineTo', x: contentW - radiusPx + arcR, y: radiusPx + lineExtend });
+                if (arcFraction >= 1) {
+                    // Full arc + straight line extensions
+                    // Top-left
+                    commands.push({ type: 'moveTo', x: radiusPx - arcR, y: radiusPx + lineExtend });
+                    commands.push({ type: 'lineTo', x: radiusPx - arcR, y: radiusPx });
+                    commands.push({ type: 'arc', cx: radiusPx, cy: radiusPx, r: arcR, startAngle: Math.PI, endAngle: Math.PI * 1.5 });
+                    commands.push({ type: 'moveTo', x: radiusPx, y: radiusPx - arcR });
+                    commands.push({ type: 'lineTo', x: radiusPx + lineExtend, y: radiusPx - arcR });
 
-                // Bottom-right
-                commands.push({ type: 'moveTo', x: contentW - radiusPx + arcR, y: contentH - radiusPx - lineExtend });
-                commands.push({ type: 'lineTo', x: contentW - radiusPx + arcR, y: contentH - radiusPx });
-                commands.push({ type: 'arc', cx: contentW - radiusPx, cy: contentH - radiusPx, r: arcR, startAngle: 0, endAngle: Math.PI / 2 });
-                commands.push({ type: 'moveTo', x: contentW - radiusPx, y: contentH - radiusPx + arcR });
-                commands.push({ type: 'lineTo', x: contentW - radiusPx - lineExtend, y: contentH - radiusPx + arcR });
+                    // Top-right
+                    commands.push({ type: 'moveTo', x: contentW - radiusPx - lineExtend, y: radiusPx - arcR });
+                    commands.push({ type: 'lineTo', x: contentW - radiusPx, y: radiusPx - arcR });
+                    commands.push({ type: 'arc', cx: contentW - radiusPx, cy: radiusPx, r: arcR, startAngle: -Math.PI / 2, endAngle: 0 });
+                    commands.push({ type: 'moveTo', x: contentW - radiusPx + arcR, y: radiusPx });
+                    commands.push({ type: 'lineTo', x: contentW - radiusPx + arcR, y: radiusPx + lineExtend });
 
-                // Bottom-left
-                commands.push({ type: 'moveTo', x: radiusPx + lineExtend, y: contentH - radiusPx + arcR });
-                commands.push({ type: 'lineTo', x: radiusPx, y: contentH - radiusPx + arcR });
-                commands.push({ type: 'arc', cx: radiusPx, cy: contentH - radiusPx, r: arcR, startAngle: Math.PI / 2, endAngle: Math.PI });
-                commands.push({ type: 'moveTo', x: radiusPx - arcR, y: contentH - radiusPx });
-                commands.push({ type: 'lineTo', x: radiusPx - arcR, y: contentH - radiusPx - lineExtend });
+                    // Bottom-right
+                    commands.push({ type: 'moveTo', x: contentW - radiusPx + arcR, y: contentH - radiusPx - lineExtend });
+                    commands.push({ type: 'lineTo', x: contentW - radiusPx + arcR, y: contentH - radiusPx });
+                    commands.push({ type: 'arc', cx: contentW - radiusPx, cy: contentH - radiusPx, r: arcR, startAngle: 0, endAngle: Math.PI / 2 });
+                    commands.push({ type: 'moveTo', x: contentW - radiusPx, y: contentH - radiusPx + arcR });
+                    commands.push({ type: 'lineTo', x: contentW - radiusPx - lineExtend, y: contentH - radiusPx + arcR });
+
+                    // Bottom-left
+                    commands.push({ type: 'moveTo', x: radiusPx + lineExtend, y: contentH - radiusPx + arcR });
+                    commands.push({ type: 'lineTo', x: radiusPx, y: contentH - radiusPx + arcR });
+                    commands.push({ type: 'arc', cx: radiusPx, cy: contentH - radiusPx, r: arcR, startAngle: Math.PI / 2, endAngle: Math.PI });
+                    commands.push({ type: 'moveTo', x: radiusPx - arcR, y: contentH - radiusPx });
+                    commands.push({ type: 'lineTo', x: radiusPx - arcR, y: contentH - radiusPx - lineExtend });
+                } else {
+                    // Partial arcs - draw a single arc centered at the corner apex (45° mark)
+                    // This keeps the guide connected in the middle and shrinks symmetrically
+
+                    // Top-left corner: apex at 1.25π (225°)
+                    const tlApex = Math.PI * 1.25;
+                    commands.push({ type: 'arc', cx: radiusPx, cy: radiusPx, r: arcR, startAngle: tlApex - halfArc, endAngle: tlApex + halfArc });
+
+                    // Top-right corner: apex at -0.25π (-45° = 315°)
+                    const trApex = -Math.PI * 0.25;
+                    commands.push({ type: 'arc', cx: contentW - radiusPx, cy: radiusPx, r: arcR, startAngle: trApex - halfArc, endAngle: trApex + halfArc });
+
+                    // Bottom-right corner: apex at 0.25π (45°)
+                    const brApex = Math.PI * 0.25;
+                    commands.push({ type: 'arc', cx: contentW - radiusPx, cy: contentH - radiusPx, r: arcR, startAngle: brApex - halfArc, endAngle: brApex + halfArc });
+
+                    // Bottom-left corner: apex at 0.75π (135°)
+                    const blApex = Math.PI * 0.75;
+                    commands.push({ type: 'arc', cx: radiusPx, cy: contentH - radiusPx, r: arcR, startAngle: blApex - halfArc, endAngle: blApex + halfArc });
+                }
             }
         } else {
             // L-shaped corners

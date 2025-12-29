@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import { LoadingScreen } from "./components/LoadingScreen";
+import { LoadingScreen } from "./components/common";
 
 // Unregister any existing service workers
 if ('serviceWorker' in navigator) {
@@ -33,7 +33,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   // StrictMode disabled: PixiJS/WebGL has compatibility issues with double-invocation in Chrome.
   // This only affects development mode - production builds are unaffected.
   <React.StrictMode>
-    <Suspense fallback={<div className="h-[100dvh]"><LoadingScreen /></div>}>
+    <Suspense fallback={<div className="h-dvh"><LoadingScreen /></div>}>
       <App />
     </Suspense>
   </React.StrictMode>

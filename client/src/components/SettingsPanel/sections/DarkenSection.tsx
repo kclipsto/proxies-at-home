@@ -3,7 +3,7 @@
  */
 import { useSettingsStore, type DarkenMode } from "@/store/settings";
 import { Label, Select, Checkbox } from "flowbite-react";
-import { StyledSlider } from "@/components/CardEditorModal/StyledSlider";
+import { StyledSlider } from "@/components/common/StyledSlider";
 import '@/components/CardEditorModal/CardEditorModal.css';
 
 import { DEFAULT_RENDER_PARAMS } from "@/components/CardCanvas";

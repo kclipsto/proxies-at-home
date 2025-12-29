@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { extractCardInfo } from "../helpers/CardInfoHelper";
+import { extractCardInfo } from "../helpers/cardInfoHelper";
 import { useSettingsStore } from "../store/settings";
 import type { CardOption } from "../../../shared/types";
 

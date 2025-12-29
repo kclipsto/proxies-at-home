@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
     extractArchidektDeckId,
     isArchidektUrl,
     extractCardsFromDeck,
     getDeckSummary,
+    fetchArchidektDeck,
     type ArchidektDeck,
 } from "./archidektApi";
 
@@ -53,6 +54,61 @@ describe("archidektApi", () => {
 
         it("should return false for empty string", () => {
             expect(isArchidektUrl("")).toBe(false);
+        });
+    });
+
+    describe("fetchArchidektDeck", () => {
+        const mockDeck: ArchidektDeck = {
+            id: 123456,
+            name: "Test Deck",
+            description: "",
+            featured: "",
+            categories: [],
+            cards: [],
+        };
+
+        beforeEach(() => {
+            vi.stubGlobal("fetch", vi.fn());
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        it("should return deck data on success", async () => {
+            (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve(mockDeck),
+            });
+
+            const result = await fetchArchidektDeck("123456");
+
+            expect(result).toEqual(mockDeck);
+            expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/archidekt/decks/123456"));
+        });
+
+        it("should throw error on 404 response", async () => {
+            (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+                ok: false,
+                status: 404,
+                statusText: "Not Found",
+            });
+
+            await expect(fetchArchidektDeck("999999")).rejects.toThrow(
+                "Deck not found. It may be private or deleted."
+            );
+        });
+
+        it("should throw error on other error responses", async () => {
+            (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+                statusText: "Internal Server Error",
+            });
+
+            await expect(fetchArchidektDeck("123456")).rejects.toThrow(
+                "Failed to fetch deck: 500 Internal Server Error"
+            );
         });
     });
 

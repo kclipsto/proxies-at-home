@@ -3,8 +3,8 @@
  */
 
 import { memo } from 'react';
-import { StyledSlider } from '../StyledSlider';
-import { ColorPicker } from '../ColorPicker';
+import { StyledSlider } from '../../common/StyledSlider';
+import { ColorPicker } from '../../common/ColorPicker';
 import type { SectionProps } from './index';
 
 export const ColorReplaceSection = memo(function ColorReplaceSection({

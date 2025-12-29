@@ -197,7 +197,7 @@ function createGuideCanvas(
 ): OffscreenCanvas | null {
     if (style === 'none' || guideWidthPx <= 0) return null;
 
-    const w = Math.max(1, Math.round(guideWidthPx));
+    const w = Math.max(0.1, guideWidthPx);
     const radiusPx = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
     // Use configured guide length
     const targetLegExtendPx = MM_TO_PX(cutGuideLengthMm, dpi);

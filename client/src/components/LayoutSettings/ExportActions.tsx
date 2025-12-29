@@ -1,14 +1,16 @@
 import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { buildDecklist, downloadDecklist } from "@/helpers/DecklistHelper";
+import { FileText, Image, Clipboard, Download } from "lucide-react";
+import { buildDecklist, downloadDecklist } from "@/helpers/decklistHelper";
+import { downloadMpcXml } from "@/helpers/mpcXmlExport";
 import { useLoadingStore } from "@/store/loading";
 import { useSettingsStore } from "@/store/settings";
+import { useToastStore } from "@/store/toast";
 import { Button } from "flowbite-react";
-import { ChevronDown } from "lucide-react";
 import { db } from "../../db";
 import { serializePdfSettingsForWorker } from "@/helpers/serializeSettingsForWorker";
 import { useFilteredAndSortedCards } from "@/hooks/useFilteredAndSortedCards";
-
+import { SplitButton } from "../common";
 import type { CardOption } from "../../../../shared/types";
 
 type Props = {
@@ -16,6 +18,9 @@ type Props = {
 };
 
 type ExportMode = 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs';
+type CopyMode = 'standard' | 'withMpc';
+type DownloadMode = 'standard' | 'withMpc' | 'xml';
+type ImageExportMode = 'zip' | 'individual';
 
 const EXPORT_MODES: { value: ExportMode; label: string; description: string }[] = [
   { value: 'fronts', label: 'Fronts Only', description: 'Print front faces only (most common)' },
@@ -23,6 +28,22 @@ const EXPORT_MODES: { value: ExportMode; label: string; description: string }[] 
   { value: 'interleaved-custom', label: 'Interleaved (DFC/Custom)', description: 'Interleave only DFCs and custom backs' },
   { value: 'duplex', label: 'Duplex Printing', description: 'All fronts, then all backs (mirrored)' },
   { value: 'backs', label: 'Backs Only', description: 'Just backs (mirrored for duplex)' },
+];
+
+const COPY_MODES: { value: CopyMode; label: string; description: string }[] = [
+  { value: 'standard', label: 'Basic', description: 'Card names with set info' },
+  { value: 'withMpc', label: 'With MPC Art IDs', description: 'Preserve exact MPC art selections' },
+];
+
+const DOWNLOAD_MODES: { value: DownloadMode; label: string; description: string }[] = [
+  { value: 'standard', label: 'Basic (.txt)', description: 'Card names with set info' },
+  { value: 'withMpc', label: 'With MPC Art IDs (.txt)', description: 'Preserve exact MPC art selections' },
+  { value: 'xml', label: 'MPC Autofill (.xml)', description: 'For import in MPC Autofill' },
+];
+
+const IMAGE_EXPORT_MODES: { value: ImageExportMode; label: string; description: string }[] = [
+  { value: 'zip', label: 'ZIP Archive', description: 'All images in a single .zip file' },
+  { value: 'individual', label: 'Individual Files', description: 'Download each image separately' },
 ];
 
 export function ExportActions({ cards }: Props) {
@@ -44,6 +65,14 @@ export function ExportActions({ cards }: Props) {
 
   // Dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isCopyDropdownOpen, setIsCopyDropdownOpen] = useState(false);
+  const [isDownloadDropdownOpen, setIsDownloadDropdownOpen] = useState(false);
+  const [isImageExportDropdownOpen, setIsImageExportDropdownOpen] = useState(false);
+
+  // Mode state for Copy/Download (similar to exportMode for PDF)
+  const [copyMode, setCopyMode] = useState<CopyMode>('withMpc');
+  const [downloadMode, setDownloadMode] = useState<DownloadMode>('withMpc');
+  const [imageExportMode, setImageExportMode] = useState<ImageExportMode>('zip');
 
   // Error Modal State
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -57,14 +86,23 @@ export function ExportActions({ cards }: Props) {
   );
 
   const handleCopyDecklist = async () => {
-    const text = buildDecklist(frontCards, { style: "withSetNum", sort: decklistSortAlpha ? "alpha" : "none" });
+    const style = copyMode === 'withMpc' ? "withMpc" : "withSetNum";
+    const text = buildDecklist(frontCards, { style, sort: decklistSortAlpha ? "alpha" : "none" });
     await navigator.clipboard.writeText(text);
+    useToastStore.getState().addToast({ message: 'Copied Decklist!', type: 'success', dismissible: true });
   };
 
   const handleDownloadDecklist = () => {
-    const text = buildDecklist(frontCards, { style: "withSetNum", sort: decklistSortAlpha ? "alpha" : "none" });
     const date = new Date().toISOString().slice(0, 10);
-    downloadDecklist(`decklist_${date}.txt`, text);
+
+    if (downloadMode === 'xml') {
+      downloadMpcXml(frontCards, `mpc_decklist_${date}.xml`);
+    } else {
+      const style = downloadMode === 'withMpc' ? "withMpc" : "withSetNum";
+      const text = buildDecklist(frontCards, { style, sort: decklistSortAlpha ? "alpha" : "none" });
+      const suffix = downloadMode === 'withMpc' ? '_mpc' : '';
+      downloadDecklist(`decklist${suffix}_${date}.txt`, text);
+    }
   };
 
   /**
@@ -119,7 +157,7 @@ export function ExportActions({ cards }: Props) {
     if (!frontCards.length) return;
 
     const { exportProxyPagesToPdf } = await import(
-      "@/helpers/ExportProxyPageToPdf"
+      "@/helpers/exportProxyPageToPdf"
     );
 
     const allImages = await db.images.toArray();
@@ -323,7 +361,7 @@ export function ExportActions({ cards }: Props) {
   async function handleExportZip() {
     setLoadingTask("Exporting ZIP");
     try {
-      const { ExportImagesZip } = await import("@/helpers/ExportImagesZip");
+      const { ExportImagesZip } = await import("@/helpers/exportImagesZip");
       const allCards = await db.cards.toArray();
       const allImages = await db.images.toArray();
       const allCardbacks = await db.cardbacks.toArray();
@@ -339,90 +377,104 @@ export function ExportActions({ cards }: Props) {
     }
   }
 
+  async function handleExportIndividual() {
+    setLoadingTask("Exporting ZIP"); // Reusing loading task type
+    try {
+      const { ExportImagesIndividual } = await import("@/helpers/exportImagesZip");
+      const allCards = await db.cards.toArray();
+      const allImages = await db.images.toArray();
+      const allCardbacks = await db.cardbacks.toArray();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mergedImages = [...allImages, ...allCardbacks] as any[];
+      await ExportImagesIndividual({
+        cards: allCards,
+        images: mergedImages,
+      });
+    } finally {
+      setLoadingTask(null);
+    }
+  }
+
+  const handleImageExport = () => {
+    if (imageExportMode === 'zip') {
+      handleExportZip();
+    } else {
+      handleExportIndividual();
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2">
       {/* Split button for PDF export with mode selector */}
-      <div className="relative">
-        <div className="flex">
-          {/* Main export button - extra padding-left to offset for dropdown toggle width on right */}
-          <button
-            onClick={handleExport}
-            disabled={!frontCards.length}
-            className="flex-1 flex flex-col items-center justify-center cursor-pointer rounded-l-md bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 disabled:cursor-not-allowed pl-10 pr-0 py-2 text-white transition-colors"
-          >
-            <span className="text-base font-medium">Export to PDF</span>
-            <span className="text-xs opacity-80">{EXPORT_MODES.find(m => m.value === exportMode)?.label}</span>
-          </button>
+      <SplitButton
+        label="Export to PDF"
+        sublabel={EXPORT_MODES.find(m => m.value === exportMode)?.label}
+        color="green"
+        disabled={!frontCards.length}
+        onClick={handleExport}
+        isOpen={isDropdownOpen}
+        onToggle={() => setIsDropdownOpen(!isDropdownOpen)}
+        onClose={() => setIsDropdownOpen(false)}
+        options={EXPORT_MODES}
+        value={exportMode}
+        onSelect={setExportMode}
+        icon={FileText}
+      />
 
-          {/* Dropdown toggle button */}
-          <button
-            type="button"
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center justify-center cursor-pointer rounded-r-md bg-green-600 hover:bg-green-700 border-l border-green-500 px-3 py-2 text-white transition-colors"
-            aria-label="Select export mode"
-            aria-expanded={isDropdownOpen}
-            aria-haspopup="listbox"
-          >
-            <ChevronDown className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
-        </div>
-
-        {/* Dropdown menu */}
-        {isDropdownOpen && (
-          <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white dark:bg-gray-700 rounded-md shadow-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
-            {EXPORT_MODES.map((mode) => (
-              <button
-                key={mode.value}
-                type="button"
-                onClick={() => {
-                  setExportMode(mode.value);
-                  setIsDropdownOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${exportMode === mode.value
-                  ? "bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400"
-                  : "text-gray-900 dark:text-white"
-                  }`}
-              >
-                {mode.label}
-                <span className="block text-xs text-gray-500 dark:text-gray-400">{mode.description}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <Button
+      {/* Split button for image export */}
+      <SplitButton
+        label="Export Card Images"
+        sublabel={IMAGE_EXPORT_MODES.find(m => m.value === imageExportMode)?.label}
         color="indigo"
-        onClick={handleExportZip}
         disabled={!frontCards.length}
-      >
-        Export Card Images (.zip)
-      </Button>
+        onClick={handleImageExport}
+        isOpen={isImageExportDropdownOpen}
+        onToggle={() => setIsImageExportDropdownOpen(!isImageExportDropdownOpen)}
+        onClose={() => setIsImageExportDropdownOpen(false)}
+        options={IMAGE_EXPORT_MODES}
+        value={imageExportMode}
+        onSelect={setImageExportMode}
+        labelSize="sm"
+        icon={Image}
+      />
 
-      <Button color="cyan" onClick={handleCopyDecklist} disabled={!frontCards.length}>
-        Copy Decklist
-      </Button>
+      {/* Copy Decklist Split Button */}
+      <SplitButton
+        label="Copy Decklist"
+        sublabel={COPY_MODES.find(m => m.value === copyMode)?.label}
+        color="cyan"
+        disabled={!frontCards.length}
+        onClick={handleCopyDecklist}
+        isOpen={isCopyDropdownOpen}
+        onToggle={() => setIsCopyDropdownOpen(!isCopyDropdownOpen)}
+        onClose={() => setIsCopyDropdownOpen(false)}
+        options={COPY_MODES}
+        value={copyMode}
+        onSelect={setCopyMode}
+        labelSize="sm"
+        icon={Clipboard}
+      />
 
-      <Button
+      {/* Download Decklist Split Button */}
+      <SplitButton
+        label="Download Decklist"
+        sublabel={DOWNLOAD_MODES.find(m => m.value === downloadMode)?.label}
         color="blue"
-        onClick={handleDownloadDecklist}
         disabled={!frontCards.length}
-      >
-        Download Decklist (.txt)
-      </Button>
+        onClick={handleDownloadDecklist}
+        isOpen={isDownloadDropdownOpen}
+        onToggle={() => setIsDownloadDropdownOpen(!isDownloadDropdownOpen)}
+        onClose={() => setIsDownloadDropdownOpen(false)}
+        options={DOWNLOAD_MODES}
+        value={downloadMode}
+        onSelect={setDownloadMode}
+        labelSize="sm"
+        icon={Download}
+      />
 
-      <a
-        href="https://buymeacoffee.com/kaiserclipston"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600 w-full">
-          Buy Me a Coffee
-        </Button>
-      </a>
 
       {showErrorModal && errorMessage && createPortal(
-        <div className="fixed inset-0 z-[100] bg-gray-900/50 flex items-center justify-center">
+        <div className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center">
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
             <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
               PDF Export Failed
