@@ -10,6 +10,8 @@ import { defineConfig } from "vitest/config";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Use relative paths for Electron (file:// protocol)
+  base: './',
   css: {
     postcss: path.resolve(__dirname, "../../postcss.config.js"),
   },
