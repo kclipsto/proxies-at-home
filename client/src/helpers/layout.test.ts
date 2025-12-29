@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { getCardTargetBleed, SourceTypeSettings } from './layout';
-import { CardOption } from '../../../shared/types';
+import {
+    getCardTargetBleed,
+    computeCardLayouts,
+    computeGridDimensions,
+    chunkCards,
+    baseCardWidthMm,
+    baseCardHeightMm,
+    type SourceTypeSettings,
+    type CardLayoutInfo,
+} from './layout';
+import type { CardOption } from '../../../shared/types';
 
 describe('getCardTargetBleed', () => {
     const globalBleedWidth = 5; // 5mm global default
@@ -88,3 +97,92 @@ describe('getCardTargetBleed', () => {
         });
     });
 });
+
+describe('computeCardLayouts', () => {
+    const globalBleedWidth = 3;
+    const sourceSettings: SourceTypeSettings = {
+        withBleedTargetMode: 'global',
+        withBleedTargetAmount: 2,
+        noBleedTargetMode: 'global',
+        noBleedTargetAmount: 1,
+    };
+
+    it('should compute layouts for multiple cards', () => {
+        const cards: CardOption[] = [
+            { uuid: '1', name: 'Card 1', order: 0, isUserUpload: false, hasBuiltInBleed: false },
+            { uuid: '2', name: 'Card 2', order: 1, isUserUpload: false, hasBuiltInBleed: true },
+        ];
+
+        const layouts = computeCardLayouts(cards, sourceSettings, globalBleedWidth);
+
+        expect(layouts).toHaveLength(2);
+        expect(layouts[0].bleedMm).toBe(3); // noBleed uses global
+        expect(layouts[0].cardWidthMm).toBe(baseCardWidthMm + 3 * 2);
+        expect(layouts[0].cardHeightMm).toBe(baseCardHeightMm + 3 * 2);
+        expect(layouts[1].bleedMm).toBe(3); // withBleed uses global
+    });
+});
+
+describe('computeGridDimensions', () => {
+    it('should compute grid dimensions for a 3x3 grid', () => {
+        const layouts: CardLayoutInfo[] = [
+            { cardWidthMm: 65, cardHeightMm: 90, bleedMm: 1 },
+            { cardWidthMm: 66, cardHeightMm: 89, bleedMm: 1.5 },
+            { cardWidthMm: 64, cardHeightMm: 91, bleedMm: 0.5 },
+            { cardWidthMm: 67, cardHeightMm: 92, bleedMm: 2 },
+            { cardWidthMm: 63, cardHeightMm: 88, bleedMm: 0 },
+            { cardWidthMm: 65, cardHeightMm: 90, bleedMm: 1 },
+        ];
+
+        const result = computeGridDimensions(layouts, 3, 2);
+
+        // Column widths: max of each column
+        expect(result.colWidthsMm[0]).toBe(Math.max(baseCardWidthMm, 65, 67)); // Col 0: cards 0, 3
+        expect(result.colWidthsMm[1]).toBe(Math.max(baseCardWidthMm, 66, 63)); // Col 1: cards 1, 4
+        expect(result.colWidthsMm[2]).toBe(Math.max(baseCardWidthMm, 64, 65)); // Col 2: cards 2, 5
+
+        // Row heights: max of each row
+        expect(result.rowHeightsMm[0]).toBe(Math.max(baseCardHeightMm, 90, 89, 91)); // Row 0: cards 0, 1, 2
+        expect(result.rowHeightsMm[1]).toBe(Math.max(baseCardHeightMm, 92, 88, 90)); // Row 1: cards 3, 4, 5
+    });
+
+    it('should handle card spacing', () => {
+        const layouts: CardLayoutInfo[] = [
+            { cardWidthMm: 63, cardHeightMm: 88, bleedMm: 0 },
+            { cardWidthMm: 63, cardHeightMm: 88, bleedMm: 0 },
+        ];
+
+        const result = computeGridDimensions(layouts, 2, 1, 5);
+
+        expect(result.totalGridWidthMm).toBe(63 * 2 + 5); // 2 columns + 1 gap
+        expect(result.totalGridHeightMm).toBe(88); // 1 row, no gaps
+    });
+
+    it('should handle empty layouts', () => {
+        const result = computeGridDimensions([], 3, 2);
+
+        expect(result.colWidthsMm).toEqual([baseCardWidthMm, baseCardWidthMm, baseCardWidthMm]);
+        expect(result.rowHeightsMm).toEqual([baseCardHeightMm, baseCardHeightMm]);
+    });
+});
+
+describe('chunkCards', () => {
+    it('should chunk cards into groups of specified size', () => {
+        const cards = [1, 2, 3, 4, 5, 6, 7, 8];
+        const chunks = chunkCards(cards, 3);
+
+        expect(chunks).toEqual([[1, 2, 3], [4, 5, 6], [7, 8]]);
+    });
+
+    it('should return empty array for empty input', () => {
+        const chunks = chunkCards([], 3);
+        expect(chunks).toEqual([]);
+    });
+
+    it('should handle single chunk', () => {
+        const cards = [1, 2];
+        const chunks = chunkCards(cards, 5);
+        expect(chunks).toEqual([[1, 2]]);
+    });
+});
+

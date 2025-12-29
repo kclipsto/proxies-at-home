@@ -51,24 +51,24 @@ export function SettingsPanel({ id, title, isOpen, onToggle, children, icon: Ico
                 style={{ touchAction: "none" }}
                 className={`flex items-center px-3 ${mobile ? 'py-5' : 'py-3'} bg-gray-200 dark:bg-gray-800 select-none cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-900 transition-colors gap-2 text-base font-medium text-gray-700 dark:text-gray-200`}
             >
-                <Icon className="size-5" />
-                {title}
-                {badge !== undefined && badge > 0 && (
-                    <>
-                        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                <div className="relative">
+                    <Icon className="size-5" />
+                    {badge !== undefined && badge > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-800">
                             {badge}
                         </span>
-                        {onClearBadge && (
-                            <button
-                                type="button"
-                                onClick={handleClearBadge}
-                                className="p-0.5 rounded hover:bg-gray-400 dark:hover:bg-gray-600 active:translate-y-px cursor-pointer"
-                                title="Clear all filters"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
-                    </>
+                    )}
+                </div>
+                {title}
+                {badge !== undefined && badge > 0 && onClearBadge && (
+                    <button
+                        type="button"
+                        onClick={handleClearBadge}
+                        className="p-0.5 rounded hover:bg-gray-400 dark:hover:bg-gray-600 active:translate-y-px cursor-pointer"
+                        title="Clear all filters"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
                 )}
             </div>
 

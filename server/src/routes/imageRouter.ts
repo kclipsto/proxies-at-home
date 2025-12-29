@@ -87,9 +87,9 @@ const imageFetchLimit = pLimit(10);
 
 const imageRouter = express.Router();
 
-const cacheDir = path.join(__dirname, "..", "cached-images");
+const cacheDir = path.join(__dirname, "..", "..", "data", "cached-images");
 if (!fs.existsSync(cacheDir)) {
-  fs.mkdirSync(cacheDir);
+  fs.mkdirSync(cacheDir, { recursive: true });
 }
 
 // Cache size management with LRU eviction (12GB limit for Koyeb eLarge 20GB disk)

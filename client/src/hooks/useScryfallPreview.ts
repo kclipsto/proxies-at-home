@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { extractCardInfo, hasIncompleteTagSyntax } from "@/helpers/CardInfoHelper";
+import { extractCardInfo, hasIncompleteTagSyntax } from "@/helpers/cardInfoHelper";
 import { getImages, type RawScryfallCard } from "@/helpers/scryfallApi";
 import type { ScryfallCard } from "../../../shared/types";
 

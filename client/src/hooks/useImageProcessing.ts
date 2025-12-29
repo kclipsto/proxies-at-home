@@ -2,7 +2,7 @@ import { API_BASE } from "@/constants";
 import { db, type Image, type Cardback } from "../db"; // Import the Dexie database instance
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { useSettingsStore } from "../store";
-import { markCardProcessed, markCardFailed } from "../helpers/ImportSession";
+import { markCardProcessed, markCardFailed } from "../helpers/importSession";
 import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, getHasBuiltInBleed, type GlobalSettings } from "../helpers/imageSpecs";

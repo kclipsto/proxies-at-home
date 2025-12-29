@@ -3,7 +3,7 @@
  */
 
 import { memo } from 'react';
-import { StyledSlider } from '../StyledSlider';
+import { StyledSlider } from '../../common/StyledSlider';
 import type { SectionProps } from './index';
 
 export const BasicAdjustmentsSection = memo(function BasicAdjustmentsSection({

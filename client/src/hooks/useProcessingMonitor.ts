@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ImageProcessor } from '@/helpers/imageProcessor';
 import { getEffectProcessor } from '@/helpers/effectCache';
-import { getCurrentSession, hasActiveSession } from '@/helpers/ImportSession';
+import { getCurrentSession, hasActiveSession } from '@/helpers/importSession';
 import { useToastStore } from '@/store/toast';
 
 /**

@@ -1,14 +1,13 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Select } from "flowbite-react";
-import { NumberInput } from "../../NumberInput";
+import { Label } from "flowbite-react";
+import { NumberInput } from "@/components/common";
 import { useNormalizedInput, usePositionInput } from "@/hooks/useInputHooks";
-import { AutoTooltip } from "../../AutoTooltip";
-import { useMemo, useEffect } from "react";
+import { AutoTooltip } from "@/components/common";
+import { useMemo } from "react";
 
 const INCH_TO_MM = 25.4;
 const CARD_W_IN = 2.5;
 const CARD_H_IN = 3.5;
-const MAX_BROWSER_DIMENSION = 16384;
 
 function inToMm(inches: number) {
     return inches * INCH_TO_MM;
@@ -25,12 +24,10 @@ export function CardSection() {
     const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
     const cardPositionX = useSettingsStore((state) => state.cardPositionX);
     const cardPositionY = useSettingsStore((state) => state.cardPositionY);
-    const dpi = useSettingsStore((state) => state.dpi);
 
     const setCardSpacingMm = useSettingsStore((state) => state.setCardSpacingMm);
     const setCardPositionX = useSettingsStore((state) => state.setCardPositionX);
     const setCardPositionY = useSettingsStore((state) => state.setCardPositionY);
-    const setDpi = useSettingsStore((state) => state.setDpi);
 
     const pageWmm = pageUnit === "mm" ? pageWidth : inToMm(pageWidth);
     const pageHmm = pageUnit === "mm" ? pageHeight : inToMm(pageHeight);
@@ -59,52 +56,6 @@ export function CardSection() {
 
     const cardPositionXInput = usePositionInput(cardPositionX, setCardPositionX);
     const cardPositionYInput = usePositionInput(cardPositionY, setCardPositionY);
-
-    const maxSafeDpiForPage = useMemo(() => {
-        const widthIn = pageUnit === "in" ? pageWidth : pageWidth / INCH_TO_MM;
-        const heightIn = pageUnit === "in" ? pageHeight : pageHeight / INCH_TO_MM;
-        return Math.floor(
-            Math.min(
-                MAX_BROWSER_DIMENSION / widthIn,
-                MAX_BROWSER_DIMENSION / heightIn
-            )
-        );
-    }, [pageWidth, pageHeight, pageUnit]);
-
-    const availableDpiOptions = useMemo(() => {
-        const options: { label: string; value: number }[] = [];
-        for (let i = 300; i <= maxSafeDpiForPage; i += 300) {
-            options.push({ label: `${i}`, value: i });
-        }
-
-        if (maxSafeDpiForPage % 300 !== 0) {
-            options.push({
-                label: `${maxSafeDpiForPage} (Max)`,
-                value: maxSafeDpiForPage,
-            });
-        }
-
-        options.forEach((opt) => {
-            if (opt.value === 300) opt.label = "300 (Fastest)";
-            else if (opt.value === 600) opt.label = "600 (Fast)";
-            else if (opt.value === 900) opt.label = "900 (Sharp)";
-            else if (opt.value === 1200) opt.label = "1200 (High Quality)";
-            else if (opt.value === maxSafeDpiForPage)
-                opt.label = `${maxSafeDpiForPage} (Max)`;
-            else opt.label = `${opt.value}`;
-        });
-
-        return options;
-    }, [maxSafeDpiForPage]);
-
-    useEffect(() => {
-        if (!availableDpiOptions.some((opt) => opt.value === dpi)) {
-            const highestOption = availableDpiOptions[availableDpiOptions.length - 1];
-            if (highestOption) {
-                setDpi(highestOption.value);
-            }
-        }
-    }, [availableDpiOptions, dpi, setDpi]);
 
     return (
         <div className="space-y-4">
@@ -173,23 +124,6 @@ export function CardSection() {
                         />
                     </div>
                 </div>
-            </div>
-
-            <div>
-                <Label>PDF Export DPI</Label>
-                <Select
-                    value={dpi}
-                    onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val)) setDpi(val);
-                    }}
-                >
-                    {availableDpiOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                        </option>
-                    ))}
-                </Select>
             </div>
         </div>
     );

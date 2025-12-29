@@ -1,6 +1,6 @@
 import { db, type Image } from "@/db";
 import type { CardOption } from "../../../shared/types";
-import { parseImageIdFromUrl } from "./ImageHelper";
+import { parseImageIdFromUrl } from "./imageHelper";
 import { isCardbackId } from "./cardbackLibrary";
 
 /**

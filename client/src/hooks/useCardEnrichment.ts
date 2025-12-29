@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "../db";
 import type { CardOption } from "@/types";
 import { API_BASE } from "../constants";
-import { getCurrentSession } from "../helpers/ImportSession";
+import { getCurrentSession } from "../helpers/importSession";
 import { useToastStore } from "../store/toast";
 import { getEnrichmentAbortController } from "../helpers/cancellationService";
 import { isCardbackId } from "../helpers/cardbackLibrary";

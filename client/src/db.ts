@@ -133,6 +133,9 @@ class ProxxiedDexie extends Dexie {
   // Pre-rendered effect cache (for cards with overrides)
   effectCache!: Table<EffectCacheEntry, string>;
 
+  // MPC search cache - persists for 1 week
+  mpcSearchCache!: Table<MpcSearchCacheEntry, [string, string]>;
+
 
   constructor() {
     super('ProxxiedDB');
@@ -195,6 +198,17 @@ class ProxxiedDexie extends Dexie {
       cardMetadataCache: 'id, name, set, number, cachedAt',
       effectCache: '&key, cachedAt',
     });
+    // Version 9: Add mpcSearchCache table for MPC Autofill search caching
+    this.version(9).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+    });
   }
 }
 
@@ -206,6 +220,14 @@ export interface CachedMetadata {
   data: Json;         // The metadata object
   cachedAt: number;   // Last accessed
   size: number;       // Estimated size in bytes
+}
+
+// MPC search cache entry - for caching MPC Autofill search results
+export interface MpcSearchCacheEntry {
+  query: string;           // lowercase normalized search query
+  cardType: 'CARD' | 'CARDBACK' | 'TOKEN';
+  cards: unknown[];        // MpcAutofillCard[] - use unknown to avoid circular deps
+  cachedAt: number;        // Timestamp for TTL calculation
 }
 
 export const db = new ProxxiedDexie();

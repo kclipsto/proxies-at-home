@@ -66,7 +66,7 @@ export function usePerCardGuides({
             return;
         }
 
-        const guideWidthPx = Math.max(1, guideWidth);
+        const guideWidthPx = Math.max(0.1, guideWidth);
         const radiusPx = CARD_CORNER_RADIUS_MM * MM_TO_PX;
         const isRounded = guideStyle.includes('rounded');
         const isRect = guideStyle.includes('rect');

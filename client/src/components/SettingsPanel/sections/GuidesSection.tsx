@@ -1,11 +1,11 @@
 import { useSettingsStore } from "@/store/settings";
 import { Label, Select } from "flowbite-react";
-import { NumberInput } from "../../NumberInput";
+import { NumberInput } from "@/components/common";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { useEffect, useState } from "react";
-import { AutoTooltip } from "../../AutoTooltip";
-import { ColorPicker } from "../../CardEditorModal/ColorPicker";
-import { StyledSlider } from "../../CardEditorModal/StyledSlider";
+import { AutoTooltip } from "@/components/common";
+import { ColorPicker } from "../../common/ColorPicker";
+import { StyledSlider } from "../../common/StyledSlider";
 
 export function GuidesSection() {
     const guideColor = useSettingsStore((state) => state.guideColor);
@@ -99,7 +99,7 @@ export function GuidesSection() {
                     <button
                         onClick={() => setGuidePlacement('outside')}
                         disabled={!canUseOutside}
-                        className={`p-1 rounded transition-colors ${guidePlacement === 'outside'
+                        className={`aspect-square h-10 p-1 rounded transition-colors flex items-center justify-center ${guidePlacement === 'outside'
                             ? 'bg-blue-100 dark:bg-blue-600'
                             : canUseOutside
                                 ? 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -120,7 +120,7 @@ export function GuidesSection() {
                     {/* Center icon - L corners exactly ON the card edge */}
                     <button
                         onClick={() => setGuidePlacement('center')}
-                        className={`p-1 rounded transition-colors ${guidePlacement === 'center'
+                        className={`aspect-square h-10 p-1 rounded transition-colors flex items-center justify-center ${guidePlacement === 'center'
                             ? 'bg-blue-100 dark:bg-blue-600'
                             : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
@@ -139,7 +139,7 @@ export function GuidesSection() {
                     {/* Inside icon - L corners clearly INSIDE the card */}
                     <button
                         onClick={() => setGuidePlacement('inside')}
-                        className={`p-1 rounded transition-colors ${guidePlacement === 'inside'
+                        className={`aspect-square h-10 p-1 rounded transition-colors flex items-center justify-center ${guidePlacement === 'inside'
                             ? 'bg-blue-100 dark:bg-blue-600'
                             : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
@@ -367,10 +367,10 @@ export function GuidesSection() {
                                     label=""
                                     value={cutGuideLengthMm}
                                     onChange={setCutGuideLengthMm}
-                                    min={2.5}
+                                    min={1}
                                     max={10}
-                                    step={0.5}
-                                    displayValue={`${cutGuideLengthMm.toFixed(1)}mm`}
+                                    step={0.1}
+                                    displayValue={`${cutGuideLengthMm.toFixed(2)}mm`}
                                     defaultValue={6.25}
                                 />
                             </div>

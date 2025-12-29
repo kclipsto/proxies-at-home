@@ -22,6 +22,7 @@ export interface SpriteData {
     backBlobSize?: number;
     frontImageId?: string;
     backImageId?: string;
+    isPlaceholder?: boolean;
 }
 
 /**

@@ -2,7 +2,7 @@ import { useSettingsStore } from "@/store";
 import type { LayoutPreset, PageOrientation } from "@/store/settings";
 import { Button, Label, Select, ToggleSwitch } from "flowbite-react";
 import { RefreshCw } from "lucide-react";
-import { NumberInput } from "../NumberInput";
+import { NumberInput } from "../common";
 import { useEffect, useState } from "react";
 
 type PresetOption = {

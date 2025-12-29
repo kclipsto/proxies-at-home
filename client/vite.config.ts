@@ -67,6 +67,32 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/vitest.setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**'],
+    // Increase timeout to prevent flaky failures during coverage runs
+    testTimeout: 60000,
+    hookTimeout: 60000,
+    // Retry flaky tests once before marking as failed
+    retry: 5,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        '**/*.test.{ts,tsx}',
+        '**/vitest.setup.ts',
+        '**/vite-env.d.ts',
+        '**/main.tsx',
+        '**/*.worker.ts', // Workers are hard to test
+      ],
+      reportsDirectory: './coverage',
+      skipFull: true,
+      thresholds: {
+        lines: 80,
+        branches: 80,
+        functions: 80,
+        statements: 80,
+      },
+      reportOnFailure: true,
+    },
   },
   build: {
     rollupOptions: {

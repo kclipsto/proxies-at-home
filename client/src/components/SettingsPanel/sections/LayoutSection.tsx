@@ -1,7 +1,7 @@
 import { useSettingsStore } from "@/store/settings";
 import { Label } from "flowbite-react";
 import { PageSizeControl } from "../../LayoutSettings/PageSizeControl";
-import { NumberInput } from "../../NumberInput";
+import { NumberInput } from "@/components/common";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 
 export function LayoutSection() {

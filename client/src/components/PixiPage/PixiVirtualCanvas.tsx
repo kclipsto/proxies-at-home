@@ -94,6 +94,9 @@ const RENDER_MARGIN = 200;
 // Number of cards to pre-initialize on startup (one page worth)
 const PRE_INIT_COUNT = 9;
 
+// Blank cardback ID - cards with this back should show white when flipped
+const BLANK_CARDBACK_ID = 'cardback_builtin_blank';
+
 
 function PixiVirtualCanvasInner({
     cards,
@@ -237,8 +240,6 @@ function PixiVirtualCanvasInner({
         return () => { if (intervalId) clearInterval(intervalId); };
         // Stable deps only - cards accessed via ref
     }, [hasHoloCards, isReady]);
-
-
 
     // Initialize PixiJS Application - TRUE SINGLETON pattern
     // Only allows one initialization, reuses existing app
@@ -540,8 +541,6 @@ function PixiVirtualCanvasInner({
         }
     }, [isReady, pages, isDarkMode]);
 
-
-
     // Page-level cut guides - delegated to hook
     usePageGuides({
         isReady,
@@ -552,8 +551,6 @@ function PixiVirtualCanvasInner({
         cutLineStyle,
         guideWidth,
     });
-
-
 
     // Per-card cut guides - delegated to hook
     usePerCardGuides({
@@ -568,7 +565,6 @@ function PixiVirtualCanvasInner({
         cutGuideLengthMm,
         activeId,
     });
-
 
     // Update card sprites
     useEffect(() => {
@@ -669,17 +665,27 @@ function PixiVirtualCanvasInner({
                 }
 
                 if (!spriteData) {
+                    let frontTexture: Texture | null = null;
+                    let isPlaceholder = false;
+
                     if (!imageBlob) {
-                        continue;
+                        // Create placeholder texture (black)
+                        frontTexture = Texture.WHITE;
+                        isPlaceholder = true;
+                    } else {
+                        // Check staleness again before async operations
+                        if (isStale()) return;
+
+                        frontTexture = await createTexture(imageBlob, `front-${uuid}`);
+
+                        // Check staleness after async
+                        if (isStale()) {
+                            // If texture creation failed or stale, cleanup handled by next pass or cache eviction
+                            continue;
+                        }
                     }
 
-                    // Check staleness again before async operations
-                    if (isStale()) return;
-
-                    const frontTexture = await createTexture(imageBlob, `front-${uuid}`);
-
-                    // Check staleness after async
-                    if (isStale() || !frontTexture) continue;
+                    if (!frontTexture) continue;
 
                     let backTexture: Texture | undefined;
                     if (backBlob) {
@@ -687,7 +693,15 @@ function PixiVirtualCanvasInner({
                         if (isStale()) return;
                     }
 
-                    const sprite = new PixiSprite(isFlipped && backTexture ? backTexture : frontTexture);
+                    // Determine initial texture
+                    const initialTexture = isFlipped && backTexture ? backTexture : frontTexture;
+
+                    const sprite = new PixiSprite(initialTexture);
+
+                    if (isPlaceholder) {
+                        sprite.tint = 0x000000; // Black tint for placeholder
+                    }
+
                     const darkenFilter = new DarkenFilter();
                     const adjustFilter = new AdjustmentFilter();
                     sprite.filters = [darkenFilter, adjustFilter];
@@ -698,22 +712,33 @@ function PixiVirtualCanvasInner({
                         sprite,
                         darkenFilter,
                         adjustFilter,
-                        frontTexture,
+                        frontTexture: frontTexture!, // Store placeholder texture (Texture.WHITE) so sprite remains valid
                         backTexture,
                         frontBlobSize,
                         backBlobSize,
                         frontImageId,
                         backImageId,
+                        isPlaceholder, // Flag to indicate this is a placeholder
                     };
                     sprites.set(uuid, spriteData);
                 }
 
                 const { sprite, darkenFilter, adjustFilter, frontTexture, backTexture } = spriteData;
 
-                // Update texture based on flip state
-                const targetTexture = isFlipped && backTexture ? backTexture : frontTexture;
-                if (sprite.texture !== targetTexture) {
-                    sprite.texture = targetTexture;
+                // Check if this is a blank cardback (should be transparent when flipped)
+                const isBlankBack = backImageId === BLANK_CARDBACK_ID;
+                // Hide sprite if:
+                // - Flipped with blank cardback, OR
+                // - Flipped but back texture is still loading (not yet available)
+                const isBackLoading = isFlipped && !backTexture && !isBlankBack;
+                const shouldHide = (isFlipped && isBlankBack) || isBackLoading;
+
+                // Update texture based on flip state - skip texture update if hidden
+                if (!shouldHide) {
+                    const targetTexture = isFlipped && backTexture ? backTexture : frontTexture;
+                    if (sprite.texture !== targetTexture) {
+                        sprite.texture = targetTexture;
+                    }
                 }
 
                 // Update position and size (in content coordinates - zoom applied by container)
@@ -721,7 +746,8 @@ function PixiVirtualCanvasInner({
                 sprite.y = globalY;
                 sprite.width = width;
                 sprite.height = height;
-                sprite.visible = true;
+                // Hide sprite if blank cardback or back is loading
+                sprite.visible = !shouldHide;
 
                 // Update filters based on card overrides and global settings
                 // Use back overrides when flipped, front overrides otherwise
@@ -790,9 +816,19 @@ function PixiVirtualCanvasInner({
             }
 
             // Report which cards have loaded textures (for placeholder hiding)
+            // Exclude placeholders and flipped cards without a valid back texture
             if (onRenderedCardsChange && !isStale()) {
                 const renderedUuids = new Set<string>();
-                sprites.forEach((_, uuid) => renderedUuids.add(uuid));
+                sprites.forEach((spriteData, uuid) => {
+                    // Skip if this is a placeholder (front image not loaded)
+                    if (spriteData.isPlaceholder) return;
+
+                    // If card is flipped, check if backTexture exists
+                    const isFlipped = flippedCards.has(uuid);
+                    if (isFlipped && !spriteData.backTexture) return;
+
+                    renderedUuids.add(uuid);
+                });
                 onRenderedCardsChange(renderedUuids);
             }
         };
@@ -830,6 +866,7 @@ const SHALLOW_COMPARE_KEYS: (keyof PixiVirtualCanvasProps)[] = [
 // Card properties that need simple equality check
 const CARD_SHALLOW_KEYS: (keyof CardWithGlobalLayout)[] = [
     'imageBlob', 'backBlob', 'globalX', 'globalY', 'width', 'height', 'darknessFactor',
+    'frontImageId', 'backImageId', // Important for detecting artwork changes even if blob refs stay same
 ];
 
 function arePropsEqual(prevProps: PixiVirtualCanvasProps, nextProps: PixiVirtualCanvasProps): boolean {

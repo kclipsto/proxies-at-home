@@ -1,8 +1,7 @@
-import { Loader } from "./components/Loader";
-import { UpdateNotification } from "./components/UpdateNotification";
+import { Loader, UpdateNotification } from "@/components/common";
 import { lazy } from "react";
 
-const ProxyBuilderPage = lazy(() => import("./pages/ProxyBuilderPage"));
+const ProxyBuilderPage = lazy(() => import("@/pages/ProxyBuilderPage"));
 
 function App() {
   return (

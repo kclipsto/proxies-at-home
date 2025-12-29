@@ -22,6 +22,11 @@ button:active {
   transform: translateY(2px);
 }
 
+button:disabled:active,
+button.no-active-translate:active {
+  transform: none;
+}
+
 /* Custom Scrollbar Styles */
 /* Light Mode (Default) */
 ::-webkit-scrollbar {
@@ -76,12 +81,6 @@ button:active {
 /* You can target the scrollbar-color property */
 /* scrollbar-color: #4a5568 #2d3748; */
 /* thumb color track color */
-
-/* Settings Panel Scrollbar Gutter - removed gutter for edge-to-edge headers */
-.settings-panel-scroll {
-  /* scrollbar-gutter removed - headers now extend to edge */
-}
-
 @media (max-width: 768px) {
 
   /* Increase scrollbar size for better touch targets on mobile */
@@ -158,14 +157,17 @@ button:active {
     opacity: 0;
     transform: translateY(10px);
   }
+
   10% {
     opacity: 1;
     transform: translateY(0);
   }
+
   90% {
     opacity: 1;
     transform: translateY(0);
   }
+
   100% {
     opacity: 0;
     transform: translateY(-10px);
@@ -226,4 +228,97 @@ button:active {
   border: none;
   border-radius: 0.5rem;
   /* rounded-lg */
+}
+
+/* ==========================================
+   Landscape Sidebar Utilities
+   For modal headers that become sidebars on mobile landscape
+   ========================================== */
+
+/* Modal header container that becomes a sidebar on mobile landscape */
+.landscape-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 1rem; /* p-4 */
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-color: rgb(229 231 235); /* gray-200 */
+}
+
+/* Ensure hidden utility works by default, but if we need deeper specificity rewrite: */
+/* Actually, the utility class *should* win if it's generated later, but to be safe: */
+@media (orientation: portrait) and (max-width: 1023px) {
+  .landscape-sidebar-header.max-lg\:portrait\:hidden {
+    display: none !important;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .landscape-sidebar-header {
+    border-color: rgb(75 85 99); /* gray-600 - matches footer border */
+  }
+}
+
+@media (orientation: landscape) and (max-width: 1023px) {
+  .landscape-sidebar-header {
+    flex-direction: column;
+    height: 100%;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 0.5rem; /* p-2 */
+    gap: 0.5rem; /* gap-2 */
+    border-bottom-width: 0;
+    border-right-width: 1px;
+    overflow-y: auto;
+  }
+}
+
+/* Content row inside landscape sidebar header */
+.landscape-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem; /* gap-3 */
+}
+
+@media (orientation: landscape) and (max-width: 1023px) {
+  .landscape-sidebar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Element only visible on mobile landscape */
+.landscape-only {
+  display: none;
+}
+
+@media (orientation: landscape) and (max-width: 1023px) {
+  .landscape-only {
+    display: block;
+  }
+  
+  .landscape-only-flex {
+    display: flex;
+  }
+}
+
+/* Element hidden on mobile landscape */
+@media (orientation: landscape) and (max-width: 1023px) {
+  .landscape-hidden {
+    display: none;
+  }
+}
+
+/* Flexible spacer that only appears on mobile landscape */
+.landscape-spacer {
+  display: none;
+}
+
+@media (orientation: landscape) and (max-width: 1023px) {
+  .landscape-spacer {
+    display: block;
+    flex: 1;
+  }
 }

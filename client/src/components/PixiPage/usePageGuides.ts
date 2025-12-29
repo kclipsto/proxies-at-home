@@ -53,7 +53,7 @@ export function usePageGuides({
 
         g.clear();
 
-        const guideWidthPx = Math.max(1, guideWidth);
+        const guideWidthPx = Math.max(0.1, guideWidth);
 
         // Process cards page by page
         pages.forEach((page) => {

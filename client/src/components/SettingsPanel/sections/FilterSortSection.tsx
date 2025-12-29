@@ -1,7 +1,7 @@
 import { useSettingsStore } from "@/store/settings";
 import { Label, Select, Button } from "flowbite-react";
 import { ArrowDown, ArrowUp, X, ChevronDown } from "lucide-react";
-import { ManaIcon } from "@/components/ManaIcon";
+import { ManaIcon } from "@/components/common";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db";
 import { useMemo, useCallback } from "react";
@@ -65,7 +65,7 @@ function FilterSection({ id, title, children, defaultOpen = true, activeCount = 
                     onClick={handleToggle}
                     className="cursor-pointer hover:text-gray-900 dark:hover:text-white"
                 >
-                    <ChevronDown className={`w-4 h-4 transition-transform ${!collapsed ? 'rotate-180' : ''}`} />
+                    <ChevronDown className={`w-4 h-4 transition-transform ${!collapsed ? 'rotate-180' : ''} `} />
                 </button>
             </div>
             {!collapsed && (
@@ -107,7 +107,7 @@ export function FilterSortSection() {
             if (primaryType) types.add(primaryType);
         }
         const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
-        return Array.from(types).sort((a, b) => typeOrder.indexOf(a) - typeOrder.indexOf(b));
+        return Array.from(types).sort((a, b) => typeOrder.indexOf(a)-typeOrder.indexOf(b));
     }, [cardsFromDb]);
 
     // Extract unique categories from loaded cards (Archidekt only)
@@ -220,7 +220,8 @@ export function FilterSortSection() {
                                 className={`px-2.5 py-1 text-xs rounded-full transition-colors cursor-pointer select-none border
                                     ${filterTypes.includes(type)
                                         ? "bg-blue-600 text-white border-blue-700"
-                                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
+                                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600"
+                                    } `}
                             >
                                 {type}
                             </button>
@@ -240,7 +241,8 @@ export function FilterSortSection() {
                                 className={`px-2.5 py-1 text-xs rounded-full transition-colors cursor-pointer select-none border
                                     ${filterCategories.includes(cat)
                                         ? "bg-purple-600 text-white border-purple-700"
-                                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
+                                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600"
+                                    } `}
                             >
                                 {cat}
                             </button>
@@ -257,11 +259,12 @@ export function FilterSortSection() {
                             key={cost}
                             onClick={() => toggleManaCost(cost)}
                             className={`
-                                w-8 h-8 flex items-center justify-center rounded-full border cursor-pointer select-none transition-colors
+w-8 h-8 flex items-center justify-center rounded-full border cursor-pointer select-none transition-colors
                                 ${filterManaCost.includes(cost)
                                     ? "bg-blue-600 text-white border-blue-700 font-bold"
-                                    : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600"}
-                            `}
+                                    : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600"
+                                }
+`}
                         >
                             {cost === 7 ? "7+" : cost}
                         </div>
@@ -277,11 +280,12 @@ export function FilterSortSection() {
                             key={c.id}
                             onClick={() => toggleColor(c.id)}
                             className={`
-                                rounded-full cursor-pointer select-none transition-all
+rounded-full cursor-pointer select-none transition-all
                                 ${filterColors.includes(c.id)
                                     ? "scale-110 opacity-100"
-                                    : "opacity-50 hover:opacity-100 hover:scale-105 grayscale hover:grayscale-0"}
-                            `}
+                                    : "opacity-50 hover:opacity-100 hover:scale-105 grayscale hover:grayscale-0"
+                                }
+`}
                             title={c.label}
                         >
                             <ManaIcon symbol={c.id} size={32} />
@@ -297,18 +301,18 @@ export function FilterSortSection() {
                     <button
                         onClick={() => setFilterMatchType("partial")}
                         className={`px-3 py-1 text-xs rounded-md transition-colors ${filterMatchType === "partial"
-                            ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
-                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                            }`}
+                                ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
+                                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                            } `}
                     >
                         Partial
                     </button>
                     <button
                         onClick={() => setFilterMatchType("exact")}
                         className={`px-3 py-1 text-xs rounded-md transition-colors ${filterMatchType === "exact"
-                            ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
-                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                            }`}
+                                ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
+                                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                            } `}
                     >
                         Exact
                     </button>

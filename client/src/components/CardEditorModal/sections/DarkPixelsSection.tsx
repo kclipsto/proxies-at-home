@@ -5,7 +5,7 @@
 
 import { memo } from 'react';
 import { Label, Select, Checkbox } from 'flowbite-react';
-import { StyledSlider } from '../StyledSlider';
+import { StyledSlider } from '../../common/StyledSlider';
 import type { SectionProps } from './index';
 
 import { DEFAULT_RENDER_PARAMS } from '../../CardCanvas';
