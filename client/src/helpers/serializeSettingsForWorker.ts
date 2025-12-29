@@ -49,6 +49,7 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     cutLineStyle: 'none' | 'edges' | 'full';
     perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
     guidePlacement: 'inside' | 'outside' | 'center';
+    cutGuideLengthMm: number;
 
     // Right-align incomplete rows (for backs export)
     rightAlignRows?: boolean;
@@ -110,5 +111,6 @@ export function serializePdfSettingsForWorker(): WorkerPdfSettings {
         cutLineStyle: state.cutLineStyle,
         perCardGuideStyle: state.perCardGuideStyle,
         guidePlacement: state.guidePlacement,
+        cutGuideLengthMm: state.cutGuideLengthMm,
     };
 }

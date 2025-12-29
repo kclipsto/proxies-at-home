@@ -192,14 +192,15 @@ function createGuideCanvas(
     guideWidthPx: number,
     dpi: number,
     style: GuideStyle = 'corners',
-    placement: 'inside' | 'outside' | 'center' = 'outside'
+    placement: 'inside' | 'outside' | 'center' = 'outside',
+    cutGuideLengthMm: number = 6.25
 ): OffscreenCanvas | null {
     if (style === 'none' || guideWidthPx <= 0) return null;
 
     const w = Math.max(1, Math.round(guideWidthPx));
     const radiusPx = MM_TO_PX(CARD_CORNER_RADIUS_MM, dpi);
-    // Explicit 6.25mm extension for square guides (matches 2.5 * 2.5mm radius extent)
-    const targetLegExtendPx = MM_TO_PX(6.25, dpi);
+    // Use configured guide length
+    const targetLegExtendPx = MM_TO_PX(cutGuideLengthMm, dpi);
 
     const cardW = contentW + 2 * bleedPx;
     const cardH = contentH + 2 * bleedPx;
@@ -267,6 +268,7 @@ self.onmessage = async (event: MessageEvent) => {
             pageWidth, pageHeight, pageSizeUnit, columns, rows, bleedEdge,
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
             imagesById, API_BASE, darkenMode, cutLineStyle, perCardGuideStyle, guidePlacement,
+            cutGuideLengthMm,
             // Receive pre-normalized source settings directly (no legacy conversion)
             sourceSettings, withBleedSourceAmount,
             // Right-align incomplete rows (for backs export)
@@ -332,7 +334,7 @@ self.onmessage = async (event: MessageEvent) => {
         const perCardGuideCanvas = createGuideCanvas(
             contentWidthInPx, contentHeightInPx, bleedPxForGuide,
             guideColor, scaledGuideWidth, DPI, perCardGuideStyle ?? 'corners',
-            guidePlacement ?? 'outside'
+            guidePlacement ?? 'outside', cutGuideLengthMm ?? 6.25
         );
 
         // Create and draw full page guides (behind cards)

@@ -80,6 +80,7 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
   const perCardGuideStyle = useSettingsStore((s) => s.perCardGuideStyle);
   const guideColor = useSettingsStore((s) => s.guideColor);
   const guidePlacement = useSettingsStore((s) => s.guidePlacement);
+  const cutGuideLengthMm = useSettingsStore((s) => s.cutGuideLengthMm);
 
   // Flipped cards for back image display
   const flippedCards = useSelectionStore((s) => s.flippedCards);
@@ -558,6 +559,7 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
                   perCardGuideStyle={perCardGuideStyle}
                   perCardGuideColor={perCardGuideColorNum}
                   perCardGuidePlacement={guidePlacement}
+                  cutGuideLengthMm={cutGuideLengthMm}
                   isDarkMode={isDarkMode}
                   onRenderedCardsChange={setRenderedCardUuids}
                   style={{

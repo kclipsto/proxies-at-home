@@ -5,6 +5,7 @@ import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { useEffect, useState } from "react";
 import { AutoTooltip } from "../../AutoTooltip";
 import { ColorPicker } from "../../CardEditorModal/ColorPicker";
+import { StyledSlider } from "../../CardEditorModal/StyledSlider";
 
 export function GuidesSection() {
     const guideColor = useSettingsStore((state) => state.guideColor);
@@ -17,6 +18,8 @@ export function GuidesSection() {
     const setPerCardGuideStyle = useSettingsStore((state) => state.setPerCardGuideStyle);
     const guidePlacement = useSettingsStore((state) => state.guidePlacement);
     const setGuidePlacement = useSettingsStore((state) => state.setGuidePlacement);
+    const cutGuideLengthMm = useSettingsStore((state) => state.cutGuideLengthMm);
+    const setCutGuideLengthMm = useSettingsStore((state) => state.setCutGuideLengthMm);
 
     const bleedEdge = useSettingsStore((state) => state.bleedEdge);
     const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
@@ -53,7 +56,8 @@ export function GuidesSection() {
         { min: 0, max: maxGuideWidth }
     );
 
-
+    // Check if using corner styles (not full rect)
+    const isCornerStyle = perCardGuideStyle.includes('corner');
     return (
         <div className="space-y-4">
             <ColorPicker
@@ -351,6 +355,26 @@ export function GuidesSection() {
                                 Round
                             </button>
                         </div>
+
+                        {/* Guide Length slider - only for corner styles */}
+                        {isCornerStyle && (
+                            <div className="my-5">
+                                <div className="mb-1 flex items-center gap-2">
+                                    <Label htmlFor="cutGuideLengthMm">Guide Length</Label>
+                                    <AutoTooltip content="Controls how far the corner guides extend along the card edge. Shorter guides are easier to hide if not cut perfectly." />
+                                </div>
+                                <StyledSlider
+                                    label=""
+                                    value={cutGuideLengthMm}
+                                    onChange={setCutGuideLengthMm}
+                                    min={2.5}
+                                    max={10}
+                                    step={0.5}
+                                    displayValue={`${cutGuideLengthMm.toFixed(1)}mm`}
+                                    defaultValue={6.25}
+                                />
+                            </div>
+                        )}
 
                         {/* Disable button */}
                         <button

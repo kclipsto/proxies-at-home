@@ -282,61 +282,144 @@ function generateDashedRoundedCorner(
     cx: number, cy: number, arcR: number,
     startAngle: number, endAngle: number,
     lineExtend: number,
+    dashLen: number, // If > 0, use this fixed dash size (Legacy/Full Rect mode). If 0, use adaptive 5-segment mode.
     leg1StartX: number, leg1StartY: number, leg1DirX: number, leg1DirY: number,
     leg2EndX: number, leg2EndY: number, leg2DirX: number, leg2DirY: number
 ): PathCommand[] {
     const commands: PathCommand[] = [];
     const arcLen = Math.abs(endAngle - startAngle) * arcR;
+    const angleTotal = endAngle - startAngle;
 
-    // We want the straight extensions to contain exactly 2 dashes and 1 gap (D - G - D)
-    // pattern: d + g + d = 2.6d
-    // So d = lineExtend / 2.6
-    const d = lineExtend / 2.6;
-    const g = d * 0.6;
+    // MODE 1: Fixed Dash Length (Legacy/Full Rect)
+    // Used when dashLen is provided (must match adjacent edges)
+    // This distributes dashes: 2 on leg1, 1 on arc, 2 on leg2 (if space permits)
+    if (dashLen > 0) {
+        const d = dashLen;
+        const g = d * 0.6;
 
-    // The arc contains the center dash and two surrounding gaps (G - CenterD - G)
-    // So centerD = arcLen - 2g
-    // This allows the gaps to straddle the precise junction between straight and arc
-    const dCenter = Math.max(0, arcLen - 2 * g);
+        // Center dash on arc
+        const dCenter = Math.max(0, arcLen - 2 * g);
 
-    // --- Leg 1 (Straight) ---
-    // Dash 1
-    commands.push({ type: 'moveTo', x: leg1StartX, y: leg1StartY });
-    commands.push({ type: 'lineTo', x: leg1StartX + leg1DirX * d, y: leg1StartY + leg1DirY * d });
+        // Leg 1
+        commands.push({ type: 'moveTo', x: leg1StartX, y: leg1StartY });
+        commands.push({ type: 'lineTo', x: leg1StartX + leg1DirX * d, y: leg1StartY + leg1DirY * d });
 
-    // Dash 2 (starts after gap)
-    const leg1Dash2Start = d + g;
-    commands.push({ type: 'moveTo', x: leg1StartX + leg1DirX * leg1Dash2Start, y: leg1StartY + leg1DirY * leg1Dash2Start });
-    commands.push({ type: 'lineTo', x: leg1StartX + leg1DirX * (leg1Dash2Start + d), y: leg1StartY + leg1DirY * (leg1Dash2Start + d) });
-    // This ends exactly at lineExtend (the junction)
+        const leg1Dash2Start = d + g;
+        // Only draw 2nd dash if it fits within lineExtend (it should for full rects)
+        if (leg1Dash2Start < lineExtend) {
+            // Clamped to lineExtend to be safe, though full rects usually match exactly
+            const t2 = Math.min(leg1Dash2Start + d, lineExtend);
+            commands.push({ type: 'moveTo', x: leg1StartX + leg1DirX * leg1Dash2Start, y: leg1StartY + leg1DirY * leg1Dash2Start });
+            commands.push({ type: 'lineTo', x: leg1StartX + leg1DirX * t2, y: leg1StartY + leg1DirY * t2 });
+        }
 
-    // --- Arc ---
-    // Gaps consume 'g' from start and end of arc.
-    // Center Dash is between them.
-    if (dCenter > 0) {
-        const angleTotal = endAngle - startAngle;
-        const startRad = startAngle + angleTotal * (g / arcLen);
-        const endRad = startAngle + angleTotal * ((g + dCenter) / arcLen);
+        // Arc
+        if (dCenter > 0) {
+            const startRad = startAngle + angleTotal * (g / arcLen);
+            const endRad = startAngle + angleTotal * ((g + dCenter) / arcLen);
+            commands.push({ type: 'moveTo', x: cx + Math.cos(startRad) * arcR, y: cy + Math.sin(startRad) * arcR });
+            commands.push({ type: 'arc', cx, cy, r: arcR, startAngle: startRad, endAngle: endRad });
+        }
 
-        commands.push({ type: 'moveTo', x: cx + Math.cos(startRad) * arcR, y: cy + Math.sin(startRad) * arcR });
-        commands.push({ type: 'arc', cx, cy, r: arcR, startAngle: startRad, endAngle: endRad });
+        // Leg 2
+        const leg2OriginX = leg2EndX - leg2DirX * lineExtend;
+        const leg2OriginY = leg2EndY - leg2DirY * lineExtend;
+
+        commands.push({ type: 'moveTo', x: leg2OriginX, y: leg2OriginY });
+        commands.push({ type: 'lineTo', x: leg2OriginX + leg2DirX * d, y: leg2OriginY + leg2DirY * d });
+
+        // 2nd dash
+        if (leg1Dash2Start < lineExtend) {
+            const t2 = Math.min(leg1Dash2Start + d, lineExtend);
+            commands.push({ type: 'moveTo', x: leg2OriginX + leg2DirX * leg1Dash2Start, y: leg2OriginY + leg2DirY * leg1Dash2Start });
+            commands.push({ type: 'lineTo', x: leg2OriginX + leg2DirX * t2, y: leg2OriginY + leg2DirY * t2 });
+        }
+
+        return commands;
     }
 
-    // --- Leg 2 (Straight) ---
-    // Mirror of Leg 1, but drawing "forward" along the path
-    // Path starts at Leg 2 "Start" (which is junction) and goes to End.
-    // Leg 2 Start Point: leg2EndX - leg2DirX * lineExtend
-    const leg2OriginX = leg2EndX - leg2DirX * lineExtend;
-    const leg2OriginY = leg2EndY - leg2DirY * lineExtend;
+    // MODE 2: Adaptive 5-Segment (Corner Only)
+    // Used when dashLen is 0.
+    // Total path length = leg1 + arc + leg2 = lineExtend + arcLen + lineExtend
+    // We split this entire length into exactly 5 equal dashes and 4 gaps.
 
-    // Dash 1 (starts at junction)
-    commands.push({ type: 'moveTo', x: leg2OriginX, y: leg2OriginY });
-    commands.push({ type: 'lineTo', x: leg2OriginX + leg2DirX * d, y: leg2OriginY + leg2DirY * d });
+    const totalLen = 2 * lineExtend + arcLen;
 
-    // Dash 2 (after gap)
-    const leg2Dash2Start = d + g;
-    commands.push({ type: 'moveTo', x: leg2OriginX + leg2DirX * leg2Dash2Start, y: leg2OriginY + leg2DirY * leg2Dash2Start });
-    commands.push({ type: 'lineTo', x: leg2OriginX + leg2DirX * (leg2Dash2Start + d), y: leg2OriginY + leg2DirY * (leg2Dash2Start + d) });
+    // 5 dashes with 4 gaps between them: D G D G D G D G D = 5d + 4g
+    // With g = 0.6d: 5d + 2.4d = 7.4d
+    const d = totalLen / 7.4;
+    const g = d * 0.6;
+
+    // Calculate positions along the entire path (leg1 -> arc -> leg2)
+    // Path positions: 0 = start of leg1, lineExtend = start of arc, lineExtend + arcLen = start of leg2
+
+    const dashPositions: { start: number; end: number }[] = [];
+    let pos = 0;
+    for (let i = 0; i < 5; i++) {
+        dashPositions.push({ start: pos, end: pos + d });
+        pos += d + g;
+    }
+
+    // Draw each dash based on its position along the path
+    for (const dash of dashPositions) {
+        const startPos = dash.start;
+        const endPos = dash.end;
+
+        // Leg 1: positions 0 to lineExtend (direction: leg1Dir from leg1Start)
+        // Arc: positions lineExtend to lineExtend + arcLen
+        // Leg 2: positions lineExtend + arcLen to totalLen (direction: leg2Dir from leg2Origin)
+
+        if (endPos <= lineExtend && lineExtend > 0) {
+            // Entirely on leg1
+            const t1 = startPos;
+            const t2 = endPos;
+            commands.push({ type: 'moveTo', x: leg1StartX + leg1DirX * t1, y: leg1StartY + leg1DirY * t1 });
+            commands.push({ type: 'lineTo', x: leg1StartX + leg1DirX * t2, y: leg1StartY + leg1DirY * t2 });
+        } else if (startPos >= lineExtend + arcLen) {
+            // Entirely on leg2
+            const leg2OriginX = leg2EndX - leg2DirX * lineExtend;
+            const leg2OriginY = leg2EndY - leg2DirY * lineExtend;
+            const t1 = startPos - lineExtend - arcLen;
+            const t2 = endPos - lineExtend - arcLen;
+            commands.push({ type: 'moveTo', x: leg2OriginX + leg2DirX * t1, y: leg2OriginY + leg2DirY * t1 });
+            commands.push({ type: 'lineTo', x: leg2OriginX + leg2DirX * t2, y: leg2OriginY + leg2DirY * t2 });
+        } else if (startPos >= lineExtend && endPos <= lineExtend + arcLen) {
+            // Entirely on arc
+            const arcStart = startPos - lineExtend;
+            const arcEnd = endPos - lineExtend;
+            const startRad = startAngle + angleTotal * (arcStart / arcLen);
+            const endRad = startAngle + angleTotal * (arcEnd / arcLen);
+            commands.push({ type: 'moveTo', x: cx + Math.cos(startRad) * arcR, y: cy + Math.sin(startRad) * arcR });
+            commands.push({ type: 'arc', cx, cy, r: arcR, startAngle: startRad, endAngle: endRad });
+        } else {
+            // Dash spans multiple segments - draw each part
+            // Part on leg1
+            if (startPos < lineExtend && lineExtend > 0) {
+                const t1 = startPos;
+                const t2 = Math.min(endPos, lineExtend);
+                commands.push({ type: 'moveTo', x: leg1StartX + leg1DirX * t1, y: leg1StartY + leg1DirY * t1 });
+                commands.push({ type: 'lineTo', x: leg1StartX + leg1DirX * t2, y: leg1StartY + leg1DirY * t2 });
+            }
+            // Part on arc
+            const arcStartPos = Math.max(startPos, lineExtend) - lineExtend;
+            const arcEndPos = Math.min(endPos, lineExtend + arcLen) - lineExtend;
+            if (arcEndPos > arcStartPos) {
+                const startRad = startAngle + angleTotal * (arcStartPos / arcLen);
+                const endRad = startAngle + angleTotal * (arcEndPos / arcLen);
+                commands.push({ type: 'moveTo', x: cx + Math.cos(startRad) * arcR, y: cy + Math.sin(startRad) * arcR });
+                commands.push({ type: 'arc', cx, cy, r: arcR, startAngle: startRad, endAngle: endRad });
+            }
+            // Part on leg2
+            if (endPos > lineExtend + arcLen) {
+                const leg2OriginX = leg2EndX - leg2DirX * lineExtend;
+                const leg2OriginY = leg2EndY - leg2DirY * lineExtend;
+                const t1 = Math.max(startPos - lineExtend - arcLen, 0);
+                const t2 = endPos - lineExtend - arcLen;
+                commands.push({ type: 'moveTo', x: leg2OriginX + leg2DirX * t1, y: leg2OriginY + leg2DirY * t1 });
+                commands.push({ type: 'lineTo', x: leg2OriginX + leg2DirX * t2, y: leg2OriginY + leg2DirY * t2 });
+            }
+        }
+    }
 
     return commands;
 }
@@ -372,9 +455,9 @@ export function generatePerCardGuide(
 
         if (isDashed) {
             if (r > 0) {
-                // Dashed rounded rect
-                // Use SAME coordinate system as dashed-rounded-corners (no offset in arc centers)
-                // Placement is handled purely through arcR adjustment
+                // Dashed rounded rect (FULL rectangle, not corners-only)
+                // Use fixed lineExtend based on radius (not configurable guide length)
+                // The configurable length only affects corners-only styles
                 const lineExtend = r * 1.5;
                 // Arc radius adjustment: outside extends outward, inside contracts inward, center straddles
                 const arcR = Math.max(1, r + (placement === 'outside' ? halfStroke : placement === 'inside' ? -halfStroke : 0));
@@ -384,7 +467,7 @@ export function generatePerCardGuide(
                 const cornerGap = cornerDash * 0.6;
 
                 // Top-left corner - use r directly, like corners style
-                commands.push(...generateDashedRoundedCorner(r, r, arcR, Math.PI, Math.PI * 1.5, lineExtend,
+                commands.push(...generateDashedRoundedCorner(r, r, arcR, Math.PI, Math.PI * 1.5, lineExtend, cornerDash,
                     r - arcR, r + lineExtend, 0, -1,
                     r + lineExtend, r - arcR, 1, 0));
 
@@ -394,7 +477,7 @@ export function generatePerCardGuide(
                 }
 
                 // Top-right corner
-                commands.push(...generateDashedRoundedCorner(contentW - r, r, arcR, -Math.PI / 2, 0, lineExtend,
+                commands.push(...generateDashedRoundedCorner(contentW - r, r, arcR, -Math.PI / 2, 0, lineExtend, cornerDash,
                     contentW - r - lineExtend, r - arcR, 1, 0,
                     contentW - r + arcR, r + lineExtend, 0, 1));
 
@@ -404,7 +487,7 @@ export function generatePerCardGuide(
                 }
 
                 // Bottom-right corner
-                commands.push(...generateDashedRoundedCorner(contentW - r, contentH - r, arcR, 0, Math.PI / 2, lineExtend,
+                commands.push(...generateDashedRoundedCorner(contentW - r, contentH - r, arcR, 0, Math.PI / 2, lineExtend, cornerDash,
                     contentW - r + arcR, contentH - r - lineExtend, 0, 1,
                     contentW - r - lineExtend, contentH - r + arcR, -1, 0));
 
@@ -414,7 +497,7 @@ export function generatePerCardGuide(
                 }
 
                 // Bottom-left corner
-                commands.push(...generateDashedRoundedCorner(r, contentH - r, arcR, Math.PI / 2, Math.PI, lineExtend,
+                commands.push(...generateDashedRoundedCorner(r, contentH - r, arcR, Math.PI / 2, Math.PI, lineExtend, cornerDash,
                     r + lineExtend, contentH - r + arcR, -1, 0,
                     r - arcR, contentH - r - lineExtend, 0, -1));
 
@@ -459,27 +542,31 @@ export function generatePerCardGuide(
             // Return empty commands, caller will use native roundRect
         }
     } else if (isCorners) {
-        const lineExtend = radiusPx * 1.5;
+        // For rounded corners, total extent from corner center = radiusPx + lineExtend
+        // For square corners, total extent = targetLegExtendPx
+        // So for rounded, we subtract the radius to get matching visual extent
+        const lineExtend = Math.max(0, targetLegExtendPx - radiusPx);
 
         if (isRounded) {
             // Arc radius adjustment: outside extends outward, inside contracts inward, center straddles
             const arcR = Math.max(1, radiusPx + (placement === 'outside' ? halfStroke : placement === 'inside' ? -halfStroke : 0));
 
             if (isDashed) {
-                // Dashed rounded corners
-                commands.push(...generateDashedRoundedCorner(radiusPx, radiusPx, arcR, Math.PI, Math.PI * 1.5, lineExtend,
+                // Dashed rounded corners - function handles adaptive dash sizing internally
+                // lineExtend matches solid rounded for consistent total extent
+                commands.push(...generateDashedRoundedCorner(radiusPx, radiusPx, arcR, Math.PI, Math.PI * 1.5, lineExtend, 0,
                     radiusPx - arcR, radiusPx + lineExtend, 0, -1,
                     radiusPx + lineExtend, radiusPx - arcR, 1, 0));
 
-                commands.push(...generateDashedRoundedCorner(contentW - radiusPx, radiusPx, arcR, -Math.PI / 2, 0, lineExtend,
+                commands.push(...generateDashedRoundedCorner(contentW - radiusPx, radiusPx, arcR, -Math.PI / 2, 0, lineExtend, 0,
                     contentW - radiusPx - lineExtend, radiusPx - arcR, 1, 0,
                     contentW - radiusPx + arcR, radiusPx + lineExtend, 0, 1));
 
-                commands.push(...generateDashedRoundedCorner(contentW - radiusPx, contentH - radiusPx, arcR, 0, Math.PI / 2, lineExtend,
+                commands.push(...generateDashedRoundedCorner(contentW - radiusPx, contentH - radiusPx, arcR, 0, Math.PI / 2, lineExtend, 0,
                     contentW - radiusPx + arcR, contentH - radiusPx - lineExtend, 0, 1,
                     contentW - radiusPx - lineExtend, contentH - radiusPx + arcR, -1, 0));
 
-                commands.push(...generateDashedRoundedCorner(radiusPx, contentH - radiusPx, arcR, Math.PI / 2, Math.PI, lineExtend,
+                commands.push(...generateDashedRoundedCorner(radiusPx, contentH - radiusPx, arcR, Math.PI / 2, Math.PI, lineExtend, 0,
                     radiusPx + lineExtend, contentH - radiusPx + arcR, -1, 0,
                     radiusPx - arcR, contentH - radiusPx - lineExtend, 0, -1));
             } else {

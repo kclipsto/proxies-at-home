@@ -73,6 +73,7 @@ export async function exportProxyPagesToPdf({
     cutLineStyle,
     perCardGuideStyle,
     guidePlacement,
+    cutGuideLengthMm,
     rightAlignRows,
   } = pdfSettings;
 
@@ -255,6 +256,7 @@ export async function exportProxyPagesToPdf({
                       cutLineStyle,
                       perCardGuideStyle,
                       guidePlacement,
+                      cutGuideLengthMm,
                       // Pass normalized source settings directly (no legacy conversion)
                       sourceSettings,
                       withBleedSourceAmount,
