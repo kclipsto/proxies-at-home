@@ -25,6 +25,7 @@ interface UsePerCardGuidesProps {
     guideColor: number;
     guidePlacement: GuidePlacement;
     guideWidth: number;
+    cutGuideLengthMm: number;
     activeId?: string | null;
 }
 
@@ -40,6 +41,7 @@ export function usePerCardGuides({
     guideColor,
     guidePlacement,
     guideWidth,
+    cutGuideLengthMm,
     activeId,
 }: UsePerCardGuidesProps): void {
     const graphicsRef = useRef<Map<string, Graphics>>(new Map());
@@ -85,8 +87,8 @@ export function usePerCardGuides({
 
             ctx = new GraphicsContext();
 
-            // Explicit 6.25mm extension for square guides
-            const targetLegExtendPx = 6.25 * MM_TO_PX;
+            // Use configurable guide length (in mm, converted to px)
+            const targetLegExtendPx = cutGuideLengthMm * MM_TO_PX;
 
             // Generate commands using shared utility
             const commands = generatePerCardGuide(
@@ -146,7 +148,7 @@ export function usePerCardGuides({
         });
 
         if (app) app.render();
-    }, [isReady, container, app, cards, guideStyle, guideColor, guidePlacement, guideWidth, activeId]);
+    }, [isReady, container, app, cards, guideStyle, guideColor, guidePlacement, guideWidth, cutGuideLengthMm, activeId]);
 
     // Cleanup on unmount
     useEffect(() => {

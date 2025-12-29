@@ -79,6 +79,7 @@ interface PixiVirtualCanvasProps {
     perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none';
     perCardGuideColor: number; // Hex color for PixiJS (e.g., 0x39FF14)
     perCardGuidePlacement: 'inside' | 'outside' | 'center';
+    cutGuideLengthMm: number; // Length of corner guides in mm
     // Theme
     isDarkMode: boolean;
     // Callback when card textures are loaded (for placeholder hiding)
@@ -110,6 +111,7 @@ function PixiVirtualCanvasInner({
     perCardGuideStyle,
     perCardGuideColor,
     perCardGuidePlacement,
+    cutGuideLengthMm,
     isDarkMode,
     onRenderedCardsChange,
     className,
@@ -563,6 +565,7 @@ function PixiVirtualCanvasInner({
         guideColor: perCardGuideColor,
         guidePlacement: perCardGuidePlacement,
         guideWidth,
+        cutGuideLengthMm,
         activeId,
     });
 
@@ -821,7 +824,7 @@ const SHALLOW_COMPARE_KEYS: (keyof PixiVirtualCanvasProps)[] = [
     'viewportWidth', 'viewportHeight', 'scrollTop', 'zoom',
     'globalDarkenMode', 'flippedCards', 'activeId',
     'guideWidth', 'cutLineStyle', 'perCardGuideStyle',
-    'perCardGuideColor', 'perCardGuidePlacement', 'isDarkMode', 'pages',
+    'perCardGuideColor', 'perCardGuidePlacement', 'cutGuideLengthMm', 'isDarkMode', 'pages',
 ];
 
 // Card properties that need simple equality check

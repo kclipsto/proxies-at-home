@@ -42,7 +42,8 @@ export type UndoableSettingKey =
     | "darkenEdgeWidth"
     | "darkenAmount"
     | "darkenBrightness"
-    | "darkenAutoDetect";
+    | "darkenAutoDetect"
+    | "cutGuideLengthMm";
 
 // Human-readable descriptions for each setting
 const settingDescriptions: Record<UndoableSettingKey, string> = {
@@ -81,6 +82,7 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     darkenAmount: "darken amount",
     darkenBrightness: "darken brightness",
     darkenAutoDetect: "auto detect darkness",
+    cutGuideLengthMm: "cut guide length",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

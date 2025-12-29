@@ -81,6 +81,8 @@ type Store = {
   setPerCardGuideStyle: (value: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none') => void;
   guidePlacement: 'inside' | 'outside' | 'center';
   setGuidePlacement: (value: 'inside' | 'outside' | 'center') => void;
+  cutGuideLengthMm: number;
+  setCutGuideLengthMm: (value: number) => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
   settingsPanelState: {
@@ -176,6 +178,7 @@ const defaultPageSettings = {
   cutLineStyle: "full" as "full" | "edges" | "none",
   perCardGuideStyle: "corners" as "corners" | "rounded-corners" | "solid-rounded-rect" | "dashed-rounded-rect" | "solid-squared-rect" | "dashed-squared-rect" | "none",
   guidePlacement: "outside" as "inside" | "outside",
+  cutGuideLengthMm: 6.25,
   globalLanguage: "en",
   settingsPanelState: {
     order: ["layout", "bleed", "darken", "guides", "card", "filterSort", "application"],
@@ -405,6 +408,10 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("guidePlacement", state.guidePlacement);
         return { guidePlacement: value };
       }),
+      setCutGuideLengthMm: (value) => set((state) => {
+        recordSettingChange("cutGuideLengthMm", state.cutGuideLengthMm);
+        return { cutGuideLengthMm: value };
+      }),
       setGlobalLanguage: (lang) => set((state) => {
         recordSettingChange("globalLanguage", state.globalLanguage);
         return { globalLanguage: lang };
@@ -535,6 +542,7 @@ export const useSettingsStore = create<Store>()(
           cutLineStyle: currentState.cutLineStyle,
           perCardGuideStyle: currentState.perCardGuideStyle,
           guidePlacement: currentState.guidePlacement,
+          cutGuideLengthMm: currentState.cutGuideLengthMm,
           globalLanguage: currentState.globalLanguage,
           sortBy: currentState.sortBy,
           sortOrder: currentState.sortOrder,
