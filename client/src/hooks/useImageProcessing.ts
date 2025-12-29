@@ -55,8 +55,8 @@ export function useImageProcessing({
   imageProcessor: ImageProcessor;
 }) {
   const dpi = useSettingsStore((state) => state.dpi);
-  const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
-  // Note: Source-type bleed settings (withBleedMode, noBleedMode, etc.) are read
+  // Note: darkenMode is no longer needed here since all modes are pre-generated
+  // Source-type bleed settings (withBleedMode, noBleedMode, etc.) are read
   // directly from useSettingsStore.getState() in usage to avoid stale closures
 
   // Key by imageId for deduplication - multiple cards can share same image
@@ -84,8 +84,6 @@ export function useImageProcessing({
 
   const ensureProcessed = useCallback(async (card: CardOption, priority: Priority = Priority.LOW): Promise<void> => {
     const { imageId } = card;
-    // console.log('[PerfTrace] ensureProcessed called for', card.uuid, 'imageId:', imageId, 'priority:', priority);
-
     if (!imageId) {
       // Cards without images can't be processed - mark as processed to clear from pending
       markCardProcessed(card.uuid, false);
@@ -106,13 +104,12 @@ export function useImageProcessing({
     }
 
     // Fast path: skip if this image was already processed successfully
-    // But first check if the image's settings were invalidated (generatedHasBuiltInBleed cleared)
+    // But first check if the image's settings were invalidated
     if (processedImageIds.current.has(imageId)) {
       // Check if settings were invalidated by looking at the image record
       const cachedImage = await getImageOrCardback(card, imageId);
       const settingsInvalidated = cachedImage?.generatedHasBuiltInBleed === undefined;
       if (!settingsInvalidated) {
-        // console.log('[PerfTrace] ensureProcessed: Already processed in session (fast path)', card.uuid);
         markCardProcessed(card.uuid, true);
         return;
       }
@@ -186,7 +183,6 @@ export function useImageProcessing({
             bleedMode: effectiveBleedMode,
             existingBleedMm: effectiveExistingBleedMm,
             dpi,
-            darkenNearBlack,
           }, priority);
 
           if ("displayBlob" in result) {
@@ -197,8 +193,19 @@ export function useImageProcessing({
               exportBlob,
               exportDpi,
               exportBleedWidth,
+              // Per-mode blobs
+              displayBlobDarkenAll,
+              exportBlobDarkenAll,
+              displayBlobContrastEdges,
+              exportBlobContrastEdges,
+              displayBlobContrastFull,
+              exportBlobContrastFull,
+              // Legacy
               displayBlobDarkened,
               exportBlobDarkened,
+              // For Card Editor live preview
+              baseDisplayBlob,
+              baseExportBlob,
               imageCacheHit,
             } = result;
 
@@ -209,8 +216,19 @@ export function useImageProcessing({
               exportBlob,
               exportDpi,
               exportBleedWidth,
+              // Per-mode blobs
+              displayBlobDarkenAll,
+              exportBlobDarkenAll,
+              displayBlobContrastEdges,
+              exportBlobContrastEdges,
+              displayBlobContrastFull,
+              exportBlobContrastFull,
+              // Legacy
               displayBlobDarkened,
               exportBlobDarkened,
+              // For Card Editor live preview
+              baseDisplayBlob,
+              baseExportBlob,
               generatedHasBuiltInBleed: hasBuiltInBleed,
               generatedBleedMode: effectiveBleedMode,
             });
@@ -253,7 +271,7 @@ export function useImageProcessing({
 
     inFlight.current[imageId] = p;
     return p.then(() => { });
-  }, [bleedEdgeWidth, unit, dpi, imageProcessor, darkenNearBlack, hydrated]);
+  }, [bleedEdgeWidth, unit, dpi, imageProcessor, hydrated]);
 
   const reprocessSelectedImages = useCallback(
     async (cards: CardOption[], newBleedWidth: number
@@ -308,7 +326,6 @@ export function useImageProcessing({
             bleedMode: effectiveBleedMode,
             existingBleedMm: effectiveExistingBleedMm,
             dpi,
-            darkenNearBlack,
           });
 
           if (src.startsWith("blob:")) URL.revokeObjectURL(src);
@@ -321,8 +338,19 @@ export function useImageProcessing({
               exportBlob,
               exportDpi,
               exportBleedWidth,
+              // Per-mode blobs
+              displayBlobDarkenAll,
+              exportBlobDarkenAll,
+              displayBlobContrastEdges,
+              exportBlobContrastEdges,
+              displayBlobContrastFull,
+              exportBlobContrastFull,
+              // Legacy
               displayBlobDarkened,
               exportBlobDarkened,
+              // For Card Editor live preview
+              baseDisplayBlob,
+              baseExportBlob,
             } = result;
 
             await updateImageOrCardback(card, card.imageId, {
@@ -332,8 +360,19 @@ export function useImageProcessing({
               exportBlob,
               exportDpi,
               exportBleedWidth,
+              // Per-mode blobs
+              displayBlobDarkenAll,
+              exportBlobDarkenAll,
+              displayBlobContrastEdges,
+              exportBlobContrastEdges,
+              displayBlobContrastFull,
+              exportBlobContrastFull,
+              // Legacy
               displayBlobDarkened,
               exportBlobDarkened,
+              // For Card Editor live preview
+              baseDisplayBlob,
+              baseExportBlob,
               generatedHasBuiltInBleed: getHasBuiltInBleed(card),
               generatedBleedMode: effectiveBleedMode,
             });
@@ -349,7 +388,7 @@ export function useImageProcessing({
 
       await Promise.allSettled(promises);
     },
-    [imageProcessor, unit, dpi, darkenNearBlack]
+    [imageProcessor, unit, dpi]
   );
 
   const cancelProcessing = useCallback(() => {

@@ -4,7 +4,7 @@ export const NEAR_WHITE = 239;
 export const ALPHA_EMPTY = 10;
 
 export const IN = (inches: number, dpi: number) => Math.round(inches * dpi);
-export const MM_TO_IN = (mm: number) => mm / 25.4;
+const MM_TO_IN = (mm: number) => mm / 25.4;
 export const MM_TO_PX = (mm: number, dpi: number) => IN(MM_TO_IN(mm), dpi);
 
 export function toProxied(url: string, apiBase: string) {
@@ -93,20 +93,81 @@ export async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number, 
 
 export function blackenAllNearBlackPixels(
     imgData: ImageData,
-    threshold: number
 ) {
-    const data = imgData.data;
-    const len = data.length;
+    const d = imgData.data;
+    const width = imgData.width;
+    const height = imgData.height;
 
-    for (let i = 0; i < len; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
+    const dpi = bucketDpiFromHeight(height);
+    const dpiScale = dpi / 300;
+    const EDGE_PX = Math.round(64 * dpiScale);
 
-        if (r < threshold && g < threshold && b < threshold) {
-            data[i] = 0;
-            data[i + 1] = 0;
-            data[i + 2] = 0;
+    // --- 1. Build luminance histogram (sampled for speed) ---
+    const hist = new Uint32Array(256);
+    const sampleStep = 4 * 4; // every 4th pixel
+
+    for (let i = 0; i < d.length; i += sampleStep) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        hist[Math.max(0, Math.min(255, l | 0))]++;
+    }
+
+    // --- 2. Find 10th percentile luminance ---
+    const total = hist.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    let p10 = 0;
+
+    for (let i = 0; i < 256; i++) {
+        acc += hist[i];
+        if (acc >= total * 0.1) {
+            p10 = i;
+            break;
+        }
+    }
+
+    // --- 3. Adapt strength based on darkness ---
+    // Dark images → smaller boost
+    // Light images → stronger boost
+
+    const darknessFactor = Math.min(1, Math.max(0, (90 - p10) / 70));
+
+    const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
+    const MAX_BRIGHTNESS = -8 * darknessFactor;
+    const HIGHLIGHT_SOFT = 230;
+
+    // --- 4. Apply adaptive edge contrast ---
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+
+            const edgeDist = Math.min(x, y, width - x - 1, height - y - 1);
+
+            if (edgeDist >= EDGE_PX) continue;
+
+            let edgeFactor = 1 - edgeDist / EDGE_PX;
+            edgeFactor *= edgeFactor; // smooth falloff
+
+            for (let c = 0; c < 3; c++) {
+                const v = d[i + c];
+
+                // Adaptive tone gating
+                if (v > 140) continue;
+
+                const toneFactor = Math.min(1, (140 - v) / 110);
+                const strength = edgeFactor * toneFactor;
+
+                if (strength <= 0) continue;
+
+                const contrast = 1 + (MAX_CONTRAST - 1) * strength;
+                const brightness = MAX_BRIGHTNESS * strength;
+
+                let nv = (v - 128) * contrast + 128 + brightness;
+
+                if (nv > HIGHLIGHT_SOFT) {
+                    nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
+                }
+
+                d[i + c] = nv < 0 ? 0 : nv > 255 ? 255 : nv;
+            }
         }
     }
 }

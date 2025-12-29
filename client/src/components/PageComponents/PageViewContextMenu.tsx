@@ -1,9 +1,10 @@
 import { Button } from "flowbite-react";
-import { Copy, Trash, Settings } from "lucide-react";
+import { Copy, Trash, Settings, Palette } from "lucide-react";
 import { useEffect } from "react";
 import { useSelectionStore } from "../../store/selection";
-import { undoableDeleteCard, undoableDuplicateCard } from "@/helpers/undoableActions";
-import { useArtworkModalStore } from "../../store";
+import { undoableDeleteCard, undoableDeleteCardsBatch, undoableDuplicateCard, undoableDuplicateCardsBatch } from "@/helpers/undoableActions";
+import { useArtworkModalStore, useCardEditorModalStore } from "../../store";
+import { db } from "../../db";
 import type { CardOption } from "../../../../shared/types";
 
 interface PageViewContextMenuProps {
@@ -15,12 +16,30 @@ interface PageViewContextMenuProps {
     };
     setContextMenu: (menu: { visible: boolean; x: number; y: number; cardUuid: string | null }) => void;
     cards: CardOption[];
+    flippedCards: Set<string>;
 }
 
-export function PageViewContextMenu({ contextMenu, setContextMenu, cards }: PageViewContextMenuProps) {
+/** Helper to get card with its back card and images from database */
+async function getCardWithImages(cards: CardOption[], cardUuid: string) {
+    const card = cards.find(c => c.uuid === cardUuid);
+    if (!card || !card.imageId) return null;
+
+    const image = await db.images.get(card.imageId);
+    const backCard = card.linkedBackId
+        ? cards.find(c => c.uuid === card.linkedBackId)
+        : undefined;
+    const backImage = backCard?.imageId
+        ? await db.images.get(backCard.imageId)
+        : undefined;
+
+    return { card, image: image ?? null, backCard, backImage: backImage ?? null };
+}
+
+export function PageViewContextMenu({ contextMenu, setContextMenu, cards, flippedCards }: PageViewContextMenuProps) {
     const selectedCards = useSelectionStore((state) => state.selectedCards);
     const clearSelection = useSelectionStore((state) => state.clearSelection);
     const openArtworkModal = useArtworkModalStore((state) => state.openModal);
+    const openCardEditor = useCardEditorModalStore((state) => state.openModal);
     const hasSelection = selectedCards.size > 0;
 
     useEffect(() => {
@@ -59,22 +78,37 @@ export function PageViewContextMenu({ contextMenu, setContextMenu, cards }: Page
                 setContextMenu({ ...contextMenu, visible: false })
             }
         >
-            {/* Show selection controls when multiple cards are selected */}
+            {/* Show multi-select operations when multiple cards are selected */}
             {hasSelection && selectedCards.has(contextMenu.cardUuid) && (
                 <>
                     <Button
                         size="xs"
+                        color="green"
+                        onClick={async () => {
+                            const result = await getCardWithImages(cards, contextMenu.cardUuid!);
+                            if (result) {
+                                openCardEditor({
+                                    ...result,
+                                    selectedCardUuids: Array.from(selectedCards),
+                                });
+                            }
+                            setContextMenu({ ...contextMenu, visible: false });
+                        }}
+                    >
+                        <Palette className="size-3 mr-1" />
+                        Adjust {selectedCards.size} Cards
+                    </Button>
+                    <Button
+                        size="xs"
                         onClick={async () => {
                             const uuids = Array.from(selectedCards);
-                            for (const uuid of uuids) {
-                                await undoableDuplicateCard(uuid);
-                            }
+                            await undoableDuplicateCardsBatch(uuids);
                             clearSelection();
                             setContextMenu({ ...contextMenu, visible: false });
                         }}
                     >
                         <Copy className="size-3 mr-1" />
-                        Duplicate {selectedCards.size} Selected
+                        Duplicate {selectedCards.size} Cards
                     </Button>
                     <Button
                         size="xs"
@@ -87,28 +121,43 @@ export function PageViewContextMenu({ contextMenu, setContextMenu, cards }: Page
                         }}
                     >
                         <Settings className="size-3 mr-1" />
-                        Settings {selectedCards.size} Selected
+                        {selectedCards.size} Cards Settings
                     </Button>
                     <Button
                         size="xs"
                         color="red"
                         onClick={async () => {
                             const uuids = Array.from(selectedCards);
-                            for (const uuid of uuids) {
-                                await undoableDeleteCard(uuid);
-                            }
+                            await undoableDeleteCardsBatch(uuids);
                             clearSelection();
                             setContextMenu({ ...contextMenu, visible: false });
                         }}
                     >
                         <Trash className="size-3 mr-1" />
-                        Delete {selectedCards.size} Selected
+                        Delete {selectedCards.size} Cards
                     </Button>
                 </>
             )}
             {/* Single card operations */}
             {(!hasSelection || !selectedCards.has(contextMenu.cardUuid)) && (
                 <>
+                    <Button
+                        size="xs"
+                        color="green"
+                        onClick={async () => {
+                            const result = await getCardWithImages(cards, contextMenu.cardUuid!);
+                            if (result) {
+                                openCardEditor({
+                                    ...result,
+                                    initialFace: flippedCards.has(result.card.uuid) ? 'back' : 'front',
+                                });
+                            }
+                            setContextMenu({ ...contextMenu, visible: false });
+                        }}
+                    >
+                        <Palette className="size-3 mr-1" />
+                        Adjust Art
+                    </Button>
                     <Button
                         size="xs"
                         onClick={async () => {

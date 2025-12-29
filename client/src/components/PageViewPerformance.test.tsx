@@ -3,7 +3,31 @@ import { render } from "@testing-library/react";
 import { PageView } from "./PageView";
 import { type Image } from "../db";
 import type { CardOption } from "../../../shared/types";
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, beforeAll } from "vitest";
+
+// Mock matchMedia and ResizeObserver for JSDOM
+beforeAll(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockImplementation(query => ({
+            matches: false,
+            media: query,
+            onchange: null,
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+        })),
+    });
+
+    // Mock ResizeObserver as a class
+    global.ResizeObserver = class ResizeObserver {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+    };
+});
 
 // Mocks
 vi.mock("../hooks/useImageProcessing", () => ({
@@ -22,7 +46,7 @@ vi.mock("../hooks/usePageViewSettings", () => ({
         rows: 3,
         zoom: 1,
         setZoom: vi.fn(),
-        darkenNearBlack: false,
+        darkenMode: 'none',
         cardPositionX: 0,
         cardPositionY: 0,
         sourceSettings: { bleed: "none" },
@@ -76,15 +100,26 @@ vi.mock("../hooks/usePageViewHotkeys", () => ({
 }));
 
 // Mock selection store hook usage in components
-vi.mock("../store", () => ({
-    useArtworkModalStore: (selector: (s: { openModal: () => void }) => unknown) => selector({ openModal: vi.fn() }),
-    useSettingsStore: (selector: (s: { guideWidth: number; guideColor: string; perCardGuideStyle: string; guidePlacement: string }) => unknown) => selector({
+vi.mock("../store", () => {
+    const mockSettingsState = {
         guideWidth: 1,
         guideColor: 'black',
         perCardGuideStyle: 'solid',
-        guidePlacement: 'outside'
-    }),
-}));
+        guidePlacement: 'outside',
+        withBleedSourceAmount: 0,
+        withBleedTargetMode: 'none',
+        withBleedTargetAmount: 0,
+    };
+    const mockUseSettingsStore = Object.assign(
+        (selector?: (s: typeof mockSettingsState) => unknown) => selector ? selector(mockSettingsState) : mockSettingsState,
+        { getState: () => mockSettingsState }
+    );
+    return {
+        useArtworkModalStore: (selector: (s: { openModal: () => void }) => unknown) => selector({ openModal: () => { } }),
+        useSettingsStore: mockUseSettingsStore,
+        useCardEditorModalStore: (selector: (s: { openModal: () => void; selectedCardUuids: string[] }) => unknown) => selector({ openModal: () => { }, selectedCardUuids: [] }),
+    };
+});
 
 vi.mock("../store/selection", () => ({
     useSelectionStore: (selector: (s: { selectedCards: Set<string>; toggleSelection: () => void; selectRange: () => void; flippedCards: Set<string>; toggleFlip: () => void }) => unknown) => selector({

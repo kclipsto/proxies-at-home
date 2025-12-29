@@ -3,6 +3,8 @@ import type { CardOption } from "../../../shared/types";
 import { PDFDocument } from "pdf-lib";
 import { AsyncLock } from "./AsyncLock";
 import type { WorkerPdfSettings } from "./serializeSettingsForWorker";
+import { getEffectCacheEntry } from "./effectCache";
+import { hasActiveAdjustments } from "./adjustmentUtils";
 
 /**
  * Worker event types for coordinator pattern
@@ -56,7 +58,7 @@ export async function exportProxyPagesToPdf({
     bleedEdgeWidthMm,
     sourceSettings,
     withBleedSourceAmount,
-    darkenNearBlack,
+    darkenMode,
     dpi,
     pageWidth,
     pageHeight,
@@ -78,6 +80,17 @@ export async function exportProxyPagesToPdf({
   const totalImages = cards.length;
   let totalImagesProcessed = 0;
   const pdfBuffers: Uint8Array[] = [];
+
+  // Build effect cache map for cards with active adjustments
+  const effectCacheById = new Map<string, Blob>();
+  for (const card of cards) {
+    if (card.imageId && card.overrides && hasActiveAdjustments(card.overrides)) {
+      const cached = await getEffectCacheEntry(card.imageId, card.overrides);
+      if (cached) {
+        effectCacheById.set(card.uuid, cached);
+      }
+    }
+  }
 
   const pagesIterator = pageGenerator(cards, perPage);
 
@@ -213,6 +226,15 @@ export async function exportProxyPagesToPdf({
                     const task = taskQueue.shift()!;
                     idleWorker.busy = true;
 
+                    // Filter effect cache to only include blobs for cards on this page
+                    const pageEffectCache = new Map<string, Blob>();
+                    for (const card of task.pageCards) {
+                      const cached = effectCacheById.get(card.uuid);
+                      if (cached) {
+                        pageEffectCache.set(card.uuid, cached);
+                      }
+                    }
+
                     const settings = {
                       pageWidth,
                       pageHeight,
@@ -229,7 +251,7 @@ export async function exportProxyPagesToPdf({
                       DPI: dpi,
                       imagesById,
                       API_BASE,
-                      darkenNearBlack,
+                      darkenMode,
                       cutLineStyle,
                       perCardGuideStyle,
                       guidePlacement,
@@ -238,6 +260,8 @@ export async function exportProxyPagesToPdf({
                       withBleedSourceAmount,
                       // Right-align incomplete rows for backs export
                       rightAlignRows,
+                      // Pre-rendered effect cache (filtered to this page's cards only)
+                      effectCacheById: pageEffectCache,
                     };
 
                     idleWorker.worker.postMessage({

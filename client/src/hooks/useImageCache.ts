@@ -1,29 +1,82 @@
 import { useRef, useEffect, useMemo } from "react";
 import type { Image } from "../db";
+import type { DarkenMode } from "../store/settings";
+import type { CardOption } from "../../../shared/types";
 
-export function useImageCache(images: Image[], darkenNearBlack: boolean) {
-    const urlCacheRef = useRef<Map<string, { blob: Blob; url: string }>>(new Map());
+/**
+ * Select the appropriate display blob based on darken mode.
+ */
+function selectDisplayBlob(img: Image, darkenMode: DarkenMode): Blob | undefined {
+    switch (darkenMode) {
+        case 'none':
+            return img.displayBlob;
+        case 'darken-all':
+            return img.displayBlobDarkenAll ?? img.displayBlobDarkened ?? img.displayBlob;
+        case 'contrast-edges':
+            return img.displayBlobContrastEdges ?? img.displayBlobDarkened ?? img.displayBlob;
+        case 'contrast-full':
+            return img.displayBlobContrastFull ?? img.displayBlobDarkened ?? img.displayBlob;
+        default:
+            return img.displayBlob;
+    }
+}
+
+/**
+ * Hook to manage object URLs for processed images with caching and revocation.
+ * Supports per-card darkenMode overrides - cards with specific overrides will use
+ * their override, otherwise falls back to global darkenMode.
+ */
+export function useImageCache(
+    images: Image[],
+    darkenMode: DarkenMode,
+    cards?: CardOption[]
+) {
+    const urlCacheRef = useRef<Map<string, { blob: Blob; url: string; mode: DarkenMode }>>(new Map());
     const revocationQueueRef = useRef<string[]>([]);
     const prevResultRef = useRef<Record<string, string>>({});
 
+    // Build a map from imageId to card for quick lookup
+    // Also create a version key from overrides to detect changes
+    const overridesVersion = useMemo(() => {
+        if (!cards) return '';
+        // Create a simple hash from all card darkenMode overrides
+        return cards.map(c => `${c.imageId}:${c.overrides?.darkenMode ?? ''}`).join('|');
+    }, [cards]);
+
+    const cardsByImageId = useMemo(() => {
+        const map = new Map<string, CardOption>();
+        if (cards) {
+            cards.forEach(card => {
+                if (card.imageId) {
+                    map.set(card.imageId, card);
+                }
+            });
+        }
+        return map;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cards, overridesVersion]);
+
     const processedImageUrls: Record<string, string> = useMemo(() => {
         const urls: Record<string, string> = {};
-        if (!images) return prevResultRef.current;
+        if (!images) return prevResultRef.current ?? {};
 
         const currentCache = urlCacheRef.current;
         const usedIds = new Set<string>();
         let hasChanges = false;
 
         images.forEach((img) => {
-            const selectedBlob = darkenNearBlack ? img.displayBlobDarkened : img.displayBlob;
+            // Check for per-card darkenMode override
+            const card = cardsByImageId.get(img.id);
+            const effectiveDarkenMode = card?.overrides?.darkenMode ?? darkenMode;
+            const selectedBlob = selectDisplayBlob(img, effectiveDarkenMode);
 
             if (selectedBlob && selectedBlob.size > 0) {
                 usedIds.add(img.id);
 
                 const cached = currentCache.get(img.id);
-                // Compare by size since Dexie may return new Blob instances for the same data
-                if (cached && cached.blob.size === selectedBlob.size) {
-                    // Blob size unchanged, reuse existing URL
+                // Compare by size AND mode since a card's override may have changed
+                if (cached && cached.blob.size === selectedBlob.size && cached.mode === effectiveDarkenMode) {
+                    // Blob size and mode unchanged, reuse existing URL
                     urls[img.id] = cached.url;
                 } else {
                     // New or changed blob - this is a real change
@@ -32,7 +85,7 @@ export function useImageCache(images: Image[], darkenNearBlack: boolean) {
                     }
                     const newUrl = URL.createObjectURL(selectedBlob);
                     urls[img.id] = newUrl;
-                    currentCache.set(img.id, { blob: selectedBlob, url: newUrl });
+                    currentCache.set(img.id, { blob: selectedBlob, url: newUrl, mode: effectiveDarkenMode });
                     hasChanges = true;
                 }
             }
@@ -48,10 +101,8 @@ export function useImageCache(images: Image[], darkenNearBlack: boolean) {
         }
 
         // Only return a new object reference if something actually changed
-        // This prevents downstream re-renders when the images array changes but URLs don't
         const prevUrls = prevResultRef.current;
         if (!hasChanges && Object.keys(urls).length === Object.keys(prevUrls).length) {
-            // Check if all URLs are the same
             let allSame = true;
             for (const id in urls) {
                 if (urls[id] !== prevUrls[id]) {
@@ -60,15 +111,14 @@ export function useImageCache(images: Image[], darkenNearBlack: boolean) {
                 }
             }
             if (allSame) {
-                // console.log('[PerfTrace] useImageCache: No changes, returning prevUrls');
                 return prevUrls;
             }
         }
 
-        // console.log('[PerfTrace] useImageCache: processedImageUrls updated. New keys:', Object.keys(urls).length);
         prevResultRef.current = urls;
         return urls;
-    }, [images, darkenNearBlack]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [images, darkenMode, cardsByImageId, overridesVersion]);
 
     // Process revocation queue after render
     useEffect(() => {
@@ -97,4 +147,3 @@ export function useImageCache(images: Image[], darkenNearBlack: boolean) {
 
     return { processedImageUrls };
 }
-

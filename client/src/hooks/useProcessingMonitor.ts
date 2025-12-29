@@ -1,29 +1,51 @@
 import { useEffect, useRef } from 'react';
 import type { ImageProcessor } from '@/helpers/imageProcessor';
+import { getEffectProcessor } from '@/helpers/effectCache';
 import { getCurrentSession, hasActiveSession } from '@/helpers/ImportSession';
 import { useToastStore } from '@/store/toast';
 
 /**
- * Monitors ImageProcessor to show/hide processing toast.
+ * Monitors ImageProcessor and EffectProcessor to show/hide processing toast.
  * Import logging is handled by ImportSession.tryAutoFinish().
  */
 export function useProcessingMonitor(imageProcessor: ImageProcessor) {
     const hadActiveSessionRef = useRef(false);
+    // Track activity from both processors
+    const imageActiveRef = useRef(false);
+    const effectActiveRef = useRef(false);
+
+    const updateToast = () => {
+        const isActive = imageActiveRef.current || effectActiveRef.current;
+        if (isActive) {
+            useToastStore.getState().showProcessingToast();
+        } else {
+            useToastStore.getState().hideProcessingToast();
+        }
+    };
 
     useEffect(() => {
-        const unsubscribe = imageProcessor.onActivityChange((isActive) => {
+        const unsubscribeImage = imageProcessor.onActivityChange((isActive) => {
+            imageActiveRef.current = isActive;
+            updateToast();
+
             if (isActive) {
-                useToastStore.getState().showProcessingToast();
                 hadActiveSessionRef.current = hasActiveSession();
                 getCurrentSession()?.markProcessingStart();
-            } else {
-                useToastStore.getState().hideProcessingToast();
-                if (hadActiveSessionRef.current) {
-                    getCurrentSession()?.markProcessingComplete();
-                }
+            } else if (hadActiveSessionRef.current && !effectActiveRef.current) {
+                getCurrentSession()?.markProcessingComplete();
                 hadActiveSessionRef.current = false;
             }
         });
-        return unsubscribe;
+
+        const effectProcessor = getEffectProcessor();
+        const unsubscribeEffect = effectProcessor.onActivityChange((isActive) => {
+            effectActiveRef.current = isActive;
+            updateToast();
+        });
+
+        return () => {
+            unsubscribeImage();
+            unsubscribeEffect();
+        };
     }, [imageProcessor]);
 }

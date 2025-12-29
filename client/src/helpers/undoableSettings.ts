@@ -14,7 +14,7 @@ export type UndoableSettingKey =
     | "rows"
     | "bleedEdgeWidth"
     | "bleedEdge"
-    | "darkenNearBlack"
+    | "darkenMode"
     | "guideColor"
     | "guideWidth"
     | "cardSpacingMm"
@@ -37,7 +37,12 @@ export type UndoableSettingKey =
     | "withBleedTargetMode"
     | "withBleedTargetAmount"
     | "noBleedTargetMode"
-    | "noBleedTargetAmount";
+    | "noBleedTargetAmount"
+    | "darkenContrast"
+    | "darkenEdgeWidth"
+    | "darkenAmount"
+    | "darkenBrightness"
+    | "darkenAutoDetect";
 
 // Human-readable descriptions for each setting
 const settingDescriptions: Record<UndoableSettingKey, string> = {
@@ -47,7 +52,7 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     rows: "rows",
     bleedEdgeWidth: "bleed width",
     bleedEdge: "bleed edge",
-    darkenNearBlack: "darken near-black",
+    darkenMode: "darken mode",
     guideColor: "guide color",
     guideWidth: "guide width",
     cardSpacingMm: "card spacing",
@@ -71,6 +76,11 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     withBleedTargetAmount: "target bleed width",
     noBleedTargetMode: "bleed generation mode",
     noBleedTargetAmount: "target bleed width",
+    darkenContrast: "darken contrast",
+    darkenEdgeWidth: "darken edge width",
+    darkenAmount: "darken amount",
+    darkenBrightness: "darken brightness",
+    darkenAutoDetect: "auto detect darkness",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -154,25 +164,9 @@ export function recordSettingChange(
  * Immediately commits any pending change for a setting.
  * Call this on blur or when navigating away.
  */
-export function flushSettingChange(key: UndoableSettingKey): void {
-    const pending = pendingChanges.get(key);
-    if (pending) {
-        clearTimeout(pending.timeoutId);
-        commitPendingChange(key);
-    }
-}
+
 
 /**
  * Creates undoable setter wrappers for use in React components.
  */
-export function createUndoableSetter<T>(
-    key: UndoableSettingKey,
-    getter: () => T,
-    setter: (value: T) => void
-): (newValue: T) => void {
-    return (newValue: T) => {
-        const oldValue = getter();
-        setter(newValue);
-        recordSettingChange(key, oldValue);
-    };
-}
+

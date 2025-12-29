@@ -77,9 +77,9 @@ button:active {
 /* scrollbar-color: #4a5568 #2d3748; */
 /* thumb color track color */
 
-/* Settings Panel Scrollbar Gutter */
+/* Settings Panel Scrollbar Gutter - removed gutter for edge-to-edge headers */
 .settings-panel-scroll {
-  scrollbar-gutter: stable;
+  /* scrollbar-gutter removed - headers now extend to edge */
 }
 
 @media (max-width: 768px) {

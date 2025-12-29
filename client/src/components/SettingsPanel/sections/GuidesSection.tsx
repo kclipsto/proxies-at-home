@@ -1,9 +1,10 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Radio, Select, TextInput } from "flowbite-react";
+import { Label, Select } from "flowbite-react";
 import { NumberInput } from "../../NumberInput";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { AutoTooltip } from "../../AutoTooltip";
+import { ColorPicker } from "../../CardEditorModal/ColorPicker";
 
 export function GuidesSection() {
     const guideColor = useSettingsStore((state) => state.guideColor);
@@ -21,16 +22,12 @@ export function GuidesSection() {
     const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
     const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
 
-    // Local state for color picker - updates live preview without undo spam
+    // Local state for color picker - sync with store for live preview
     const [localColor, setLocalColor] = useState(guideColor);
-    const colorBeforeDrag = useRef(guideColor);
-    const isDragging = useRef(false);
 
     // Sync local state when store changes externally (e.g., undo/redo)
     useEffect(() => {
-        if (!isDragging.current) {
-            setLocalColor(guideColor);
-        }
+        setLocalColor(guideColor);
     }, [guideColor]);
 
     // Max guide width is limited by the space between cards so they don't overlap
@@ -56,56 +53,23 @@ export function GuidesSection() {
         { min: 0, max: maxGuideWidth }
     );
 
-    const handleColorInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        // Track that we're dragging
-        if (!isDragging.current) {
-            isDragging.current = true;
-            colorBeforeDrag.current = guideColor;
-        }
-        setLocalColor(e.target.value);
-        // Update store directly without undo tracking for live preview
-        useSettingsStore.setState({ guideColor: e.target.value });
-    };
-
-    const handleColorInputComplete = () => {
-        if (isDragging.current && colorBeforeDrag.current !== localColor) {
-            // Now record a single undo action for the entire drag
-            // Temporarily restore old value then set new value to trigger undo recording
-            useSettingsStore.setState({ guideColor: colorBeforeDrag.current });
-            setGuideColor(localColor);
-        }
-        isDragging.current = false;
-    };
 
     return (
         <div className="space-y-4">
-            <div>
-                <div className="mb-2 block">
-                    <Label htmlFor="guideColor">Guide Color</Label>
-                </div>
-                <div className="flex gap-2">
-                    <div className="flex-1 h-10 relative overflow-hidden rounded-lg border border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-700">
-                        <input
-                            id="guideColor"
-                            type="color"
-                            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] p-0 border-none cursor-pointer bg-transparent"
-                            value={localColor}
-                            onChange={handleColorInputChange}
-                            onBlur={handleColorInputComplete}
-                            onMouseUp={handleColorInputComplete}
-                        />
-                    </div>
-                    <TextInput
-                        type="text"
-                        className="w-24"
-                        value={localColor}
-                        onChange={(e) => {
-                            setLocalColor(e.target.value);
-                            setGuideColor(e.target.value);
-                        }}
-                    />
-                </div>
-            </div>
+            <ColorPicker
+                label="Guide Color"
+                value={localColor}
+                onChange={(color) => {
+                    setLocalColor(color);
+                    // Live preview without undo tracking
+                    useSettingsStore.setState({ guideColor: color });
+                }}
+                onChangeEnd={(color, previousColor) => {
+                    // Record undo action for the complete change
+                    useSettingsStore.setState({ guideColor: previousColor });
+                    setGuideColor(color);
+                }}
+            />
 
             <div>
                 <div className="mb-2 block">
@@ -123,29 +87,70 @@ export function GuidesSection() {
 
             <div>
                 <div className="mb-2 flex items-center gap-2">
-                    <Label htmlFor="guidePlacement">Guide Placement</Label>
-                    <AutoTooltip content="Controls which side of the cut line the guides appear on. Defaults to inside if there's not enough bleed or spacing." />
+                    <Label htmlFor="guidePlacement">Placement</Label>
+                    <AutoTooltip content="Controls which side of the cut line the guides appear on. Outside places strokes in the bleed area, Inside places them within the card content, Center straddles the cut line." />
                 </div>
-                <div className="flex items-center gap-4">
-                    <label className={`flex items-center gap-2 ${canUseOutside ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
-                        <Radio
-                            name="guidePlacement"
-                            value="outside"
-                            checked={guidePlacement === 'outside'}
-                            disabled={!canUseOutside}
-                            onChange={() => setGuidePlacement('outside')}
-                        />
-                        <span className={`text-sm ${guidePlacement === 'outside' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Outside</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <Radio
-                            name="guidePlacement"
-                            value="inside"
-                            checked={guidePlacement === 'inside'}
-                            onChange={() => setGuidePlacement('inside')}
-                        />
-                        <span className={`text-sm ${guidePlacement === 'inside' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>Inside</span>
-                    </label>
+                <div className="grid grid-cols-4 gap-2">
+                    {/* Outside icon - L corners clearly OUTSIDE the card */}
+                    <button
+                        onClick={() => setGuidePlacement('outside')}
+                        disabled={!canUseOutside}
+                        className={`p-1 rounded transition-colors ${guidePlacement === 'outside'
+                            ? 'bg-blue-100 dark:bg-blue-600'
+                            : canUseOutside
+                                ? 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                : 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed'
+                            }`}
+                        title="Outside - stroke in bleed area"
+                    >
+                        <svg width="30" height="40" viewBox="0 0 32 40" className="mx-auto">
+                            {/* Card at (2,2) with 28x36 - same as card cut guide icons */}
+                            <rect x="2" y="2" width="28" height="36" className="fill-gray-300 dark:fill-gray-500" />
+                            {/* Guide stroke clearly outside - at viewBox edges */}
+                            <path d="M0,8 L0,0 L8,0" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M32,8 L32,0 L24,0" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M0,32 L0,40 L8,40" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M32,32 L32,40 L24,40" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
+                    {/* Center icon - L corners exactly ON the card edge */}
+                    <button
+                        onClick={() => setGuidePlacement('center')}
+                        className={`p-1 rounded transition-colors ${guidePlacement === 'center'
+                            ? 'bg-blue-100 dark:bg-blue-600'
+                            : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                        title="Center - stroke straddles cut line"
+                    >
+                        <svg width="30" height="40" viewBox="0 0 32 40" className="mx-auto">
+                            {/* Card at (2,2) with 28x36 - same as card cut guide icons */}
+                            <rect x="2" y="2" width="28" height="36" className="fill-gray-300 dark:fill-gray-500" />
+                            {/* Guide stroke on card edge - vertex at card corners */}
+                            <path d="M2,10 L2,2 L10,2" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M30,10 L30,2 L22,2" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M2,30 L2,38 L10,38" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M30,30 L30,38 L22,38" fill="none" stroke={localColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
+                    {/* Inside icon - L corners clearly INSIDE the card */}
+                    <button
+                        onClick={() => setGuidePlacement('inside')}
+                        className={`p-1 rounded transition-colors ${guidePlacement === 'inside'
+                            ? 'bg-blue-100 dark:bg-blue-600'
+                            : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                        title="Inside - stroke within card content"
+                    >
+                        <svg width="30" height="40" viewBox="0 0 32 40" className="mx-auto">
+                            {/* Card at (2,2) with 28x36 - same as card cut guide icons */}
+                            <rect x="2" y="2" width="28" height="36" className="fill-gray-300 dark:fill-gray-500" />
+                            {/* Guide stroke inside - offset +2 from card cut guide paths */}
+                            <path d="M6,6 L6,12 M6,6 L12,6" fill="none" stroke={localColor} strokeWidth="2" />
+                            <path d="M26,6 L26,12 M26,6 L20,6" fill="none" stroke={localColor} strokeWidth="2" />
+                            <path d="M6,34 L6,28 M6,34 L12,34" fill="none" stroke={localColor} strokeWidth="2" />
+                            <path d="M26,34 L26,28 M26,34 L20,34" fill="none" stroke={localColor} strokeWidth="2" />
+                        </svg>
+                    </button>
                 </div>
             </div>
 

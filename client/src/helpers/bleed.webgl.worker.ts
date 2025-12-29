@@ -25,6 +25,144 @@ function getBleedInPixels(bleedMm: number, unit: 'mm' | 'in', dpi: number): numb
 }
 
 /**
+ * Compute the darknessFactor from pixel data by building a luminance histogram.
+ * Same algorithm as in webglImageProcessing.ts but works with raw pixel data.
+ */
+function computeDarknessFactorFromImageData(imageData: ImageData): number {
+    const d = imageData.data;
+
+    // Build luminance histogram (sample every 4th pixel for speed)
+    const hist = new Uint32Array(256);
+    const sampleStep = 4 * 4; // every 4th pixel (4 bytes per pixel)
+
+    for (let i = 0; i < d.length; i += sampleStep) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        hist[Math.max(0, Math.min(255, l | 0))]++;
+    }
+
+    // Find 10th percentile luminance
+    const total = hist.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    let p10 = 0;
+
+    for (let i = 0; i < 256; i++) {
+        acc += hist[i];
+        if (acc >= total * 0.1) {
+            p10 = i;
+            break;
+        }
+    }
+
+    return Math.min(1, Math.max(0, (90 - p10) / 70));
+}
+
+/**
+ * Apply adaptive edge contrast to an ImageData object.
+ * Same algorithm as the GLSL shader version.
+ */
+function applyEdgeContrastCPU(imageData: ImageData, darknessFactor: number): void {
+    const d = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // DPI-aware edge zone (assuming ~300dpi baseline for standard card)
+    const dpiScale = height / 1039; // ~1039px at 300dpi for 88mm card + bleed
+    const EDGE_PX = Math.round(64 * dpiScale);
+
+    const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
+    const MAX_BRIGHTNESS = -8 * darknessFactor;
+    const HIGHLIGHT_SOFT = 230;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+
+            const edgeDist = Math.min(x, y, width - x - 1, height - y - 1);
+            if (edgeDist >= EDGE_PX) continue;
+
+            let edgeFactor = 1 - edgeDist / EDGE_PX;
+            edgeFactor *= edgeFactor; // smooth falloff
+
+            for (let c = 0; c < 3; c++) {
+                const v = d[i + c];
+
+                // Adaptive tone gating - only affect dark pixels
+                if (v > 140) continue;
+
+                const toneFactor = Math.min(1, (140 - v) / 110);
+                const strength = edgeFactor * toneFactor;
+                if (strength <= 0) continue;
+
+                const contrast = 1 + (MAX_CONTRAST - 1) * strength;
+                const brightness = MAX_BRIGHTNESS * strength;
+
+                let nv = (v - 128) * contrast + 128 + brightness;
+
+                if (nv > HIGHLIGHT_SOFT) {
+                    nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
+                }
+
+                d[i + c] = nv < 0 ? 0 : nv > 255 ? 255 : nv;
+            }
+        }
+    }
+}
+
+/**
+ * Apply full-card contrast to an ImageData object.
+ * Same as edge contrast but applies to entire card (no edge distance check).
+ */
+function applyContrastFullCPU(imageData: ImageData, darknessFactor: number): void {
+    const d = imageData.data;
+
+    const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
+    const MAX_BRIGHTNESS = -8 * darknessFactor;
+    const HIGHLIGHT_SOFT = 230;
+
+    for (let i = 0; i < d.length; i += 4) {
+        for (let c = 0; c < 3; c++) {
+            const v = d[i + c];
+
+            // Only affect dark pixels (< 140)
+            if (v > 140) continue;
+
+            const toneFactor = Math.min(1, (140 - v) / 110);
+            if (toneFactor <= 0) continue;
+
+            const contrast = 1 + (MAX_CONTRAST - 1) * toneFactor;
+            const brightness = MAX_BRIGHTNESS * toneFactor;
+
+            let nv = (v - 128) * contrast + 128 + brightness;
+
+            if (nv > HIGHLIGHT_SOFT) {
+                nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
+            }
+
+            d[i + c] = nv < 0 ? 0 : nv > 255 ? 255 : nv;
+        }
+    }
+}
+
+/**
+ * Apply legacy darken-all to an ImageData object.
+ * Simple threshold: pixels with all RGB < 30 become pure black.
+ */
+function applyDarkenAllCPU(imageData: ImageData): void {
+    const d = imageData.data;
+    const threshold = 30;
+
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i] < threshold && d[i + 1] < threshold && d[i + 2] < threshold) {
+            d[i] = 0;
+            d[i + 1] = 0;
+            d[i + 2] = 0;
+        }
+    }
+}
+
+// Note: DarkenMode type removed - all modes are now pre-generated
+
+/**
  * Resize an image WITHOUT generating new bleed.
  * Used for 'existing' mode where the image already has bleed built in.
  * We resize to match the expected dimensions (card + specified bleed width)
@@ -41,8 +179,19 @@ async function resizeWithoutBleed(
     displayBlob: Blob;
     displayDpi: number;
     displayBleedWidth: number;
+    // Per-mode darkened blobs
+    exportBlobDarkenAll: Blob;
+    displayBlobDarkenAll: Blob;
+    exportBlobContrastEdges: Blob;
+    displayBlobContrastEdges: Blob;
+    exportBlobContrastFull: Blob;
+    displayBlobContrastFull: Blob;
+    // Legacy
     exportBlobDarkened: Blob;
     displayBlobDarkened: Blob;
+    // For Card Editor live preview
+    baseDisplayBlob: Blob;
+    baseExportBlob: Blob;
 }> {
     const exportDpi = opts?.exportDpi ?? 300;
     const displayDpi = opts?.displayDpi ?? 300;
@@ -64,30 +213,75 @@ async function resizeWithoutBleed(
 
     // Create export canvas and resize image to fit
     const exportCanvas = new OffscreenCanvas(exportWidth, exportHeight);
-    const exportCtx = exportCanvas.getContext('2d')!;
+    const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true })!;
     exportCtx.imageSmoothingQuality = 'high';
     exportCtx.drawImage(img, 0, 0, exportWidth, exportHeight);
 
     // Create display canvas
     const displayCanvas = new OffscreenCanvas(displayWidth, displayHeight);
-    const displayCtx = displayCanvas.getContext('2d')!;
+    const displayCtx = displayCanvas.getContext('2d', { willReadFrequently: true })!;
     displayCtx.imageSmoothingQuality = 'high';
     displayCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
 
-    // Convert to blobs
+    // Get image data for all darkening modes
+    const exportImageData = exportCtx.getImageData(0, 0, exportWidth, exportHeight);
+    const displayImageData = displayCtx.getImageData(0, 0, displayWidth, displayHeight);
+    const darknessFactor = computeDarknessFactorFromImageData(exportImageData);
+
+    // Convert to blobs (normal versions - mode 0)
     const exportBlob = await exportCanvas.convertToBlob({ type: 'image/png' });
     const displayBlob = await displayCanvas.convertToBlob({ type: 'image/png' });
 
-    // For existing bleed, we don't darken - use the same blobs
+    // --- Mode 1: Darken All ---
+    const exportDataMode1 = new ImageData(new Uint8ClampedArray(exportImageData.data), exportWidth, exportHeight);
+    const displayDataMode1 = new ImageData(new Uint8ClampedArray(displayImageData.data), displayWidth, displayHeight);
+    applyDarkenAllCPU(exportDataMode1);
+    applyDarkenAllCPU(displayDataMode1);
+    exportCtx.putImageData(exportDataMode1, 0, 0);
+    displayCtx.putImageData(displayDataMode1, 0, 0);
+    const exportBlobDarkenAll = await exportCanvas.convertToBlob({ type: 'image/png' });
+    const displayBlobDarkenAll = await displayCanvas.convertToBlob({ type: 'image/png' });
+
+    // --- Mode 2: Contrast Edges ---
+    const exportDataMode2 = new ImageData(new Uint8ClampedArray(exportImageData.data), exportWidth, exportHeight);
+    const displayDataMode2 = new ImageData(new Uint8ClampedArray(displayImageData.data), displayWidth, displayHeight);
+    applyEdgeContrastCPU(exportDataMode2, darknessFactor);
+    applyEdgeContrastCPU(displayDataMode2, darknessFactor);
+    exportCtx.putImageData(exportDataMode2, 0, 0);
+    displayCtx.putImageData(displayDataMode2, 0, 0);
+    const exportBlobContrastEdges = await exportCanvas.convertToBlob({ type: 'image/png' });
+    const displayBlobContrastEdges = await displayCanvas.convertToBlob({ type: 'image/png' });
+
+    // --- Mode 3: Contrast Full ---
+    const exportDataMode3 = new ImageData(new Uint8ClampedArray(exportImageData.data), exportWidth, exportHeight);
+    const displayDataMode3 = new ImageData(new Uint8ClampedArray(displayImageData.data), displayWidth, displayHeight);
+    applyContrastFullCPU(exportDataMode3, darknessFactor);
+    applyContrastFullCPU(displayDataMode3, darknessFactor);
+    exportCtx.putImageData(exportDataMode3, 0, 0);
+    displayCtx.putImageData(displayDataMode3, 0, 0);
+    const exportBlobContrastFull = await exportCanvas.convertToBlob({ type: 'image/png' });
+    const displayBlobContrastFull = await displayCanvas.convertToBlob({ type: 'image/png' });
+
     return {
         exportBlob,
         exportDpi,
-        exportBleedWidth: bleedWidthMm, // Report the correct bleed width for cut guides
+        exportBleedWidth: bleedWidthMm,
         displayBlob,
         displayDpi,
         displayBleedWidth: bleedWidthMm,
-        exportBlobDarkened: exportBlob,
-        displayBlobDarkened: displayBlob,
+        // Per-mode blobs
+        exportBlobDarkenAll,
+        displayBlobDarkenAll,
+        exportBlobContrastEdges,
+        displayBlobContrastEdges,
+        exportBlobContrastFull,
+        displayBlobContrastFull,
+        // Legacy (maps to contrast-edges)
+        exportBlobDarkened: exportBlobContrastEdges,
+        displayBlobDarkened: displayBlobContrastEdges,
+        // For Card Editor live preview
+        baseDisplayBlob: displayBlob,
+        baseExportBlob: exportBlob,
     };
 }
 

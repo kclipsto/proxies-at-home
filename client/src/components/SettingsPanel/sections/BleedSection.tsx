@@ -12,11 +12,9 @@ export function BleedSection() {
     const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
     const bleedEdge = useSettingsStore((state) => state.bleedEdge);
     const bleedEdgeUnit = useSettingsStore((state) => state.bleedEdgeUnit);
-    const darkenNearBlack = useSettingsStore((state) => state.darkenNearBlack);
     const setBleedEdgeWidth = useSettingsStore((state) => state.setBleedEdgeWidth);
     const setBleedEdge = useSettingsStore((state) => state.setBleedEdge);
     const setBleedEdgeUnit = useSettingsStore((state) => state.setBleedEdgeUnit);
-    const setDarkenNearBlack = useSettingsStore((state) => state.setDarkenNearBlack);
 
     // Images With Bleed Settings
     const withBleedSourceAmount = useSettingsStore((state) => state.withBleedSourceAmount);
@@ -97,16 +95,6 @@ export function BleedSection() {
                 />
                 <Label htmlFor="bleed-edge" className="flex-1 cursor-pointer">Enable Bleed Edge</Label>
             </div>
-
-            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 -ml-2">
-                <Checkbox
-                    id="darken-near-black"
-                    checked={darkenNearBlack}
-                    onChange={(e) => setDarkenNearBlack(e.target.checked)}
-                />
-                <Label htmlFor="darken-near-black" className="flex-1 cursor-pointer">Darken Near-Black Pixels</Label>
-            </div>
-
 
 
             {/* Images With Bleed Settings */}

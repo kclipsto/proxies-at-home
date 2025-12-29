@@ -21,7 +21,7 @@ vi.mock("../store", () => ({
   useSettingsStore: Object.assign(
     vi.fn((selector) => selector({
       dpi: 300,
-      darkenNearBlack: false,
+      darkenMode: 'none',
       hasHydrated: true,
     })),
     {
@@ -31,7 +31,7 @@ vi.mock("../store", () => ({
       },
       getState: vi.fn().mockReturnValue({
         dpi: 300,
-        darkenNearBlack: false,
+        darkenMode: 'none',
         bleedEdgeWidth: 1, // Default matching default props in tests
         unit: 'mm',
       }),

@@ -10,7 +10,7 @@ import { useSettingsStore } from '../store/settings';
  * Normalized settings for worker consumption.
  * All units are converted to mm for consistency.
  */
-export interface WorkerBleedSettings {
+interface WorkerBleedSettings {
     // Global bleed toggle and width (always in mm)
     bleedEdge: boolean;
     bleedEdgeWidthMm: number;
@@ -22,7 +22,7 @@ export interface WorkerBleedSettings {
     withBleedSourceAmount: number;
 
     // Processing options
-    darkenNearBlack: boolean;
+    darkenMode: 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full';
     dpi: number;
 }
 
@@ -48,7 +48,7 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     guideWidthCssPx: number;
     cutLineStyle: 'none' | 'edges' | 'full';
     perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
-    guidePlacement: 'inside' | 'outside';
+    guidePlacement: 'inside' | 'outside' | 'center';
 
     // Right-align incomplete rows (for backs export)
     rightAlignRows?: boolean;
@@ -58,7 +58,7 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
  * Serialize current settings store state to WorkerBleedSettings.
  * Use this for image processing workers.
  */
-export function serializeBleedSettingsForWorker(): WorkerBleedSettings {
+function serializeBleedSettingsForWorker(): WorkerBleedSettings {
     const state = useSettingsStore.getState();
 
     // Convert bleed width to mm if needed
@@ -79,7 +79,7 @@ export function serializeBleedSettingsForWorker(): WorkerBleedSettings {
         bleedEdgeWidthMm,
         sourceSettings,
         withBleedSourceAmount: state.withBleedSourceAmount,
-        darkenNearBlack: state.darkenNearBlack,
+        darkenMode: state.darkenMode,
         dpi: state.dpi,
     };
 }

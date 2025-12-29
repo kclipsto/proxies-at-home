@@ -20,9 +20,25 @@ export interface Image {
   generatedHasBuiltInBleed?: boolean;
   generatedBleedMode?: string;
 
-  // Darkened versions for instant toggle
+  // Darkened versions for each mode (instant toggle)
+  // Mode 1: Darken All (legacy threshold)
+  displayBlobDarkenAll?: Blob;
+  exportBlobDarkenAll?: Blob;
+  // Mode 2: Contrast Edges (adaptive edge-only)
+  displayBlobContrastEdges?: Blob;
+  exportBlobContrastEdges?: Blob;
+  // Mode 3: Contrast Full (adaptive full-card)
+  displayBlobContrastFull?: Blob;
+  exportBlobContrastFull?: Blob;
+  // Legacy field for backwards compatibility (maps to contrast-edges)
   displayBlobDarkened?: Blob;
   exportBlobDarkened?: Blob;
+
+  // For Card Editor (M1) and Full Canvas (M2)
+  baseDisplayBlob?: Blob;      // Processed image, NO darkening applied
+  baseExportBlob?: Blob;       // Same but export resolution
+  distanceFieldBlob?: Blob;    // Edge distance texture from JFA
+  darknessFactor?: number;     // 0-1, pre-computed from histogram
 
   sourceUrl?: string;
   imageUrls?: string[];
@@ -39,10 +55,19 @@ export interface Cardback {
 
   // Processed versions
   displayBlob?: Blob;
-  displayBlobDarkened?: Blob;
   exportBlob?: Blob;
-  exportBlobDarkened?: Blob;
   exportBleedWidth?: number;
+
+  // Darkened versions for each mode
+  displayBlobDarkenAll?: Blob;
+  exportBlobDarkenAll?: Blob;
+  displayBlobContrastEdges?: Blob;
+  exportBlobContrastEdges?: Blob;
+  displayBlobContrastFull?: Blob;
+  exportBlobContrastFull?: Blob;
+  // Legacy field for backwards compatibility
+  displayBlobDarkened?: Blob;
+  exportBlobDarkened?: Blob;
 
   // Generation metadata
   generatedHasBuiltInBleed?: boolean;
@@ -76,7 +101,15 @@ export interface CachedImage {
   size: number;       // Size in bytes
 }
 
-export class ProxxiedDexie extends Dexie {
+// Pre-rendered effect cache for cards with overrides (holo, brightness, etc.)
+export interface EffectCacheEntry {
+  key: string;        // imageId + hash(overrides)
+  blob: Blob;         // Pre-rendered export image
+  size: number;       // Size in bytes
+  cachedAt: number;   // For LRU eviction
+}
+
+class ProxxiedDexie extends Dexie {
   // 'cards' is the name of the table
   // '&uuid' makes 'uuid' a unique index and primary key
   // 'name, set, number' creates indexes for efficient lookup
@@ -96,6 +129,9 @@ export class ProxxiedDexie extends Dexie {
 
   // Persistent metadata cache
   cardMetadataCache!: Table<CachedMetadata, string>;
+
+  // Pre-rendered effect cache (for cards with overrides)
+  effectCache!: Table<EffectCacheEntry, string>;
 
 
   constructor() {
@@ -148,6 +184,16 @@ export class ProxxiedDexie extends Dexie {
       settings: '&id',
       imageCache: '&url, cachedAt',
       cardMetadataCache: 'id, name, set, number, cachedAt',
+    });
+    // Version 8: Add effectCache table for pre-rendered exports
+    this.version(8).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
     });
   }
 }

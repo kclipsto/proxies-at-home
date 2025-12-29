@@ -34,8 +34,8 @@ describe("useImageCache", () => {
             const images: Image[] = [image1];
 
             const { result, rerender } = renderHook(
-                ({ imgs, darken }) => useImageCache(imgs, darken),
-                { initialProps: { imgs: images, darken: false } }
+                ({ imgs, mode }) => useImageCache(imgs, mode),
+                { initialProps: { imgs: images, mode: 'none' as const } }
             );
 
             const firstResult = result.current.processedImageUrls;
@@ -48,7 +48,7 @@ describe("useImageCache", () => {
                 displayBlob: new Blob([new Array(100).fill('a').join('')]), // New instance, same size
             };
 
-            rerender({ imgs: [image1Refresh], darken: false });
+            rerender({ imgs: [image1Refresh], mode: 'none' as const });
 
             const secondResult = result.current.processedImageUrls;
 
@@ -63,8 +63,8 @@ describe("useImageCache", () => {
             const images: Image[] = [image1];
 
             const { rerender } = renderHook(
-                ({ imgs, darken }) => useImageCache(imgs, darken),
-                { initialProps: { imgs: images, darken: false } }
+                ({ imgs, mode }) => useImageCache(imgs, mode),
+                { initialProps: { imgs: images, mode: 'none' as const } }
             );
 
             // First render creates one URL
@@ -76,7 +76,7 @@ describe("useImageCache", () => {
                     ...image1,
                     displayBlob: new Blob([new Array(100).fill('x').join('')]),
                 };
-                rerender({ imgs: [refreshedImage], darken: false });
+                rerender({ imgs: [refreshedImage], mode: 'none' as const });
             }
 
             // Should still only have the initial URL creation
@@ -88,8 +88,8 @@ describe("useImageCache", () => {
             const images: Image[] = [image1];
 
             const { result, rerender } = renderHook(
-                ({ imgs, darken }) => useImageCache(imgs, darken),
-                { initialProps: { imgs: images, darken: false } }
+                ({ imgs, mode }) => useImageCache(imgs, mode),
+                { initialProps: { imgs: images, mode: 'none' as const } }
             );
 
             const firstUrl = result.current.processedImageUrls["img1"];
@@ -101,7 +101,7 @@ describe("useImageCache", () => {
                 displayBlob: new Blob([new Array(200).fill('a').join('')]), // Different size
             };
 
-            rerender({ imgs: [changedImage], darken: false });
+            rerender({ imgs: [changedImage], mode: 'none' as const });
 
             const secondUrl = result.current.processedImageUrls["img1"];
 
@@ -117,8 +117,8 @@ describe("useImageCache", () => {
             const images: Image[] = [image1, image2];
 
             const { result } = renderHook(
-                ({ imgs, darken }) => useImageCache(imgs, darken),
-                { initialProps: { imgs: images, darken: false } }
+                ({ imgs, mode }) => useImageCache(imgs, mode),
+                { initialProps: { imgs: images, mode: 'none' as const } }
             );
 
             expect(Object.keys(result.current.processedImageUrls)).toHaveLength(2);
@@ -131,23 +131,24 @@ describe("useImageCache", () => {
         });
     });
 
-    describe("darkenNearBlack toggle", () => {
-        it("should use displayBlobDarkened when darkenNearBlack is true", () => {
+    describe("darkenMode toggle", () => {
+        it("should use correct blob based on darkenMode", () => {
             const image: Image = {
                 id: "img1",
                 displayBlob: new Blob([new Array(100).fill('a').join('')]),
-                displayBlobDarkened: new Blob([new Array(150).fill('b').join('')]), // Different size
+                displayBlobContrastEdges: new Blob([new Array(150).fill('b').join('')]), // Different size
                 refCount: 1,
             };
 
+            type Props = { imgs: Image[]; mode: 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full' };
             const { result, rerender } = renderHook(
-                ({ imgs, darken }) => useImageCache(imgs, darken),
-                { initialProps: { imgs: [image], darken: false } }
+                ({ imgs, mode }: Props) => useImageCache(imgs, mode),
+                { initialProps: { imgs: [image], mode: 'none' } as Props }
             );
 
             const normalUrl = result.current.processedImageUrls["img1"];
 
-            rerender({ imgs: [image], darken: true });
+            rerender({ imgs: [image], mode: 'contrast-edges' });
 
             const darkenedUrl = result.current.processedImageUrls["img1"];
 

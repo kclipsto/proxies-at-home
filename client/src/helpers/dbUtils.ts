@@ -784,33 +784,7 @@ export async function changeCardArtwork(
  * @param cardUuids Array of card UUIDs to update.
  * @param bleedSettings The bleed settings to apply.
  */
-export async function updateCardBleedSettings(
-  cardUuids: string[],
-  bleedSettings: {
-    bleedMode?: 'generate' | 'existing' | 'none';
-    existingBleedMm?: number;
-  }
-): Promise<void> {
-  if (cardUuids.length === 0) return;
 
-  await db.transaction("rw", db.cards, async () => {
-    const changes: Partial<CardOption> = {};
-
-    if (bleedSettings.bleedMode !== undefined) {
-      changes.bleedMode = bleedSettings.bleedMode;
-    }
-    if (bleedSettings.existingBleedMm !== undefined) {
-      changes.existingBleedMm = bleedSettings.existingBleedMm;
-    }
-
-    await db.cards.bulkUpdate(
-      cardUuids.map((uuid) => ({
-        key: uuid,
-        changes,
-      }))
-    );
-  });
-}
 
 /**
  * Re-balances the 'order' property of all cards to be integers,

@@ -192,9 +192,4 @@ export async function getCardByName(name: string, signal?: AbortSignal): Promise
     return mapScryfallDataToCard(data);
 }
 
-export async function getCardBySetAndNumber(set: string, number: string, signal?: AbortSignal): Promise<ScryfallCard> {
-    const data = await apiCall<RawScryfallCard>(() => scryfallApi.get(`/cards/${set}/${number}`, {
-        signal,
-    }));
-    return mapScryfallDataToCard(data);
-}
+

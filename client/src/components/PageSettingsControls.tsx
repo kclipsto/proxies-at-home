@@ -22,6 +22,7 @@ import {
 import { SettingsPanel } from "./SettingsPanel/SettingsPanel";
 import { LayoutSection } from "./SettingsPanel/sections/LayoutSection";
 import { BleedSection } from "./SettingsPanel/sections/BleedSection";
+import { DarkenSection } from "./SettingsPanel/sections/DarkenSection";
 import { GuidesSection } from "./SettingsPanel/sections/GuidesSection";
 import { CardSection } from "./SettingsPanel/sections/CardSection";
 import { FilterSortSection } from "./SettingsPanel/sections/FilterSortSection";
@@ -32,6 +33,7 @@ import {
   Filter,
   Grid3X3,
   LayoutTemplate,
+  Moon,
   ScanLine,
   Settings,
   ChevronsDown,
@@ -166,6 +168,20 @@ export function PageSettingsControls({
             <BleedSection />
           </SettingsPanel>
         );
+      case "darken":
+        return (
+          <SettingsPanel
+            key={id}
+            id={id}
+            title="Darken Pixels"
+            isOpen={isOpen}
+            onToggle={onToggle}
+            icon={Moon}
+            mobile={mobile}
+          >
+            <DarkenSection />
+          </SettingsPanel>
+        );
       case "guides":
         return (
           <SettingsPanel
@@ -232,7 +248,7 @@ export function PageSettingsControls({
   if (isCollapsed) {
     return (
       <div
-        className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 overflow-x-hidden border-l border-gray-200 dark:border-gray-600"
+        className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 overflow-x-hidden border-l border-gray-200 dark:border-gray-600 select-none"
         onDoubleClick={() => toggleSettingsPanel()}
       >
         {settingsPanelState.order.map((id) => {
@@ -246,6 +262,10 @@ export function PageSettingsControls({
             case "bleed":
               Icon = Droplet;
               label = "Bleed";
+              break;
+            case "darken":
+              Icon = Moon;
+              label = "Darken";
               break;
             case "guides":
               Icon = ScanLine;
@@ -355,7 +375,7 @@ export function PageSettingsControls({
       }}
       disabled={!!activeId}
       hideScrollbars={true}
-      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden overscroll-x-none"
+      className="h-full flex flex-col bg-gray-100 dark:bg-gray-700 border-l border-gray-200 dark:border-gray-600 overflow-x-hidden overscroll-x-none select-none"
     >
       {settingsContent}
     </PullToRefresh>

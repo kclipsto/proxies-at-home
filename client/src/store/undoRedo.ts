@@ -6,7 +6,9 @@ import { create } from "zustand";
 export type ActionType =
     | "ADD_CARDS"
     | "DELETE_CARD"
+    | "DELETE_CARDS_BATCH"
     | "DUPLICATE_CARD"
+    | "DUPLICATE_CARDS_BATCH"
     | "REORDER_CARDS"
     | "REORDER_MULTIPLE_CARDS"
     | "CHANGE_ARTWORK"

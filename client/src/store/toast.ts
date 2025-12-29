@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { useSettingsStore } from "./settings";
 
-export interface Toast {
+interface Toast {
     id: string;
-    type: "processing" | "metadata" | "success";
+    type: "processing" | "metadata" | "success" | "copy";
     message: string;
     dismissible: boolean;
 }
@@ -19,6 +19,7 @@ type ToastStore = {
     showMetadataToast: () => void;
     hideMetadataToast: () => void;
     showSuccessToast: (cardName: string) => void;
+    showCopyToast: (message: string) => void;
 };
 
 export const useToastStore = create<ToastStore>((set, get) => ({
@@ -91,6 +92,21 @@ export const useToastStore = create<ToastStore>((set, get) => ({
         const id = addToast({
             type: "success",
             message: `Added ${cardName}`,
+            dismissible: false,
+        });
+        // Auto-dismiss after 2 seconds
+        setTimeout(() => {
+            removeToast(id);
+        }, 2000);
+    },
+
+    showCopyToast: (message: string) => {
+        const { toasts, addToast, removeToast } = get();
+        // Remove any existing copy toasts to prevent stacking
+        toasts.filter(t => t.type === "copy").forEach(t => removeToast(t.id));
+        const id = addToast({
+            type: "copy",
+            message,
             dismissible: false,
         });
         // Auto-dismiss after 2 seconds

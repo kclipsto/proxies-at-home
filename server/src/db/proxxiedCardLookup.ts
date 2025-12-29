@@ -21,9 +21,6 @@ export function lookupCardBySetNumber(
       LIMIT 1
     `);
         const row = stmt.get(setCode.toLowerCase(), collectorNumber) as CardRow | undefined;
-        if (!row) {
-            console.log(`[DB Miss] set=${setCode.toLowerCase()} num=${collectorNumber}`);
-        }
         return row ? rowToScryfallCard(row) : null;
     } catch {
         // Database might not be initialized yet, return null
@@ -103,7 +100,6 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
             card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
         };
         stmt.run(cardData);
-        console.log(`[DB Cache] Cached: ${card.name} (${cardData.set_code}/${cardData.collector_number}) lang=${cardData.lang}`);
     } catch (error) {
         console.warn('[DB] Failed to cache card:', (error as Error).message);
     }

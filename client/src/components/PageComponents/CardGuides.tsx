@@ -37,16 +37,38 @@ export const CardGuides = memo(function CardGuides({
                         ? (val: number | string) => `calc(${typeof val === 'number' ? `${val}px` : val} - ${guideWidthPx}px)`
                         : (val: number | string) => typeof val === 'number' ? `${val}px` : val;
 
-                    const length = guidePlacement === 'outside' ? `calc(2mm + ${guideWidthPx}px)` : '2mm';
+                    // Length of one leg = 2.5 * radius. Radius = 2.5mm, so Leg = 6.25mm
+                    const legLengthMm = 6.25;
+                    const length = guidePlacement === 'outside'
+                        ? `calc(${legLengthMm}mm + ${guideWidthPx}px)`
+                        : `${legLengthMm}mm`;
+
                     const isDashed = perCardGuideStyle === 'dashed-corners';
 
                     // For dashed corners, use repeating linear gradient to simulate dashed lines
-                    const dashSize = Math.max(2, guideWidthPx);
-                    const getBackgroundStyle = (isHorizontal: boolean): React.CSSProperties => {
+                    const getBackgroundStyle = (direction: string): React.CSSProperties => {
                         if (isDashed) {
-                            const direction = isHorizontal ? 'to right' : 'to bottom';
+                            // We want exactly 2.5 dashes along the leg length (6.25mm)
+                            // Total path (2 legs) has 5 dashes + 4 gaps.
+                            // Total Length = 12.5mm.
+                            // Dash d, Gap g=0.6d. Total = 7.4d.
+                            // d = 12.5 / 7.4 approx 1.69mm.
+                            const totalL = 12.5;
+                            const d = totalL / 7.4; // mm
+                            const g = d * 0.6; // mm
+
+                            // Convert to px
+                            const dPx = (d * 96) / 25.4;
+                            const gPx = (g * 96) / 25.4;
+
+                            // Pattern starts from the CORNER (0px)
+                            // 1. 0 -> d/2 (Half dash at corner)
+                            // 2. Gap g
+                            // 3. Dash d
+                            // 4. Gap g
+                            // 5. Dash d
                             return {
-                                background: `repeating-linear-gradient(${direction}, ${guideColor} 0px, ${guideColor} ${dashSize}px, transparent ${dashSize}px, transparent ${dashSize * 2}px)`,
+                                background: `repeating-linear-gradient(${direction}, ${guideColor} 0px, ${guideColor} ${dPx / 2}px, transparent ${dPx / 2}px, transparent ${dPx / 2 + gPx}px, ${guideColor} ${dPx / 2 + gPx}px, ${guideColor} ${dPx / 2 + gPx + dPx}px, transparent ${dPx / 2 + gPx + dPx}px, transparent ${dPx / 2 + gPx + dPx + gPx}px, ${guideColor} ${dPx / 2 + gPx + dPx + gPx}px, ${guideColor} ${dPx / 2 + gPx + dPx + gPx + dPx}px)`,
                             };
                         }
                         return { backgroundColor: guideColor };
@@ -63,7 +85,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    ...getBackgroundStyle(true),
+                                    ...getBackgroundStyle('to right'),
                                 }}
                             />
                             <div
@@ -74,7 +96,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    ...getBackgroundStyle(false),
+                                    ...getBackgroundStyle('to bottom'),
                                 }}
                             />
 
@@ -87,7 +109,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    ...getBackgroundStyle(true),
+                                    ...getBackgroundStyle('to left'),
                                 }}
                             />
                             <div
@@ -98,7 +120,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    ...getBackgroundStyle(false),
+                                    ...getBackgroundStyle('to bottom'),
                                 }}
                             />
 
@@ -111,7 +133,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    ...getBackgroundStyle(true),
+                                    ...getBackgroundStyle('to right'),
                                 }}
                             />
                             <div
@@ -122,7 +144,7 @@ export const CardGuides = memo(function CardGuides({
                                     left: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    ...getBackgroundStyle(false),
+                                    ...getBackgroundStyle('to top'),
                                 }}
                             />
 
@@ -135,7 +157,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: length,
                                     height: `${guideWidthPx}px`,
-                                    ...getBackgroundStyle(true),
+                                    ...getBackgroundStyle('to left'),
                                 }}
                             />
                             <div
@@ -146,7 +168,7 @@ export const CardGuides = memo(function CardGuides({
                                     right: offsetCalc(guideOffset),
                                     width: `${guideWidthPx}px`,
                                     height: length,
-                                    ...getBackgroundStyle(false),
+                                    ...getBackgroundStyle('to top'),
                                 }}
                             />
                         </>

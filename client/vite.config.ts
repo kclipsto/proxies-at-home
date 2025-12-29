@@ -74,9 +74,12 @@ export default defineConfig({
           'vendor-ui': ['flowbite-react', 'lucide-react', 'swiper', '@use-gesture/react'],
           'vendor-db': ['dexie', 'dexie-react-hooks'],
           'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/modifiers', '@dnd-kit/sortable'],
+          'vendor-pixi': ['pixi.js'],
           pdf: ['pdf-lib'],
         },
       },
     },
+    // vendor-pixi is ~502KB which can't be split further
+    chunkSizeWarningLimit: 550,
   },
 });

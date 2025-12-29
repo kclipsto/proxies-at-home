@@ -14,7 +14,7 @@ export function getEnrichmentAbortController(): AbortController {
 /**
  * Reset the abort controller (call after cancellation to allow new enrichments)
  */
-export function resetEnrichmentAbortController(): void {
+function resetEnrichmentAbortController(): void {
     enrichmentAbortController = new AbortController();
 }
 

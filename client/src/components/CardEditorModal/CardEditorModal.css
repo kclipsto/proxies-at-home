@@ -1,0 +1,197 @@
+/**
+ * CardEditorModal CSS
+ */
+
+/* Modal overrides */
+.card-editor-modal [data-testid="modal-content"] {
+    background: #1f2937;
+    max-width: 1100px;
+}
+
+.card-editor-modal [data-testid="modal-header"] {
+    border-bottom-color: #374151;
+    background: #1f2937;
+}
+
+.card-editor-modal [data-testid="modal-body"] {
+    padding: 0 !important;
+}
+
+.card-editor-modal [data-testid="modal-footer"] {
+    border-top-color: #374151;
+    background: #1f2937;
+}
+
+/* Footer layout */
+.card-editor-footer {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.card-editor-footer-right {
+    display: flex;
+    gap: 8px;
+}
+
+/* Settings panel scrollbar */
+.settings-panel-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.settings-panel-scroll::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+.settings-panel-scroll::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 3px;
+}
+
+/* Custom styled slider */
+.editor-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: #4b5563;
+    outline: none;
+    cursor: pointer;
+}
+
+.editor-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: 2px solid #1e3a8a;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s, background-color 0.1s;
+}
+
+.editor-slider::-webkit-slider-thumb:hover {
+    background: #60a5fa;
+    transform: scale(1.1);
+}
+
+.editor-slider::-webkit-slider-thumb:active {
+    background: #2563eb;
+    transform: scale(0.95);
+}
+
+.editor-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: 2px solid #1e3a8a;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.editor-slider::-moz-range-thumb:hover {
+    background: #60a5fa;
+}
+
+.editor-slider::-moz-range-track {
+    background: #4b5563;
+    height: 6px;
+    border-radius: 3px;
+}
+
+/* Focus styles */
+.editor-slider:focus {
+    outline: none;
+}
+
+.editor-slider:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+}
+
+/* Select styling */
+.card-editor-modal select {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #e5e7eb;
+}
+
+.card-editor-modal select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+    .card-editor-modal [data-testid="modal-content"] {
+        max-width: 100%;
+        margin: 0;
+        border-radius: 0;
+        max-height: 100vh;
+        height: 100vh;
+    }
+
+    .card-editor-modal .card-editor-body {
+        flex-direction: column;
+        height: calc(100vh - 120px);
+    }
+
+    .card-editor-modal .card-editor-preview {
+        flex: 0 0 50%;
+        min-height: 200px;
+    }
+
+    .card-editor-modal .card-editor-settings {
+        width: 100%;
+        flex: 1;
+        border-left: none;
+        border-top: 1px solid #4b5563;
+    }
+
+    .card-editor-modal .card-editor-settings h2 {
+        font-size: 1.25rem;
+    }
+
+    .card-editor-modal .card-editor-settings .p-3 {
+        padding: 0.5rem;
+    }
+
+    .card-editor-footer {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .card-editor-footer-right {
+        flex-wrap: wrap;
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .card-editor-footer button {
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+}
+
+/* Landscape mobile */
+@media (max-width: 768px) and (orientation: landscape) {
+    .card-editor-modal .card-editor-body {
+        flex-direction: row;
+        height: calc(100vh - 100px);
+    }
+
+    .card-editor-modal .card-editor-preview {
+        flex: 1;
+        min-height: auto;
+    }
+
+    .card-editor-modal .card-editor-settings {
+        width: 280px;
+        flex: 0 0 280px;
+        border-top: none;
+        border-left: 1px solid #4b5563;
+    }
+}

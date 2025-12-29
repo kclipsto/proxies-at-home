@@ -14,7 +14,6 @@ interface WorkerMessage {
   bleedMode?: 'generate' | 'existing' | 'none';  // Per-card bleed override
   existingBleedMm?: number;  // Amount when bleedMode is 'existing'
   dpi: number;
-  darkenNearBlack?: boolean;
 }
 
 interface WorkerSuccessResponse {
@@ -25,8 +24,19 @@ interface WorkerSuccessResponse {
   displayBlob: Blob;
   displayDpi: number;
   displayBleedWidth: number;
+  // Per-mode darkened blobs
+  exportBlobDarkenAll: Blob;
+  displayBlobDarkenAll: Blob;
+  exportBlobContrastEdges: Blob;
+  displayBlobContrastEdges: Blob;
+  exportBlobContrastFull: Blob;
+  displayBlobContrastFull: Blob;
+  // Legacy
   exportBlobDarkened: Blob;
   displayBlobDarkened: Blob;
+  // For Card Editor live preview (M1.5)
+  baseDisplayBlob: Blob;  // Same as displayBlob - undarkened version for CardCanvas
+  baseExportBlob: Blob;   // Same as exportBlob - undarkened export version for CardCanvas
   imageCacheHit?: boolean; // True if image was served from 7-day persistent cache
   error?: undefined;
 }
@@ -202,7 +212,6 @@ export class ImageProcessor {
       worker.postMessage(currentTask.message);
     } else {
       // No worker available, put task back at the front of its respective queue
-      // console.log('[PerfTrace] ImageProcessor: No worker available, queuing task', task.message.uuid);
       if (task.priority === Priority.HIGH) {
         this.highPriorityQueue.unshift(task);
       } else {
