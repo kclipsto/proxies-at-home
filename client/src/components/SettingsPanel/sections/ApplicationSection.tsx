@@ -5,8 +5,8 @@ import { createPortal } from "react-dom";
 import { db } from "@/db";
 import { cancelAllProcessing } from "@/helpers/cancellationService";
 import { LANGUAGE_OPTIONS } from "@/constants";
-import { AutoTooltip, ArtSourceToggle } from "../../common";
-import { HelpCircle } from "lucide-react";
+import { AutoTooltip, ArtSourceToggle, UpdateChannelSelector } from "../../common";
+import { HelpCircle, Coffee } from "lucide-react";
 
 export function ApplicationSection() {
     const resetSettings = useSettingsStore((state) => state.resetSettings);
@@ -61,8 +61,8 @@ export function ApplicationSection() {
         } catch (e) {
             console.error("Error clearing app data:", e);
         } finally {
-            // Force a hard reload from the server
-            window.location.href = window.location.origin;
+            // Force a hard reload
+            window.location.reload();
         }
     };
 
@@ -108,68 +108,75 @@ export function ApplicationSection() {
                 </Label>
             </div>
 
-            <div className="w-full flex justify-center">
-                <Button color="gray" fullSized onClick={resetSettings}>
-                    Reset Settings
-                </Button>
-            </div>
+            <Button
+                fullSized
+                onClick={resetSettings}
+                className="bg-gray-500 dark:bg-gray-600 text-white hover:bg-gray-600 dark:hover:bg-gray-500 border-0"
+            >
+                Reset Settings
+            </Button>
 
-            <div className="w-full flex justify-center">
-                <Button color="red" fullSized onClick={handleReset}>
-                    Reset App Data
-                </Button>
-            </div>
+            <Button color="red" fullSized onClick={handleReset}>
+                Reset App Data
+            </Button>
 
             <a
                 href="https://buymeacoffee.com/kaiserclipston"
                 target="_blank"
                 rel="noopener noreferrer"
+                className="block"
             >
                 <Button className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-500 dark:hover:bg-yellow-600 w-full">
+                    <Coffee className="mr-2 h-4 w-4" />
                     Buy Me a Coffee
                 </Button>
             </a>
 
-            <div className="mt-auto space-y-3 pt-4">
-                <a
-                    href="https://github.com/kclipsto/proxies-at-home"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-md underline text-center text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
-                >
-                    Code by Kaiser Clipston (Github)
-                </a>
-            </div>
+            <Button
+                fullSized
+                color="blue"
+                onClick={() => {
+                    // Dispatch custom event to open About modal
+                    window.dispatchEvent(new CustomEvent('open-about-modal'));
+                }}
+            >
+                About Proxxied
+            </Button>
 
-            {showResetConfirmModal && createPortal(
-                <div className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
-                        <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-                            Confirm Reset App Data
+            {/* Update channel selector - only visible in Electron */}
+            <UpdateChannelSelector />
+
+            {
+                showResetConfirmModal && createPortal(
+                    <div className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center">
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+                            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                                Confirm Reset App Data
+                            </div>
+                            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                                This will clear all saved Proxxied data (cards, settings)
+                                and reload the page. Image cache will be preserved. Continue?
+                            </div>
+                            <div className="flex justify-center gap-4">
+                                <Button
+                                    color="failure"
+                                    className="bg-red-600 hover:bg-red-700 text-white"
+                                    onClick={confirmReset}
+                                >
+                                    Yes, I'm sure
+                                </Button>
+                                <Button
+                                    color="gray"
+                                    onClick={() => setShowResetConfirmModal(false)}
+                                >
+                                    No, cancel
+                                </Button>
+                            </div>
                         </div>
-                        <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                            This will clear all saved Proxxied data (cards, settings)
-                            and reload the page. Image cache will be preserved. Continue?
-                        </div>
-                        <div className="flex justify-center gap-4">
-                            <Button
-                                color="failure"
-                                className="bg-red-600 hover:bg-red-700 text-white"
-                                onClick={confirmReset}
-                            >
-                                Yes, I'm sure
-                            </Button>
-                            <Button
-                                color="gray"
-                                onClick={() => setShowResetConfirmModal(false)}
-                            >
-                                No, cancel
-                            </Button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-        </div>
+                    </div>,
+                    document.body
+                )
+            }
+        </div >
     );
 }

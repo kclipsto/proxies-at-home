@@ -6,7 +6,6 @@
  */
 
 import { useMemo, useState, useRef, useCallback, useEffect } from "react";
-import { Label } from "flowbite-react";
 import {
   DndContext,
   DragOverlay,
@@ -511,18 +510,22 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
         >
           {cards.length === 0 ? (
             // Empty state
-            <div className={`flex flex-col items-center justify-center h-full px-4 text-center`}>
-              <div className={`flex flex-col ${!mobile ? 'md:flex-row' : ''} items-center gap-2 md:gap-4`}>
-                <Label className={`text-5xl ${!mobile ? 'md:text-7xl' : ''} font-bold whitespace-nowrap`}>
+            <div className="flex flex-col items-center justify-center h-full px-4 text-center">
+              <div className={`flex flex-col ${!mobile ? 'md:flex-row' : ''} flex-wrap items-center justify-center gap-x-4 gap-y-3 mt-4 md:mt-0`}>
+                <span className={`text-3xl ${!mobile ? 'sm:text-4xl md:text-5xl lg:text-7xl' : ''} font-bold text-gray-900 dark:text-white`}>
                   Welcome to
-                </Label>
-                <img src={fullLogo} alt="Proxxied Logo" className={`h-40 ${!mobile ? 'md:h-36' : ''}`} />
+                </span>
+                <img
+                  src={fullLogo}
+                  alt="Proxxied Logo"
+                  className={`h-24 ${!mobile ? 'sm:h-32 md:h-40 lg:h-36' : ''} w-auto object-contain`}
+                />
               </div>
-              <Label className="text-xl text-gray-600 mt-4">
+              <p className="font-medium text-lg md:text-xl text-gray-600 dark:text-white mt-4">
                 {mobile
                   ? "Enter a decklist or upload files in the upload tab to get started"
                   : "Enter a decklist or upload files to the left to get started"}
-              </Label>
+              </p>
             </div>
           ) : (
             // Page content wrapper - creates scrollable area sized for all pages (zoomed)

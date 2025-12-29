@@ -5,6 +5,33 @@ import fs from 'fs';
 import pkg from 'electron-updater';
 const { autoUpdater } = pkg;
 
+// Settings file for persistent electron-specific settings
+function getSettingsPath() {
+    return path.join(app.getPath('userData'), 'electron-settings.json');
+}
+
+function loadElectronSettings(): { autoUpdateEnabled?: boolean, updateChannel?: string } {
+    try {
+        const settingsPath = getSettingsPath();
+        if (fs.existsSync(settingsPath)) {
+            return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        }
+    } catch (e) {
+        console.error('[Electron] Failed to load settings:', e);
+    }
+    return {};
+}
+
+function saveElectronSettings(settings: { autoUpdateEnabled?: boolean, updateChannel?: string }) {
+    try {
+        const settingsPath = getSettingsPath();
+        const existing = loadElectronSettings();
+        fs.writeFileSync(settingsPath, JSON.stringify({ ...existing, ...settings }, null, 2));
+    } catch (e) {
+        console.error('[Electron] Failed to save settings:', e);
+    }
+}
+
 // Handle ESM imports for __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +56,23 @@ let serverPort = 3001; // Default port, will be updated if server starts success
 // Auto-updater logging
 autoUpdater.logger = console;
 
+// Configure update channel based on user preference or version
+// Users can choose: 'latest' (all updates) or 'stable' (major versions only)
+function configureUpdateChannel() {
+    const settings = loadElectronSettings();
+
+    // Check if user has set a specific channel
+    if (settings.updateChannel === 'stable' || settings.updateChannel === 'latest') {
+        autoUpdater.channel = settings.updateChannel;
+        console.log(`[Electron] Update channel: ${settings.updateChannel} (user preference)`);
+        return;
+    }
+
+    // Default to 'latest' channel for all users
+    autoUpdater.channel = 'latest';
+    console.log('[Electron] Update channel: latest (default)');
+}
+
 function createWindow() {
     const isDev = !app.isPackaged;
 
@@ -40,8 +84,8 @@ function createWindow() {
         : path.join(process.resourcesPath, 'app.asar', 'client', 'dist', 'pwa-512x512.png');
 
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
+        width: 1400,
+        height: 900,
         icon: iconPath,
         webPreferences: {
             preload: path.join(__dirname, 'preload.cjs'),
@@ -108,6 +152,13 @@ function createWindow() {
             label: 'Help',
             submenu: [
                 {
+                    label: 'About Proxxied',
+                    click: () => {
+                        mainWindow?.webContents.send('show-about');
+                    }
+                },
+                { type: 'separator' },
+                {
                     label: 'Check for Updates',
                     click: () => {
                         autoUpdater.checkForUpdatesAndNotify();
@@ -119,9 +170,15 @@ function createWindow() {
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
 
-    // Check for updates on startup
+    // Check for updates on startup (if enabled)
     if (app.isPackaged) {
-        autoUpdater.checkForUpdatesAndNotify();
+        configureUpdateChannel();
+        const settings = loadElectronSettings();
+        if (settings.autoUpdateEnabled !== false) { // Default to enabled
+            autoUpdater.checkForUpdatesAndNotify();
+        } else {
+            console.log('[Electron] Auto-update check disabled by user');
+        }
     }
 
     mainWindow.on('closed', () => {
@@ -212,7 +269,26 @@ app.whenReady().then(async () => {
     }
 
     ipcMain.handle('get-server-url', () => `http://localhost:${serverPort}`);
-
+    ipcMain.handle('get-app-version', () => app.getVersion());
+    ipcMain.handle('get-update-channel', () => autoUpdater.channel || 'latest');
+    ipcMain.handle('set-update-channel', (_event, channel: string) => {
+        if (channel === 'stable' || channel === 'latest') {
+            autoUpdater.channel = channel;
+            saveElectronSettings({ updateChannel: channel });
+            console.log(`[Electron] Update channel changed to: ${channel}`);
+            return true;
+        }
+        return false;
+    });
+    ipcMain.handle('get-auto-update-enabled', () => {
+        const settings = loadElectronSettings();
+        return settings.autoUpdateEnabled !== false; // Default to true
+    });
+    ipcMain.handle('set-auto-update-enabled', (_event, enabled: boolean) => {
+        saveElectronSettings({ autoUpdateEnabled: enabled });
+        console.log(`[Electron] Auto-update enabled: ${enabled}`);
+        return true;
+    });
     createWindow();
 
     app.on('activate', () => {

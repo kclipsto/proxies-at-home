@@ -1,5 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Select } from "flowbite-react";
+import { Label, Select, Button } from "flowbite-react";
 import { NumberInput } from "@/components/common";
 import { useNormalizedInput } from "@/hooks/useInputHooks";
 import { useEffect, useState } from "react";
@@ -165,12 +165,13 @@ export function GuidesSection() {
 
                 {/* Toggle-based guide style selector */}
                 {perCardGuideStyle === 'none' ? (
-                    <button
+                    <Button
+                        fullSized
                         onClick={() => setPerCardGuideStyle('corners')}
-                        className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500"
+                        className="bg-gray-500 dark:bg-gray-600 text-white hover:bg-gray-600 dark:hover:bg-gray-500 border-0"
                     >
                         Enable Card Guides
-                    </button>
+                    </Button>
                 ) : (
                     <div className="space-y-2">
                         {/* Quick Presets - 2 rows: Square (top), Rounded (bottom) */}
@@ -377,12 +378,13 @@ export function GuidesSection() {
                         )}
 
                         {/* Disable button */}
-                        <button
+                        <Button
+                            fullSized
                             onClick={() => setPerCardGuideStyle('none')}
-                            className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500"
+                            className="bg-gray-500 dark:bg-gray-600 text-white hover:bg-gray-600 dark:hover:bg-gray-500 border-0"
                         >
                             Disable Card Guides
-                        </button>
+                        </Button>
                     </div>
                 )}
             </div>

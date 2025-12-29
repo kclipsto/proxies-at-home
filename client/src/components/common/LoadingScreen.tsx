@@ -1,3 +1,5 @@
+import logoSvg from '/logo.svg?url';
+
 /**
  * Unified loading screen component used across all Suspense boundaries.
  * Shows the app logo with a spinning border for a consistent loading experience.
@@ -15,8 +17,9 @@ export function LoadingScreen() {
         >
             <div className="relative flex items-center justify-center">
                 <div className="absolute w-40 h-40 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-                <img src="/logo.svg" alt="Loading..." className="w-24 h-24 animate-pulse" />
+                <img src={logoSvg} alt="Loading..." className="w-24 h-24 animate-pulse" />
             </div>
         </div>
     );
 }
+
