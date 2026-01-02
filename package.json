@@ -1,27 +1,116 @@
 {
   "name": "mtg-proxy-builder",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Proxxied",
+  "main": "electron/dist/main.js",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\""
+    "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "electron:dev": "concurrently \"npm run dev --prefix client\" \"npm run build --prefix server && tsc -p electron/tsconfig.json && wait-on http://localhost:5173 && cross-env NODE_ENV=development electron electron/dist/main.js\"",
+    "electron:build": "npm run build --prefix client && npm run build --prefix server && tsc -p electron/tsconfig.json && electron-builder",
+    "electron:build:win": "npm run build --prefix client && npm run build --prefix server && cd server/node_modules/better-sqlite3 && npx prebuild-install --platform win32 --arch x64 --runtime electron --target 38.0.0 && cd ../../.. && tsc -p electron/tsconfig.json && electron-builder --win && cd server && npm rebuild better-sqlite3 && cd .."
   },
   "devDependencies": {
     "@babel/preset-typescript": "^7.28.5",
-    "concurrently": "^8.2.2",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12",
     "jest": "^30.2.0",
-    "prettier": "^3.6.2"
+    "prettier": "^3.7.4",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "com.proxiesathome.app",
+    "productName": "Proxxied",
+    "asar": true,
+    "directories": {
+      "output": "dist-app"
+    },
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "publish": {
+      "provider": "github",
+      "owner": "nathanmilot",
+      "repo": "proxies-at-home"
+    },
+    "extraResources": [
+      {
+        "from": "server/dist",
+        "to": "server/dist"
+      },
+      {
+        "from": "server/node_modules",
+        "to": "server/node_modules"
+      },
+      {
+        "from": "server/package.json",
+        "to": "server/package.json"
+      }
+    ],
+    "files": [
+      "electron/dist/**/*",
+      "electron/package.json",
+      "client/dist/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "client/public/pwa-512x512.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "client/public/pwa-512x512.png"
+    }
   },
   "keywords": [],
-  "author": "",
+  "author": "Nathan <nathan@example.com>",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@babel/preset-env": "^7.28.5",
+    "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.57.0",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/react-virtual": "^3.13.13",
+    "@testing-library/react": "^16.3.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.3",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/parser": "^8.50.1",
+    "@vitejs/plugin-react": "^5.1.2",
+    "@vitest/coverage-v8": "^4.0.16",
     "axios-retry": "^4.5.0",
+    "axios": "^1.11.0",
     "bottleneck": "^2.19.5",
     "canvas": "^3.2.0",
-    "node-fetch": "^3.3.2"
+    "cheerio": "^1.1.2",
+    "cors": "^2.8.5",
+    "dexie-react-hooks": "^4.2.0",
+    "electron-updater": "^6.6.2",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "express": "^5.2.1",
+    "flowbite-react": "^0.12.15",
+    "jsdom": "^27.4.0",
+    "lucide-react": "^0.562.0",
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "tailwindcss": "^4.1.18",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.1",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.16",
+    "zod": "^4.2.1",
+    "zustand": "^5.0.9"
   }
 }
