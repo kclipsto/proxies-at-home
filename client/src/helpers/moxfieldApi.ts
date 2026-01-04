@@ -73,24 +73,54 @@ export function isMoxfieldUrl(url: string): boolean {
     return extractMoxfieldDeckId(url) !== null;
 }
 
-// ----- API Fetching -----
+// Type for Electron API exposed via preload
+interface ElectronAPI {
+    fetchMoxfieldDeck?: (deckId: string) => Promise<MoxfieldDeck>;
+}
+
+// Check if running in Electron
+const getElectronAPI = (): ElectronAPI | undefined => {
+    return (window as { electronAPI?: ElectronAPI }).electronAPI;
+};
 
 /**
  * Fetch a deck from Moxfield by ID.
  *
- * Uses server proxy to handle Cloudflare protection.
+ * In Electron: Uses IPC to fetch via Chromium's network stack (bypasses Cloudflare).
+ * In Browser: Uses server proxy to handle Cloudflare protection.
  */
 export async function fetchMoxfieldDeck(deckId: string): Promise<MoxfieldDeck> {
+    const electronAPI = getElectronAPI();
+
+    // Try Electron's native fetch first (uses Chromium's network stack)
+    if (electronAPI?.fetchMoxfieldDeck) {
+        console.log(`[moxfieldApi] Using Electron IPC for deck: ${deckId}`);
+        try {
+            const result = await electronAPI.fetchMoxfieldDeck(deckId);
+            console.log(`[moxfieldApi] Electron IPC success: ${result.name}`);
+            return result;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error(`[moxfieldApi] Electron IPC failed: ${message}`);
+            throw error;
+        }
+    }
+
+    // Fall back to server proxy for web
+    console.log(`[moxfieldApi] Using server proxy for deck: ${deckId}`);
     const response = await fetch(`${API_BASE}/api/moxfield/decks/${deckId}`);
 
     if (!response.ok) {
+        console.error(`[moxfieldApi] Server proxy error: ${response.status} ${response.statusText}`);
         if (response.status === 404) {
             throw new Error("Deck not found. It may be private or deleted.");
         }
         throw new Error(`Failed to fetch deck: ${response.status} ${response.statusText}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log(`[moxfieldApi] Server proxy success: ${result.name}`);
+    return result;
 }
 
 // ----- Card Extraction -----
