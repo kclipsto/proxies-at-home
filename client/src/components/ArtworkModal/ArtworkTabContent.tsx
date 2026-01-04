@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Checkbox } from "flowbite-react";
 import { Search, Filter, Image, Settings } from "lucide-react";
-import { ToggleButtonGroup, CardGrid, ArtSourceToggle } from "../common";
+import { ToggleButtonGroup, CardGrid, ArtSourceToggle, FloatingZoomPanel } from "../common";
 
 import { CardbackLibrary } from "./CardbackLibrary";
 import { ScryfallArtContent } from "./ScryfallArtContent";
@@ -65,6 +65,8 @@ export interface ArtworkTabContentProps {
     activeTab?: 'artwork' | 'settings';
     setActiveTab?: (tab: 'artwork' | 'settings') => void;
     setSelectedFace?: (face: 'front' | 'back') => void;
+    /** Zoom level callback for controlled zoom */
+    setZoomLevel?: (level: number) => void;
 }
 
 /**
@@ -103,6 +105,7 @@ export function ArtworkTabContent({
     activeTab,
     setActiveTab,
     setSelectedFace,
+    setZoomLevel,
 }: ArtworkTabContentProps) {
     const [mpcFiltersCollapsed, onMpcFiltersCollapsedChange] = useState(() => {
         // Default: Hidden on mobile (true), Visible on desktop (false)
@@ -185,7 +188,7 @@ export function ArtworkTabContent({
             </header>
 
             {/* Content */}
-            <main className="flex-1 pt-0 flex flex-col overflow-hidden min-h-0">
+            <main className="relative flex-1 pt-0 flex flex-col overflow-hidden min-h-0">
                 {showCardbackLibraryGrid && (
                     <div className="flex-1 overflow-y-auto overflow-x-hidden pt-0 p-6">
                         <CardGrid>
@@ -233,11 +236,23 @@ export function ArtworkTabContent({
                                 onFiltersCollapsedChange={onMpcFiltersCollapsedChange}
                                 onFilterCountChange={setActiveFilterCount}
                                 containerClassStyle="flex-1 h-full"
+                                cardSize={zoomLevel}
                             />
                         </div>
                     )
                 }
-            </main >
+
+                {/* Floating Zoom Controls - Desktop only */}
+                {showArtworkGrid && setZoomLevel && (
+                    <FloatingZoomPanel
+                        zoom={zoomLevel}
+                        onZoomChange={setZoomLevel}
+                        minZoom={0.1}
+                        maxZoom={5}
+                        className="hidden lg:block"
+                    />
+                )}
+            </main>
 
             {/* Footer - always visible, but toggle is hidden on mobile landscape (uses header sidebar) */}
             {

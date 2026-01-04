@@ -29,3 +29,4 @@ export type { ResponsiveModalProps } from './ResponsiveModal';
 
 // Layout Components
 export { CardGrid } from './CardGrid';
+export { FloatingZoomPanel } from './FloatingZoomPanel';

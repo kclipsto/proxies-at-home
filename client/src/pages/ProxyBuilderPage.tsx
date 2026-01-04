@@ -18,7 +18,7 @@ import { enforceImageCacheLimits, enforceMetadataCacheLimits } from "../helpers/
 import { queueBulkPreRender } from "../helpers/effectCache";
 import { hasActiveAdjustments } from "../helpers/adjustmentUtils";
 import { ensureBuiltinCardbacksInDb } from "../helpers/cardbackLibrary";
-import { initializeFlipState } from "../store/selection";
+import { initializeFlipState, useSelectionStore } from "../store/selection";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 
 import { getExpectedBleedWidth, getHasBuiltInBleed, getEffectiveBleedMode, type GlobalSettings } from "../helpers/imageSpecs";
@@ -40,6 +40,14 @@ export default function ProxyBuilderPage() {
   // Images without bleed settings (new schema)
   const noBleedTargetMode = useSettingsStore((state) => state.noBleedTargetMode);
   const noBleedTargetAmount = useSettingsStore((state) => state.noBleedTargetAmount);
+
+  // Filter settings (needed for change detection in auto-flip)
+  const filterManaCost = useSettingsStore((state) => state.filterManaCost);
+  const filterColors = useSettingsStore((state) => state.filterColors);
+  const filterTypes = useSettingsStore((state) => state.filterTypes);
+  const filterCategories = useSettingsStore((state) => state.filterCategories);
+  const filterMatchType = useSettingsStore((state) => state.filterMatchType);
+
   // Convert to mm for processing (stored value may be in inches)
   const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
   const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
@@ -191,7 +199,44 @@ export default function ProxyBuilderPage() {
 
   const allCards = allCardsQuery ?? EMPTY_CARDS;
   // Apply filter/sort settings from store
-  const { filteredAndSortedCards } = useFilteredAndSortedCards(allCards);
+  const { filteredAndSortedCards, idsToFlip } = useFilteredAndSortedCards(allCards);
+
+  // Auto-flip logic based on filters
+  // Auto-flip logic based on filters - Event Driven
+  const setFlipped = useSelectionStore((state) => state.setFlipped);
+
+  // Create a stable hash of filter state to detect actual changes
+  const filtersHash = useMemo(() => {
+    return [
+      filterManaCost.join(','),
+      filterColors.sort().join(','),
+      filterTypes.sort().join(','),
+      filterCategories.sort().join(','),
+      filterMatchType
+    ].join('|');
+  }, [filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType]);
+
+  const prevFiltersHash = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Only execute auto-flip if filters actually changed (or first load)
+    const filtersChanged = prevFiltersHash.current !== filtersHash;
+
+    if (filtersChanged) {
+      // Update hash immediately so we don't re-trigger on next render if nothing else changed
+      prevFiltersHash.current = filtersHash;
+
+      if (idsToFlip && idsToFlip.length > 0) {
+        // Group by target state
+        const toTrue = idsToFlip.filter(x => x.targetState).map(x => x.uuid);
+        const toFalse = idsToFlip.filter(x => !x.targetState).map(x => x.uuid);
+
+        // Perform updates
+        if (toTrue.length > 0) setFlipped(toTrue, true);
+        if (toFalse.length > 0) setFlipped(toFalse, false);
+      }
+    }
+  }, [idsToFlip, setFlipped, filtersHash]);
   // Merge images and cardbacks for PageView - both have id, displayBlob, displayBlobDarkened
   const allImages = useMemo(() => {
     const images = allImagesQuery ?? EMPTY_IMAGES;
@@ -476,6 +521,7 @@ export default function ProxyBuilderPage() {
               getLoadingState={getLoadingState}
               ensureProcessed={ensureProcessed}
               cards={filteredAndSortedCards}
+              allCards={allCards}
               images={allImages}
               mobile={true}
               active={activeMobileView === "preview"}
@@ -530,6 +576,7 @@ export default function ProxyBuilderPage() {
             getLoadingState={getLoadingState}
             ensureProcessed={ensureProcessed}
             cards={filteredAndSortedCards}
+            allCards={allCards}
             images={allImages}
           />
 

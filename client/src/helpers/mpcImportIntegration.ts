@@ -54,7 +54,7 @@ export async function findBestMpcMatches(
     return matches;
 }
 
-function pickBestMpcCard(cards: MpcAutofillCard[], favSources: Set<string>, favTags: Set<string>): MpcAutofillCard | null {
+export function pickBestMpcCard(cards: MpcAutofillCard[], favSources: Set<string>, favTags: Set<string>): MpcAutofillCard | null {
     if (cards.length === 0) return null;
 
     // Helper to sort by DPI

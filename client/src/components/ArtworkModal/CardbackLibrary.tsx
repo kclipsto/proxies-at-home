@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { CardbackTile } from "./CardbackTile";
 import { DefaultCardbackCheckbox } from "./DefaultCardbackCheckbox";
 import { db } from "@/db";
-import { getAllCardbacks, type CardbackOption } from "@/helpers/cardbackLibrary";
+import { getAllCardbacks, invalidateCardbackUrl, type CardbackOption } from "@/helpers/cardbackLibrary";
 import type { CardOption } from "../../../../shared/types";
 
 // Local storage key for "don't show again" preference
@@ -73,11 +73,7 @@ export function CardbackLibrary({
             // Use displayName field to preserve sourceUrl for image source
             await db.cardbacks.update(cardbackId, { displayName: editingCardbackName.trim() });
             // Revoke old blob URLs before fetching new ones to prevent memory leak
-            cardbackOptions.forEach(option => {
-                if (option.imageUrl.startsWith('blob:')) {
-                    URL.revokeObjectURL(option.imageUrl);
-                }
-            });
+            invalidateCardbackUrl(cardbackId);
             getAllCardbacks().then(setCardbackOptions);
         }
         setEditingCardbackId(null);

@@ -1,5 +1,6 @@
 import { useDrag } from "@use-gesture/react";
 import { animated, useSpring } from "@react-spring/web";
+import { logoSvg } from "@/assets";
 
 import { type ReactNode, useState, forwardRef, useEffect } from "react";
 
@@ -158,7 +159,7 @@ export const PullToRefresh = forwardRef<HTMLDivElement, Props>(({ children, clas
                 className="absolute top-0 left-0 w-full flex flex-col justify-center -mt-20 h-20 items-center pointer-events-none z-0"
             >
                 <animated.img
-                    src="/logo.svg"
+                    src={logoSvg}
                     alt="Refresh"
                     className="w-8 h-8 object-contain mb-2"
                     style={{

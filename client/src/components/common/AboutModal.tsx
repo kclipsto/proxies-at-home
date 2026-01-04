@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, ModalHeader, ModalBody } from 'flowbite-react';
 import { ExternalLink, Coffee } from 'lucide-react';
 import { Button } from 'flowbite-react';
-import logo from '/logo.svg?url';
+import { logoSvg as logo } from "@/assets";
 
 interface AboutModalProps {
     isOpen: boolean;

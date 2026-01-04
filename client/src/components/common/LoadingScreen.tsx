@@ -1,4 +1,4 @@
-import logoSvg from '/logo.svg?url';
+import { logoSvg } from "@/assets";
 
 /**
  * Unified loading screen component used across all Suspense boundaries.
