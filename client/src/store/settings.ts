@@ -111,6 +111,8 @@ type Store = {
   setFilterTypes: (value: string[]) => void;
   filterCategories: string[];
   setFilterCategories: (value: string[]) => void;
+  filterFeatures: string[];
+  setFilterFeatures: (value: string[]) => void;
   filterSectionCollapsed: Record<string, boolean>;
   setFilterSectionCollapsed: (section: string, collapsed: boolean) => void;
   filterMatchType: "partial" | "exact";
@@ -206,6 +208,7 @@ const defaultPageSettings = {
   filterColors: [] as string[],
   filterTypes: [] as string[],
   filterCategories: [] as string[],
+  filterFeatures: [] as string[],
   filterSectionCollapsed: {} as Record<string, boolean>,
   filterMatchType: "partial" as "partial" | "exact",
   decklistSortAlpha: false,
@@ -512,6 +515,10 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("filterCategories", state.filterCategories);
         return { filterCategories: value };
       }),
+      setFilterFeatures: (value) => set((state) => {
+        recordSettingChange("filterFeatures", state.filterFeatures);
+        return { filterFeatures: value };
+      }),
       filterSectionCollapsed: {},
       setFilterSectionCollapsed: (section, collapsed) => set((state) => ({
         filterSectionCollapsed: { ...state.filterSectionCollapsed, [section]: collapsed }
@@ -592,6 +599,7 @@ export const useSettingsStore = create<Store>()(
           sortOrder: currentState.sortOrder,
           filterManaCost: currentState.filterManaCost,
           filterColors: currentState.filterColors,
+          filterFeatures: currentState.filterFeatures,
           filterMatchType: currentState.filterMatchType,
         };
 

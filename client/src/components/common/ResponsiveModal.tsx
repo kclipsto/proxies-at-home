@@ -7,11 +7,10 @@
  * - Backdrop blur and click-outside-to-close
  * - Portal rendering to document body
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { debugLog } from '@/helpers/debug';
 
 export interface ResponsiveModalProps {
     /** Whether the modal is visible */
@@ -30,10 +29,6 @@ export interface ResponsiveModalProps {
     header?: ReactNode;
     /** Z-index for the modal (default: z-10000) */
     zIndex?: 'z-10000' | 'z-100000' | 'z-200000';
-    /** Fixed height on desktop (lg+). Use for consistent modal sizing. Example: '65vh' */
-    desktopHeight?: string;
-    /** Enable console logging of modal height changes for debugging */
-    debugHeights?: boolean;
 }
 
 export function ResponsiveModal({
@@ -45,11 +40,7 @@ export function ResponsiveModal({
     className = '',
     header,
     zIndex = 'z-10000',
-    desktopHeight,
-    debugHeights = false,
 }: ResponsiveModalProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
-
     // Handle escape key to close
     useEffect(() => {
         if (!isOpen) return;
@@ -65,45 +56,6 @@ export function ResponsiveModal({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    // Debug height logging
-    useEffect(() => {
-        if (!isOpen || !debugHeights || !containerRef.current) return;
-
-        const logHeights = () => {
-            const container = containerRef.current;
-            if (!container) return;
-
-            debugLog('[ResponsiveModal] Container heights:', {
-                offsetHeight: container.offsetHeight,
-                clientHeight: container.clientHeight,
-                scrollHeight: container.scrollHeight,
-            });
-
-            // Log all direct children heights
-            Array.from(container.children).forEach((child, i) => {
-                const el = child as HTMLElement;
-                debugLog(`[ResponsiveModal] Child ${i} (${el.tagName}.${el.className?.split(' ')[0] || 'no-class'}):`, {
-                    offsetHeight: el.offsetHeight,
-                    clientHeight: el.clientHeight,
-                    scrollHeight: el.scrollHeight,
-                });
-            });
-        };
-
-        // Log on mount and after a short delay for dynamic content
-        logHeights();
-        const timeout = setTimeout(logHeights, 500);
-        const timeout2 = setTimeout(logHeights, 1500);
-
-        // Also log on resize
-        window.addEventListener('resize', logHeights);
-        return () => {
-            clearTimeout(timeout);
-            clearTimeout(timeout2);
-            window.removeEventListener('resize', logHeights);
-        };
-    }, [isOpen, debugHeights]);
-
     // Handle backdrop click
     const handleBackdropClick = useCallback((e: React.MouseEvent) => {
         if (e.target === e.currentTarget) {
@@ -117,12 +69,8 @@ export function ResponsiveModal({
     const containerClasses = [
         // Base styles
         'relative bg-gray-50 dark:bg-gray-700 rounded-2xl shadow-2xl overflow-hidden',
-        // Mobile: near full-screen with small gap
-        'w-[calc(100%-1rem)] h-[calc(100%-1rem)] max-w-[calc(100%-1rem)] max-h-[calc(100%-1rem)]',
-        // Desktop (lg+): centered 90% width
-        'lg:w-[90%] lg:max-w-[90%] lg:max-h-[90vh]',
-        // Desktop height: fixed or auto
-        desktopHeight === '65vh' ? 'lg:h-[65vh]' : 'lg:h-auto',
+        // Both mobile and Desktop: near full-screen with larger gap (Mobile: 1rem margin, Desktop: 2rem margin)
+        'w-[calc(100%-2rem)] h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] lg:w-[calc(100%-4rem)] lg:h-[calc(100%-4rem)] lg:max-w-[calc(100%-4rem)] lg:max-h-[calc(100%-4rem)]',
         // Flex layout
         'flex flex-col',
         // Mobile landscape sidebar layout (optional)
@@ -137,7 +85,6 @@ export function ResponsiveModal({
             onClick={handleBackdropClick}
         >
             <div
-                ref={containerRef}
                 className={containerClasses}
                 onClick={(e) => e.stopPropagation()}
             >

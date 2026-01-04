@@ -79,7 +79,8 @@ export function ScryfallArtContent({
     return (
         <CardGrid
             ref={gridRef}
-            style={{ zoom: localZoom, touchAction: "pan-x pan-y" }}
+            cardSize={localZoom}
+            style={{ touchAction: "pan-x pan-y" }}
         >
             <ArtworkGrid
                 imageUrls={imageUrls}

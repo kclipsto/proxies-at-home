@@ -47,6 +47,8 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             return;
         }
 
+        console.log("[DecklistUploader] Processing fetch for:", infos.map(i => i.name).join(", "));
+
         try {
             // No loading modal - processing toast will show via useImageProcessing
             await streamCards({

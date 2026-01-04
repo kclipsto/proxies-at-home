@@ -1,5 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
-import { Button, Label } from "flowbite-react";
+import { Button } from "flowbite-react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { useRef } from "react";
 
@@ -98,69 +98,109 @@ export function ZoomControls({
         }
     };
 
+    // Calculate thumb position as percentage
+    const thumbPosition = toSliderValue(zoom);
+
+    // Label Visual Pill Style
+    // Located exactly at thumb center (calc logic ensures alignment)
+    const labelStyle: React.CSSProperties = {
+        left: `calc(${thumbPosition}% - ${thumbPosition * 0.16}px + 8px)`
+    };
+
+    // The Label becomes the visual thumb: Blue Pill
+    // Vertically centered (top-1/2 -translate-y-1/2) over the track.
+    const labelClasses = "absolute pointer-events-none top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex items-center justify-center bg-blue-600 text-white border border-blue-700 rounded-full shadow-sm text-base font-bold px-3 py-1";
+
+    // Hide the native thumb visually so the label acts as the thumb
+    // We use utility classes to target the thumb pseudo-elements
+    const sliderClasses = "zoom-slider w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 relative z-10 touch-none [&::-webkit-slider-thumb]:opacity-0 [&::-moz-range-thumb]:opacity-0 [&::-webkit-slider-thumb]:w-10 [&::-webkit-slider-thumb]:h-6";
+
     if (compact) {
         return (
-            <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 justify-between w-full">
-                    <Button
-                        size="sm"
-                        className="w-full"
-                        color="blue"
-                        onClick={handleZoomOut}
+            <div className="flex items-center gap-2">
+                <Button
+                    size="xs"
+                    color="blue"
+                    onClick={handleZoomOut}
+                    className="shrink-0 aspect-square p-0 flex items-center justify-center"
+                >
+                    <ZoomOut className="size-4" />
+                </Button>
+                <div className="relative flex-1 h-8 flex items-center min-w-[100px] mx-4">
+                    {/* The Visual Thumb (Label) */}
+                    <div
+                        className={labelClasses}
+                        style={labelStyle}
                     >
-                        <ZoomOut className="size-4" />
-                    </Button>
-                    <Label className="w-full text-center whitespace-nowrap">{zoom.toFixed(1)}x</Label>
-                    <Button
-                        size="sm"
-                        className="w-full"
-                        color="blue"
-                        onClick={handleZoomIn}
-                    >
-                        <ZoomIn className="size-4" />
-                    </Button>
+                        {zoom.toFixed(1)}x
+                    </div>
+
+                    <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={thumbPosition}
+                        onDoubleClick={handleResetZoom}
+                        onTouchStart={handleTouchStart}
+                        onChange={handleSliderChange}
+                        className={sliderClasses}
+                    />
                 </div>
+                <Button
+                    size="xs"
+                    color="blue"
+                    onClick={handleZoomIn}
+                    className="shrink-0 aspect-square p-0 flex items-center justify-center"
+                >
+                    <ZoomIn className="size-4" />
+                </Button>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 justify-between w-full">
-                <Button
-                    size="sm"
-                    className="w-full"
-                    color="blue"
-                    onClick={handleZoomOut}
-                >
-                    <ZoomOut className="size-6" />
-                </Button>
-                <Label className="w-full text-center text-lg">{zoom.toFixed(1)}x</Label>
-                <Button
-                    size="sm"
-                    className="w-full"
-                    color="blue"
-                    onClick={handleZoomIn}
-                >
-                    <ZoomIn className="size-6" />
-                </Button>
-            </div>
-            <div className="relative w-full h-6 flex items-center">
+        <div className="flex items-center gap-3">
+            <Button
+                size="sm"
+                color="blue"
+                onClick={handleZoomOut}
+                className="shrink-0 aspect-square p-0 flex items-center justify-center"
+            >
+                <ZoomOut className="size-5" />
+            </Button>
+            <div className="relative flex-1 h-10 flex items-center min-w-[120px] mx-4">
                 {/* Center Tick Mark (1x) */}
-                <div className="absolute left-1/2 -translate-x-1/2 w-1 h-8 bg-gray-300 dark:bg-gray-600 rounded pointer-events-none" />
+                <div className="absolute left-1/2 -translate-x-1/2 w-1 h-10 bg-gray-400 dark:bg-gray-500 rounded pointer-events-none" />
+
+                {/* The Visual Thumb (Label) */}
+                <div
+                    className={labelClasses}
+                    style={labelStyle}
+                >
+                    {zoom.toFixed(1)}x
+                </div>
 
                 <input
                     type="range"
                     min="0"
                     max="100"
                     step="1"
-                    value={toSliderValue(zoom)}
+                    value={thumbPosition}
                     onDoubleClick={handleResetZoom}
                     onTouchStart={handleTouchStart}
                     onChange={handleSliderChange}
-                    className="zoom-slider w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 accent-blue-600 relative z-10 touch-none"
+                    className={sliderClasses}
                 />
             </div>
+            <Button
+                size="sm"
+                color="blue"
+                onClick={handleZoomIn}
+                className="shrink-0 aspect-square p-0 flex items-center justify-center"
+            >
+                <ZoomIn className="size-5" />
+            </Button>
         </div>
     );
 }

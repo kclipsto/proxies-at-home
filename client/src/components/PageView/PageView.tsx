@@ -6,7 +6,6 @@
  */
 
 import { useMemo, useState, useRef, useCallback, useEffect } from "react";
-import { Label } from "flowbite-react";
 import {
   DndContext,
   DragOverlay,
@@ -16,17 +15,24 @@ import {
   useSensor,
   useSensors,
   type DragStartEvent,
+  type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { useSelectionStore } from "@/store/selection";
 import { useSettingsStore } from "@/store";
+import { undoableReorderCards, undoableReorderMultipleCards } from "@/helpers/undoableActions";
+import { rebalanceCardOrders } from "@/helpers/dbUtils";
 import { type Image, db } from "@/db";
+import { useArtworkModalStore } from "@/store/artworkModal";
+import { useCardEditorModalStore } from "@/store/cardEditorModal";
 import type { CardOption } from "../../../../shared/types";
 import type { useImageProcessing } from "@/hooks/useImageProcessing";
 import fullLogo from "../../assets/fullLogo.png";
 import {
   baseCardWidthMm,
   baseCardHeightMm,
+  getCardTargetBleed,
   computeCardLayouts,
   chunkCards,
 } from "@/helpers/layout";
@@ -53,13 +59,14 @@ type PageViewProps = {
   ensureProcessed: ReturnType<typeof useImageProcessing>["ensureProcessed"];
   images: Image[];
   cards: CardOption[];
+  allCards: CardOption[];
   mobile?: boolean;
   active?: boolean;
 };
 
 
 
-export function PageView({ cards, images, mobile, active = true }: PageViewProps) {
+export function PageView({ cards, allCards, images, mobile, active = true }: PageViewProps) {
   // Settings from store
   const pageSizeUnit = useSettingsStore((s) => s.pageSizeUnit);
   const pageWidth = useSettingsStore((s) => s.pageWidth);
@@ -230,6 +237,11 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
   // Keyboard shortcuts: Ctrl++, Ctrl+-, Ctrl+0, Ctrl+A, Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore shortcuts if a modal is open
+      if (useArtworkModalStore.getState().open || useCardEditorModalStore.getState().open) {
+        return;
+      }
+
       // Escape key - deselect all (no modifier needed)
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -279,12 +291,44 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
     localCardsRef.current = localCards;
   }, [localCards]);
 
+
+  const [isOptimistic, setIsOptimistic] = useState(false);
+  const [blockDbUpdates, setBlockDbUpdates] = useState(false);
+  const lastOptimisticOrder = useRef<string[]>([]);
+  const dragStartOrderRef = useRef<{ cardUuid: string; oldOrder: number } | null>(null);
+
+  const multiDragState = useRef<{
+    isMultiDrag: boolean;
+    draggedCards: CardOption[];
+    originalLocalCards: CardOption[];
+    activeId: string | null;
+    ghostIds: Set<string>;
+  }>({
+    isMultiDrag: false,
+    draggedCards: [],
+    originalLocalCards: [],
+    activeId: null,
+    ghostIds: new Set(),
+  });
+
   // Sync localCards from visibleCards when not dragging
   useEffect(() => {
-    if (!activeId) {
-      setLocalCards(visibleCards);
+    if (blockDbUpdates) return;
+
+    if (isOptimistic) {
+      const currentOrder = visibleCards.map((c) => c.uuid);
+      const expectedOrder = lastOptimisticOrder.current;
+
+      if (JSON.stringify(currentOrder) === JSON.stringify(expectedOrder)) {
+        setIsOptimistic(false);
+        setLocalCards(visibleCards);
+      }
+    } else {
+      if (!activeId) {
+        setLocalCards(visibleCards);
+      }
     }
-  }, [visibleCards, activeId]);
+  }, [visibleCards, activeId, isOptimistic, blockDbUpdates]);
 
   // Range selection handler (needs visibleCards)
   const selectRange = useSelectionStore((s) => s.selectRange);
@@ -295,53 +339,194 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
     }
   }, [lastClickedIndex, selectRange, localCards]);
 
-  // Handle card drag start - track active drag
+  // Handle card drag start - track active drag and selection context
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  }, []);
+    const cardUuid = event.active.id as string;
+    const card = localCards.find(c => c.uuid === cardUuid);
+    const selectionStore = useSelectionStore.getState();
+
+    // Check if dragging a selected card in a multi-selection group
+    const isMultiSelect = selectionStore.selectedCards.has(cardUuid) && selectionStore.selectedCards.size > 1;
+
+    if (isMultiSelect) {
+      const draggedCards = localCards.filter(c => selectionStore.selectedCards.has(c.uuid));
+      multiDragState.current = {
+        isMultiDrag: true,
+        draggedCards,
+        originalLocalCards: [...localCards],
+        activeId: cardUuid,
+        ghostIds: new Set(),
+      };
+
+      // Collapse grid by removing selected cards, then inserting leader at its original index.
+      const remainingCards = localCards.filter(c => !selectionStore.selectedCards.has(c.uuid));
+      const leaderOriginalIndex = localCards.findIndex(c => c.uuid === cardUuid);
+      const insertIndex = Math.min(leaderOriginalIndex, remainingCards.length);
+
+      const newLocalCards = [...remainingCards];
+      if (card) {
+        newLocalCards.splice(insertIndex, 0, card);
+      }
+
+      // Defer state update required for dnd-kit to capture nodes
+      setTimeout(() => {
+        setLocalCards(newLocalCards);
+      }, 50);
+    } else {
+      multiDragState.current = {
+        isMultiDrag: false,
+        draggedCards: [],
+        originalLocalCards: [],
+        activeId: null,
+        ghostIds: new Set(),
+      };
+      if (card) {
+        dragStartOrderRef.current = { cardUuid, oldOrder: card.order };
+      }
+    }
+
+    setActiveId(cardUuid);
+    setIsOptimistic(true);
+    setBlockDbUpdates(true);
+  }, [localCards]);
+
+  const dragOverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Handle drag over - update localCards for canvas dynamic reordering
-  const handleDragOver = useCallback((event: { active: { id: string | number }; over: { id: string | number } | null }) => {
+  const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    setLocalCards(current => {
-      const oldIndex = current.findIndex(c => c.uuid === active.id);
-      const newIndex = current.findIndex(c => c.uuid === over.id);
-      if (oldIndex === -1 || newIndex === -1) return current;
-      return arrayMove(current, oldIndex, newIndex);
-    });
+    // Clear existing timeout to debounce
+    if (dragOverTimeoutRef.current) {
+      clearTimeout(dragOverTimeoutRef.current);
+    }
+
+    dragOverTimeoutRef.current = setTimeout(() => {
+      const currentLocalCards = localCardsRef.current;
+      const activeId = active.id;
+      const overId = over.id;
+
+      const oldIndex = currentLocalCards.findIndex((c) => c.uuid === activeId);
+      const newIndex = currentLocalCards.findIndex((c) => c.uuid === overId);
+
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        setLocalCards((items) => {
+          return arrayMove(items, oldIndex, newIndex);
+        });
+      }
+    }, 100);
   }, []);
 
   // Handle card drag end - persist the current localCards order to database
-  const handleDragEnd = useCallback(async () => {
-    // Get current localCards order from ref (avoids stale closure)
-    const currentCards = localCardsRef.current;
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
 
-    // Persist the current order to database
-    const updates = currentCards.map((card, index) => ({
-      key: card.uuid,
-      changes: { order: (index + 1) * 10 },
-    }));
-    await db.cards.bulkUpdate(updates);
-
-    // Clear activeId after database update
     setActiveId(null);
+    setTimeout(() => {
+      setBlockDbUpdates(false);
+    }, 500);
+
+    if (!over) {
+      if (multiDragState.current.isMultiDrag) {
+        setLocalCards(multiDragState.current.originalLocalCards);
+      } else {
+        setLocalCards(localCardsRef.current);
+      }
+
+      multiDragState.current = { isMultiDrag: false, draggedCards: [], originalLocalCards: [], activeId: null, ghostIds: new Set() };
+      return;
+    }
+
+    if (multiDragState.current.isMultiDrag) {
+      const { draggedCards, activeId: leaderId } = multiDragState.current;
+
+      // Find leader position in collapsed list
+      const leaderIndex = localCardsRef.current.findIndex(c => c.uuid === leaderId);
+      if (leaderIndex === -1) {
+        setLocalCards(multiDragState.current.originalLocalCards);
+        return;
+      }
+
+      // Reconstruct: Insert dragged group at leader index
+      const cardsWithoutLeader = localCardsRef.current.filter(c => c.uuid !== leaderId);
+      const newLocalCards = [
+        ...cardsWithoutLeader.slice(0, leaderIndex),
+        ...draggedCards,
+        ...cardsWithoutLeader.slice(leaderIndex)
+      ];
+
+      setLocalCards(newLocalCards);
+      lastOptimisticOrder.current = newLocalCards.map(c => c.uuid);
+
+      const adjustments: { uuid: string; oldOrder: number; newOrder: number }[] = [];
+
+      // Calculate adjustments for ALL cards to ensure complete state restoration
+      // This allows a single Undo to revert the entire rebalance operation
+      newLocalCards.forEach((card, index) => {
+        const newOrder = (index + 1) * 10;
+        const original = multiDragState.current.originalLocalCards.find(c => c.uuid === card.uuid);
+
+        if (original && original.order !== newOrder) {
+          adjustments.push({ uuid: card.uuid, oldOrder: original.order, newOrder });
+        }
+      });
+
+      await undoableReorderMultipleCards(adjustments);
+
+      // Rebalance everything (applies the new orders to DB)
+      await rebalanceCardOrders(newLocalCards);
+
+      multiDragState.current = { isMultiDrag: false, draggedCards: [], originalLocalCards: [], activeId: null, ghostIds: new Set() };
+      return;
+    }
+
+    // Single Card Logic
+    const currentIndex = localCardsRef.current.findIndex((c) => c.uuid === active.id);
+    if (currentIndex === -1) return;
+
+    lastOptimisticOrder.current = localCardsRef.current.map((c) => c.uuid);
+
+    const prevCard = localCardsRef.current[currentIndex - 1];
+    const nextCard = localCardsRef.current[currentIndex + 1];
+
+    let newOrder: number;
+
+    if (!prevCard) {
+      newOrder = (nextCard?.order || 0) - 10;
+    } else if (!nextCard) {
+      newOrder = prevCard.order + 10;
+    } else {
+      newOrder = (prevCard.order + nextCard.order) / 2.0;
+    }
+
+    if (Math.abs(newOrder - (prevCard?.order || 0)) < 0.001 || Math.abs(newOrder - (nextCard?.order || 0)) < 0.001) {
+      await rebalanceCardOrders(localCardsRef.current);
+      return;
+    }
+
+    const dragInfo = dragStartOrderRef.current;
+    if (dragInfo && dragInfo.cardUuid === active.id) {
+      await undoableReorderCards(dragInfo.cardUuid, dragInfo.oldOrder, newOrder);
+    }
+    dragStartOrderRef.current = null;
+
+    await db.cards.update(active.id as string, { order: newOrder });
+
   }, []);
 
   // Sortable IDs for DndContext - use visibleCards (stable during drag)
   const sortableIds = useMemo(() => visibleCards.map(c => c.uuid), [visibleCards]);
 
-  // Map from front card UUID to back card
   const backCardMap = useMemo(() => {
     const map = new Map<string, CardOption>();
-    for (const card of cards) {
+    for (const card of allCards) {
       if (card.linkedFrontId) {
         map.set(card.linkedFrontId, card);
       }
     }
     return map;
-  }, [cards]);
+  }, [allCards]);
 
   // Map from image ID to image blob data
   const imageDataById = useMemo(() => {
@@ -511,18 +696,22 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
         >
           {cards.length === 0 ? (
             // Empty state
-            <div className={`flex flex-col items-center justify-center h-full px-4 text-center`}>
-              <div className={`flex flex-col ${!mobile ? 'md:flex-row' : ''} items-center gap-2 md:gap-4`}>
-                <Label className={`text-5xl ${!mobile ? 'md:text-7xl' : ''} font-bold whitespace-nowrap`}>
+            <div className="flex flex-col items-center justify-center h-full px-4 text-center">
+              <div className={`flex flex-col ${!mobile ? 'md:flex-row' : ''} flex-wrap items-center justify-center gap-x-4 gap-y-3 mt-4 md:mt-0`}>
+                <span className={`text-3xl ${!mobile ? 'sm:text-4xl md:text-5xl lg:text-7xl' : ''} font-bold text-gray-900 dark:text-white`}>
                   Welcome to
-                </Label>
-                <img src={fullLogo} alt="Proxxied Logo" className={`h-40 ${!mobile ? 'md:h-36' : ''}`} />
+                </span>
+                <img
+                  src={fullLogo}
+                  alt="Proxxied Logo"
+                  className={`h-24 ${!mobile ? 'sm:h-32 md:h-40 lg:h-36' : ''} w-auto object-contain`}
+                />
               </div>
-              <Label className="text-xl text-gray-600 mt-4">
+              <p className="font-medium text-lg md:text-xl text-gray-600 dark:text-white mt-4">
                 {mobile
                   ? "Enter a decklist or upload files in the upload tab to get started"
                   : "Enter a decklist or upload files to the left to get started"}
-              </Label>
+              </p>
             </div>
           ) : (
             // Page content wrapper - creates scrollable area sized for all pages (zoomed)
@@ -589,57 +778,113 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
                     />
                   </SortableContext>
 
-                  {/* Drag overlay - shows card image while dragging */}
+                  {/* Drag overlay - shows card image(s) while dragging */}
                   <DragOverlay zIndex={50}>
                     {activeId && (() => {
+                      // Multi-Drag Overlay
+                      if (multiDragState.current.isMultiDrag) {
+                        const stackCards = multiDragState.current.draggedCards;
+                        const count = stackCards.length;
+                        const leaderId = multiDragState.current.activeId;
+
+                        // Sort: other cards first, leader on top (last)
+                        // We slice to limit stack visual depth (e.g. 3 cards)
+                        const others = stackCards.filter(c => c.uuid !== leaderId).slice(0, 2);
+                        const leader = stackCards.find(c => c.uuid === leaderId);
+                        const displayStack = leader ? [...others, leader] : others;
+
+                        return (
+                          <div className="relative">
+                            {displayStack.map((card, index) => {
+                              // Is this the top card? (last in logic, but let's check ID)
+                              const isTop = card.uuid === leaderId;
+
+                              // Calculate bleed/dimensions
+                              const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
+                              const cardWidth = (baseCardWidthMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
+                              const cardHeight = (baseCardHeightMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
+
+                              const imageUrl = card.imageId ? processedImageUrls[card.imageId] : undefined;
+                              if (!imageUrl) return null;
+
+                              // Stack transform
+                              // Top card is at 0,0. Others are offset.
+                              // Actually index 0 is bottom.
+                              // We want leader at 0,0.
+                              // Others rotated/offset behind.
+                              // Let's use simple logic: top card covers others.
+                              // Reverse index for offset? 
+                              // If displayStack length is 3 (2 others + leader), index 2 is leader.
+                              // depth = displayStack.length - 1 - index.
+                              const depth = displayStack.length - 1 - index;
+
+                              return (
+                                <div
+                                  key={card.uuid}
+                                  className="absolute shadow-2xl rounded-lg"
+                                  style={{
+                                    width: cardWidth,
+                                    height: cardHeight,
+                                    zIndex: isTop ? 10 : 0,
+                                    transform: isTop ? 'none' : `translate(${depth * 4}px, ${depth * 4}px) rotate(${depth * (index % 2 === 0 ? -2 : 2)}deg)`,
+                                    top: 0,
+                                    left: 0,
+                                  }}
+                                >
+                                  <img
+                                    src={imageUrl}
+                                    className="w-full h-full object-cover rounded-lg"
+                                    alt=""
+                                  />
+                                  {isTop && count > 1 && (
+                                    <div className="absolute -top-3 -right-3 bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md border-2 border-white z-30">
+                                      {count}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      }
+
+                      // Single Drag Overlay
                       const card = visibleCards.find(c => c.uuid === activeId);
                       if (!card) return null;
 
-                      // Get actual card dimensions from globalPixiCards (matches canvas exactly)
-                      const pixiCard = globalPixiCards.find(c => c.card.uuid === activeId);
-                      if (!pixiCard) return null;
-
-                      // Check if flipped - use back card image if flipped
-                      const isFlipped = flippedCards.has(card.uuid);
-                      const backCard = backCardMap.get(card.uuid);
-                      const displayCard = isFlipped && backCard ? backCard : card;
-                      const imageUrl = displayCard.imageId ? processedImageUrls[displayCard.imageId] : undefined;
-
-                      if (!imageUrl) return null;
-
-                      // Use actual card dimensions from globalPixiCards (already in px, apply zoom)
-                      const cardWidth = pixiCard.width * effectiveZoom;
-                      const cardHeight = pixiCard.height * effectiveZoom;
-
-                      // Bleed from the per-card layout
-                      const bleedPx = pixiCard.bleedMm * MM_TO_PX * effectiveZoom;
+                      const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
+                      const cardWidth = (baseCardWidthMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
+                      const cardHeight = (baseCardHeightMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
+                      const bleedPx = bleedMm * MM_TO_PX * effectiveZoom;
                       const baseWidth = cardWidth - 2 * bleedPx;
                       const baseHeight = cardHeight - 2 * bleedPx;
-                      const cornerRadius = 2.5 * MM_TO_PX * effectiveZoom; // Standard card corner radius
+                      const cornerRadius = 2.5 * MM_TO_PX * effectiveZoom;
 
-                      // Guide settings
-                      const showGuide = perCardGuideStyle !== 'none' && guideWidth > 0;
-                      const isRounded = perCardGuideStyle.includes('rounded');
-                      const isDashed = perCardGuideStyle.includes('dashed');
-                      const isCorners = perCardGuideStyle.includes('corner');
+                      const imageUrl = card.imageId ? processedImageUrls[card.imageId] : undefined;
+                      if (!imageUrl) return null;
 
-                      // Corner length for corners-only style
-                      const cornerLength = Math.min(baseWidth, baseHeight) * 0.15;
-                      const dashArray = isDashed ? `${guideWidth * 3} ${guideWidth * 2}` : undefined;
+                      // Check flipped
+                      const isFlipped = flippedCards.has(card.uuid);
 
                       return (
                         <div
-                          className="relative shadow-2xl rounded-lg overflow-visible"
+                          className="relative shadow-2xl rounded-lg overflow-visible z-10"
                           style={{ width: cardWidth, height: cardHeight }}
                         >
                           <img
                             src={imageUrl}
-                            alt={card.name}
                             className="w-full h-full object-cover rounded-lg"
-                            draggable={false}
+                            alt=""
                           />
-                          {/* Cut guides on drag overlay */}
-                          {showGuide && (
+                          {/* Drag Handle & Flip - simplify for overlay */}
+                          <div className={`absolute right-[4px] top-6 w-4 h-4 rounded-sm flex items-center justify-center z-20 ${isFlipped ? 'bg-blue-500 text-white' : 'bg-white text-gray-700'}`}>
+                            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                            </svg>
+                          </div>
+
+                          {/* Cut guides for single card */}
+                          {perCardGuideStyle !== 'none' && guideWidth > 0 && (
                             <svg
                               className="absolute pointer-events-none"
                               style={{
@@ -650,86 +895,21 @@ export function PageView({ cards, images, mobile, active = true }: PageViewProps
                               }}
                               viewBox={`0 0 ${baseWidth} ${baseHeight}`}
                             >
-                              {isCorners ? (
-                                // Corners only - draw L-shaped corners
-                                <>
-                                  {/* Top-left corner */}
-                                  <path
-                                    d={isRounded
-                                      ? `M ${guideWidth / 2} ${cornerLength + guideWidth / 2} L ${guideWidth / 2} ${cornerRadius + guideWidth / 2} Q ${guideWidth / 2} ${guideWidth / 2} ${cornerRadius + guideWidth / 2} ${guideWidth / 2} L ${cornerLength + guideWidth / 2} ${guideWidth / 2}`
-                                      : `M ${guideWidth / 2} ${cornerLength} L ${guideWidth / 2} ${guideWidth / 2} L ${cornerLength} ${guideWidth / 2}`
-                                    }
-                                    fill="none"
-                                    stroke={guideColor}
-                                    strokeWidth={guideWidth}
-                                    strokeDasharray={dashArray}
-                                  />
-                                  {/* Top-right corner */}
-                                  <path
-                                    d={isRounded
-                                      ? `M ${baseWidth - cornerLength - guideWidth / 2} ${guideWidth / 2} L ${baseWidth - cornerRadius - guideWidth / 2} ${guideWidth / 2} Q ${baseWidth - guideWidth / 2} ${guideWidth / 2} ${baseWidth - guideWidth / 2} ${cornerRadius + guideWidth / 2} L ${baseWidth - guideWidth / 2} ${cornerLength + guideWidth / 2}`
-                                      : `M ${baseWidth - cornerLength} ${guideWidth / 2} L ${baseWidth - guideWidth / 2} ${guideWidth / 2} L ${baseWidth - guideWidth / 2} ${cornerLength}`
-                                    }
-                                    fill="none"
-                                    stroke={guideColor}
-                                    strokeWidth={guideWidth}
-                                    strokeDasharray={dashArray}
-                                  />
-                                  {/* Bottom-right corner */}
-                                  <path
-                                    d={isRounded
-                                      ? `M ${baseWidth - guideWidth / 2} ${baseHeight - cornerLength - guideWidth / 2} L ${baseWidth - guideWidth / 2} ${baseHeight - cornerRadius - guideWidth / 2} Q ${baseWidth - guideWidth / 2} ${baseHeight - guideWidth / 2} ${baseWidth - cornerRadius - guideWidth / 2} ${baseHeight - guideWidth / 2} L ${baseWidth - cornerLength - guideWidth / 2} ${baseHeight - guideWidth / 2}`
-                                      : `M ${baseWidth - guideWidth / 2} ${baseHeight - cornerLength} L ${baseWidth - guideWidth / 2} ${baseHeight - guideWidth / 2} L ${baseWidth - cornerLength} ${baseHeight - guideWidth / 2}`
-                                    }
-                                    fill="none"
-                                    stroke={guideColor}
-                                    strokeWidth={guideWidth}
-                                    strokeDasharray={dashArray}
-                                  />
-                                  {/* Bottom-left corner */}
-                                  <path
-                                    d={isRounded
-                                      ? `M ${cornerLength + guideWidth / 2} ${baseHeight - guideWidth / 2} L ${cornerRadius + guideWidth / 2} ${baseHeight - guideWidth / 2} Q ${guideWidth / 2} ${baseHeight - guideWidth / 2} ${guideWidth / 2} ${baseHeight - cornerRadius - guideWidth / 2} L ${guideWidth / 2} ${baseHeight - cornerLength - guideWidth / 2}`
-                                      : `M ${cornerLength} ${baseHeight - guideWidth / 2} L ${guideWidth / 2} ${baseHeight - guideWidth / 2} L ${guideWidth / 2} ${baseHeight - cornerLength}`
-                                    }
-                                    fill="none"
-                                    stroke={guideColor}
-                                    strokeWidth={guideWidth}
-                                    strokeDasharray={dashArray}
-                                  />
-                                </>
-                              ) : (
-                                // Full rectangle
-                                <rect
-                                  x={guideWidth / 2}
-                                  y={guideWidth / 2}
-                                  width={baseWidth - guideWidth}
-                                  height={baseHeight - guideWidth}
-                                  rx={isRounded ? cornerRadius : 0}
-                                  ry={isRounded ? cornerRadius : 0}
-                                  fill="none"
-                                  stroke={guideColor}
-                                  strokeWidth={guideWidth}
-                                  strokeDasharray={dashArray}
-                                />
-                              )}
+                              <rect
+                                x={guideWidth / 2}
+                                y={guideWidth / 2}
+                                width={baseWidth - guideWidth}
+                                height={baseHeight - guideWidth}
+                                rx={perCardGuideStyle.includes('rounded') ? cornerRadius : 0}
+                                ry={perCardGuideStyle.includes('rounded') ? cornerRadius : 0}
+                                fill="none"
+                                stroke={guideColor}
+                                strokeWidth={guideWidth}
+                              />
                             </svg>
                           )}
-                          {/* Control buttons on drag overlay */}
-                          <div className="absolute inset-0 pointer-events-none">
-                            {/* Drag Handle */}
-                            <div className="absolute right-[4px] top-1 w-4 h-4 bg-white text-green text-xs rounded-sm flex items-center justify-center opacity-100 z-20">
-                              ⠿
-                            </div>
-                            {/* Flip Button */}
-                            <div className={`absolute right-[4px] top-6 w-4 h-4 rounded-sm flex items-center justify-center z-20 ${isFlipped ? 'bg-blue-500 text-white' : 'bg-white text-gray-700'}`}>
-                              <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-                              </svg>
-                            </div>
-                          </div>
                         </div>
-                      );
+                      )
                     })()}
                   </DragOverlay>
                 </DndContext>

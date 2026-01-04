@@ -139,7 +139,12 @@ export function usePageViewZoom({
 
     // Handle Shift+Drag to Zoom (for DevTools emulation / Desktop)
     useDrag(
-        ({ movement: [, my], shiftKey, first, last, memo = zoom }) => {
+        ({ movement: [, my], shiftKey, first, last, memo = zoom, event }) => {
+            // Ignore keyboard events (Shift + Arrow keys should not trigger zoom)
+            if (event && event.type.startsWith('key')) {
+                return memo;
+            }
+
             if (first && shiftKey) setIsPinching(true);
             if (last) setIsPinching(false);
 

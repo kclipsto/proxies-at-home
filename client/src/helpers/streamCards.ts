@@ -110,6 +110,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     // --- MPC Autofill Integration ---
     const preferredArtSource = useSettingsStore.getState().preferredArtSource;
     if (preferredArtSource === 'mpc') {
+        console.log("[streamCards] MPC source preferred. Checking MPC Autofill...");
         // Chunk cards for batch processing
         const CHUNK_SIZE = 50;
         const mpcInfos = [...uniqueInfos];
@@ -124,6 +125,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
 
             const chunk = mpcInfos.slice(i, i + CHUNK_SIZE);
             const matches = await findBestMpcMatches(chunk);
+            console.log(`[streamCards] MPC Batch Result: ${matches.length} matches found out of ${chunk.length} in chunk.`);
 
             // Process matches
             const matchedNames = new Set<string>();

@@ -182,6 +182,18 @@ interface EnrichedCard {
   type_line?: string;
   rarity?: string;
   lang?: string;
+  layout?: string;
+  card_faces?: Array<{
+    name: string;
+    type_line?: string;
+    mana_cost?: string;
+    colors?: string[];
+    image_uris?: {
+      large?: string;
+      normal?: string;
+      png?: string;
+    };
+  }>;
 }
 
 /**
@@ -210,6 +222,14 @@ function extractEnrichedCard(
     type_line: data.type_line,
     rarity: data.rarity,
     lang: data.lang,
+    layout: data.layout,
+    card_faces: data.card_faces?.map(f => ({
+      name: f.name || "",
+      type_line: f.type_line,
+      mana_cost: f.mana_cost,
+      colors: f.colors,
+      image_uris: f.image_uris,
+    })),
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useFilteredAndSortedCards, getPrimaryType } from "./useFilteredAndSortedCards";
+import { useFilteredAndSortedCards, getCardTypes } from "./useFilteredAndSortedCards";
 import type { CardOption } from "../../../shared/types";
 
 // Mock settings store
@@ -41,45 +41,45 @@ describe("useFilteredAndSortedCards", () => {
         mockSettingsState.filterMatchType = "any";
     });
 
-    describe("getPrimaryType", () => {
+    describe("getCardTypes", () => {
         it("should return Creature for creature type line", () => {
-            expect(getPrimaryType("Legendary Creature — Human Wizard")).toBe("Creature");
+            expect(getCardTypes("Legendary Creature — Human Wizard")).toBe("Creature");
         });
 
         it("should return Instant for instant type line", () => {
-            expect(getPrimaryType("Instant")).toBe("Instant");
+            expect(getCardTypes("Instant")).toBe("Instant");
         });
 
         it("should return Sorcery for sorcery type line", () => {
-            expect(getPrimaryType("Sorcery")).toBe("Sorcery");
+            expect(getCardTypes("Sorcery")).toBe("Sorcery");
         });
 
         it("should return Land for land type line", () => {
-            expect(getPrimaryType("Basic Land — Island")).toBe("Land");
+            expect(getCardTypes("Basic Land — Island")).toBe("Land");
         });
 
         it("should return Artifact for artifact type line", () => {
-            expect(getPrimaryType("Artifact — Equipment")).toBe("Artifact");
+            expect(getCardTypes("Artifact — Equipment")).toBe("Artifact");
         });
 
         it("should return Enchantment for enchantment type line", () => {
-            expect(getPrimaryType("Enchantment — Aura")).toBe("Enchantment");
+            expect(getCardTypes("Enchantment — Aura")).toBe("Enchantment");
         });
 
         it("should return Planeswalker for planeswalker type line", () => {
-            expect(getPrimaryType("Legendary Planeswalker — Jace")).toBe("Planeswalker");
+            expect(getCardTypes("Legendary Planeswalker — Jace")).toBe("Planeswalker");
         });
 
         it("should return undefined for unknown type", () => {
-            expect(getPrimaryType("Unknown Type")).toBeUndefined();
+            expect(getCardTypes("Unknown Type")).toBeUndefined();
         });
 
         it("should return undefined for empty string", () => {
-            expect(getPrimaryType("")).toBeUndefined();
+            expect(getCardTypes("")).toBeUndefined();
         });
 
         it("should return undefined for undefined", () => {
-            expect(getPrimaryType(undefined)).toBeUndefined();
+            expect(getCardTypes(undefined)).toBeUndefined();
         });
     });
 
@@ -185,6 +185,61 @@ describe("useFilteredAndSortedCards", () => {
 
             expect(result.current.filteredAndSortedCards).toHaveLength(1);
             expect(result.current.filteredAndSortedCards[0].name).toBe("Commander");
+        });
+
+        it("should filter by feature (dfc) using Dual Faced type", () => {
+            const cards = [
+                createCard({ name: "Regular" }),
+                createCard({ name: "DFC Front", uuid: "front-uuid", linkedBackId: "back-uuid" }),
+                createCard({ name: "DFC Back", uuid: "back-uuid", linkedFrontId: "front-uuid" }),
+            ];
+            mockSettingsState.filterTypes = ["Dual Faced"];
+
+            const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+            expect(result.current.filteredAndSortedCards).toHaveLength(1);
+            const names = result.current.filteredAndSortedCards.map(c => c.name);
+            expect(names).toContain("DFC Front");
+            expect(names).not.toContain("DFC Back");
+        });
+
+        it("should auto-flip card if hidden face matches filter", () => {
+            const cards = [
+                // Bala Ged Recovery (Sorcery) // Bala Ged Sanctuary (Land)
+                // Currently showing Back (Land, isFlipped=true)
+                createCard({
+                    uuid: "front-uuid",
+                    name: "Bala Ged Recovery",
+                    type_line: "Sorcery",
+                    linkedBackId: "back-uuid",
+                    isFlipped: true // Showing back
+                }),
+                createCard({
+                    uuid: "back-uuid",
+                    name: "Bala Ged Sanctuary",
+                    type_line: "Land",
+                    linkedFrontId: "front-uuid",
+                    // Back card entry doesn't strictly track isFlipped for the 'front' card concept,
+                    // but it exists in the array.
+                    isFlipped: true
+                }),
+            ];
+            // Filter by Sorcery (Front face)
+            mockSettingsState.filterTypes = ["Sorcery"];
+
+            const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+            // Should pass because:
+            // 1. Front (Bala Ged Recovery) showing Back (Land) -> Does not match "Sorcery".
+            // 2. Hidden Face (Front/Sorcery) -> Matches "Sorcery". Auto-flip triggers.
+            // 3. Back card entity is skipped/hidden from main list.
+            expect(result.current.filteredAndSortedCards).toHaveLength(1);
+
+            const passedCard1 = result.current.filteredAndSortedCards[0];
+            expect(passedCard1.name).toBe("Bala Ged Recovery");
+            // Expect isFlipped to be false because the Virtual Card masquerades as the Front Face.
+            expect(passedCard1.isFlipped).toBe(false);
+
         });
     });
 

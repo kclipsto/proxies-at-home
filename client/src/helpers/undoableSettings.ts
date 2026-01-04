@@ -31,6 +31,7 @@ export type UndoableSettingKey =
     | "filterColors"
     | "filterTypes"
     | "filterCategories"
+    | "filterFeatures"
     | "filterMatchType"
     | "bleedEdgeUnit"
     | "withBleedSourceAmount"
@@ -70,6 +71,7 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     filterColors: "color filter",
     filterTypes: "type filter",
     filterCategories: "category filter",
+    filterFeatures: "feature filter",
     filterMatchType: "filter match type",
     bleedEdgeUnit: "bleed unit",
     withBleedSourceAmount: "provided bleed amount",

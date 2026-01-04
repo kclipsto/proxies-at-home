@@ -2,6 +2,8 @@ import { useRef, useState, useEffect } from "react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { ZoomControls } from "../ZoomControls";
 import { UndoRedoControls } from "../UndoRedoControls";
+import { FloatingZoomPanel } from "../../common";
+import { useSettingsStore } from "@/store/settings";
 import { usePageViewSettings } from "@/hooks/usePageViewSettings";
 import { useOnClickOutside } from "@/hooks/useOnClickOutside";
 import { useCardEditorModalStore } from "@/store";
@@ -18,6 +20,9 @@ export function PageViewFloatingControls({ mobile, hasCards }: PageViewFloatingC
         uploadPanelWidth,
         isUploadPanelCollapsed,
     } = usePageViewSettings();
+
+    const globalZoom = useSettingsStore((state) => state.zoom);
+    const globalSetZoom = useSettingsStore((state) => state.setZoom);
 
     // Hide floating controls when CardEditorModal is open
     const isCardEditorOpen = useCardEditorModalStore((state) => state.open);
@@ -52,22 +57,17 @@ export function PageViewFloatingControls({ mobile, hasCards }: PageViewFloatingC
         <>
             {/* Floating Zoom Controls - Desktop Only */}
             {!mobile && (
-                <div
-                    className="group fixed bottom-6 z-40"
+                <FloatingZoomPanel
+                    zoom={globalZoom}
+                    onZoomChange={globalSetZoom}
+                    minZoom={0.1}
+                    maxZoom={5}
+                    position="bottom-right"
+                    className="fixed bottom-6"
                     style={{
                         right: `${(isSettingsPanelCollapsed ? 60 : settingsPanelWidth) + 20}px`
                     }}
-                >
-                    {/* Icon-only collapsed state */}
-                    <div className="absolute bottom-0 right-0 p-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg cursor-pointer opacity-70 group-hover:opacity-0 transition-opacity duration-500 pointer-events-none">
-                        <ZoomIn className="size-5 text-gray-600 dark:text-gray-400" />
-                    </div>
-
-                    {/* Full controls on hover */}
-                    <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 min-w-[250px]">
-                        <ZoomControls />
-                    </div>
-                </div>
+                />
             )}
 
             {/* Floating Undo/Redo Controls - Desktop Only */}

@@ -7,6 +7,7 @@ import type { CardOption } from "../../../shared/types";
 import { useCallback, useRef, useState } from "react";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm, getExpectedBleedWidth, getHasBuiltInBleed, type GlobalSettings } from "../helpers/imageSpecs";
 import { isCardbackId } from "../helpers/cardbackLibrary";
+import { toProxied } from "../helpers/imageHelper";
 
 /** Creates a GlobalSettings object from the current store state */
 function getGlobalSettings(bleedWidth: number): GlobalSettings {
@@ -79,7 +80,10 @@ export function useImageProcessing({
     if (imageRecord?.originalBlob) {
       return URL.createObjectURL(imageRecord.originalBlob);
     }
-    return imageRecord?.sourceUrl;
+    if (imageRecord?.sourceUrl) {
+      return toProxied(imageRecord.sourceUrl);
+    }
+    return undefined;
   }
 
   const ensureProcessed = useCallback(async (card: CardOption, priority: Priority = Priority.LOW): Promise<void> => {
@@ -301,7 +305,7 @@ export function useImageProcessing({
           imageRecord.sourceUrl.startsWith('blob:') ||
           imageRecord.sourceUrl.startsWith('/')
         )) {
-          src = imageRecord.sourceUrl;
+          src = toProxied(imageRecord.sourceUrl);
         }
 
         if (!src) return;

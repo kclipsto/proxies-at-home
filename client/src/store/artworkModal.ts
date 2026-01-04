@@ -19,6 +19,8 @@ type Store = {
   openModal: (data: ArtworkModalData) => void;
   closeModal: () => void;
   updateCard: (updatedCard: CardOption) => void;
+  advancedSearchZoom: number;
+  setAdvancedSearchZoom: (zoom: number | ((prev: number) => number)) => void;
 };
 
 export const useArtworkModalStore = create<Store>((set) => ({
@@ -42,5 +44,9 @@ export const useArtworkModalStore = create<Store>((set) => ({
       if (!state.card) return state;
       return { card: updatedCard };
     }),
+  advancedSearchZoom: 1,
+  setAdvancedSearchZoom: (zoom) => set((state) => ({
+    advancedSearchZoom: typeof zoom === 'function' ? (zoom as (prev: number) => number)(state.advancedSearchZoom) : zoom
+  })),
 }));
 
