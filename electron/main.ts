@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, dialog, Menu, MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, dialog, Menu, MenuItemConstructorOptions, net } from 'electron';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import fs from 'fs';
@@ -288,6 +288,58 @@ app.whenReady().then(async () => {
         saveElectronSettings({ autoUpdateEnabled: enabled });
         console.log(`[Electron] Auto-update enabled: ${enabled}`);
         return true;
+    });
+
+    // Moxfield deck fetch handler - uses Chromium's network stack to bypass Cloudflare
+    ipcMain.handle('fetch-moxfield-deck', async (_event, deckId: string) => {
+        const MOXFIELD_API = 'https://api2.moxfield.com/v2';
+        const url = `${MOXFIELD_API}/decks/all/${deckId}`;
+
+        console.log(`[Electron/Moxfield] Fetching deck: ${deckId}`);
+        console.log(`[Electron/Moxfield] URL: ${url}`);
+
+        try {
+            // Use net.fetch which goes through Chromium's network stack
+            // This gives us authentic browser TLS fingerprints that Cloudflare accepts
+            console.log('[Electron/Moxfield] Using net.fetch (Chromium network stack)');
+
+            const response = await net.fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                },
+            });
+
+            console.log(`[Electron/Moxfield] Response status: ${response.status}`);
+            console.log(`[Electron/Moxfield] Response headers:`, Object.fromEntries(response.headers.entries()));
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Electron/Moxfield] Error response body: ${errorText.substring(0, 500)}`);
+
+                if (response.status === 404) {
+                    throw new Error('Deck not found. It may be private or deleted.');
+                }
+                if (response.status === 403) {
+                    console.error('[Electron/Moxfield] Got 403 - Cloudflare may still be blocking');
+                    throw new Error('Access denied by Cloudflare. Please try again later.');
+                }
+                throw new Error(`Moxfield API error: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log(`[Electron/Moxfield] Successfully fetched deck: ${data.name || deckId}`);
+            console.log(`[Electron/Moxfield] Card counts - Mainboard: ${data.mainboardCount}, Sideboard: ${data.sideboardCount}`);
+
+            return data;
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`[Electron/Moxfield] Fetch failed: ${errorMessage}`);
+            if (error instanceof Error && error.stack) {
+                console.error(`[Electron/Moxfield] Stack: ${error.stack}`);
+            }
+            throw error;
+        }
     });
     createWindow();
 

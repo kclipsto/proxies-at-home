@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { logoSvg } from "@/assets";
+import logoSvg from "@/assets/logo.svg";
 import { Button } from "flowbite-react";
 import { ArrowUpNarrowWide, ArrowDownWideNarrow, ChevronRight, ChevronDown, Star, X } from "lucide-react";
 import { SelectDropdown, MultiSelectDropdown, CardGrid } from "../common";
@@ -635,9 +635,12 @@ export function MpcArtContent({
                                 <div className="col-span-full flex flex-col gap-4">
                                     {Array.from(groupedMpcResults.entries()).map(([sourceName, cards]) => (
                                         <div key={sourceName} className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                                            <button
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={() => toggleSourceCollapse(sourceName)}
-                                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-900 transition-colors"
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleSourceCollapse(sourceName); }}
+                                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-900 transition-colors cursor-pointer"
                                             >
                                                 <div className="flex items-center gap-2">
                                                     <button
@@ -656,7 +659,7 @@ export function MpcArtContent({
                                                     <span>{cards.length} cards</span>
                                                     {collapsedSources.has(sourceName) ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                                 </span>
-                                            </button>
+                                            </div>
                                             {!collapsedSources.has(sourceName) && (
                                                 <div className="p-4">
                                                     <CardGrid cardSize={cardSize}>

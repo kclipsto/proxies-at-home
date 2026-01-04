@@ -20,7 +20,7 @@ interface CardGridProps extends HTMLAttributes<HTMLDivElement> {
  * - Desktop: gap-4
  */
 export const CardGrid = forwardRef<HTMLDivElement, CardGridProps>(({ children, className = '', cardSize = 1.0, ...props }, ref) => {
-    const desktopColumnWidth = useMemo(() => Math.round(290 * cardSize), [cardSize]);
+    const desktopColumnWidth = useMemo(() => Math.round(275 * cardSize), [cardSize]);
 
     // Use CSS custom property to set grid column width dynamically on desktop
     const gridStyle = useMemo(() => ({
