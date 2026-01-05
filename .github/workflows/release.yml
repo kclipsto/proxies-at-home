@@ -101,7 +101,7 @@ jobs:
   # Update version in package.json and push (only for branch pushes)
   update-version:
     needs: prepare
-    if: needs.prepare.outputs.should_release == 'true' && !startsWith(github.ref, 'refs/tags/')
+    if: "needs.prepare.outputs.should_release == 'true' && !startsWith(github.ref, 'refs/tags/') && !contains(github.event.head_commit.message, 'chore: bump version')"
     runs-on: ubuntu-latest
     outputs:
       release_notes: ${{ steps.changelog.outputs.notes }}
