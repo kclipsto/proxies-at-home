@@ -653,11 +653,11 @@ export function ArtworkModal() {
                     // - Hidden on Mobile Portrait (uses inline controls in body)
                     // - Sidebar on Mobile Landscape
                     // - Visible on Desktop
-                    <div className="landscape-sidebar-header border-b border-gray-200 dark:border-gray-600 max-lg:portrait:hidden">
+                    <div className="landscape-sidebar-header border-b border-gray-200 dark:border-gray-600 portrait:hidden">
                         {/* Close button - Top on mobile landscape, Right on desktop */}
                         <button
                             onClick={closeModal}
-                            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors lg:order-last"
+                            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors landscape:order-last"
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -669,12 +669,12 @@ export function ArtworkModal() {
                                 <Button
                                     size="sm"
                                     onClick={() => previewCardData ? setPreviewCardData(null) : setShowCardbackLibrary(false)}
-                                    className="max-lg:landscape:w-full"
+                                    className="landscape:w-full"
                                 >
                                     <ArrowLeft className="size-5" />
                                 </Button>
                             )}
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white hidden lg:block">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white hidden portrait:block">
                                 {showCardbackLibrary ? 'Choose Cardback' : `Select Artwork for ${displayData.name}`}
                             </h3>
                         </div>
@@ -684,7 +684,7 @@ export function ArtworkModal() {
                         {/* Source Toggle (Scryfall/MPC) - Mobile landscape sidebar */}
                         {/* Order reversed for vertical mode since sideways-lr reads bottom-to-top */}
                         {activeTab === 'artwork' && !showCardbackLibrary && (
-                            <div className="hidden max-lg:landscape:block">
+                            <div className="hidden landscape:block">
                                 <ArtSourceToggle
                                     value={artSource}
                                     onChange={setArtSource}
@@ -698,10 +698,10 @@ export function ArtworkModal() {
                     </div>
                 }
             >
-                <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden max-lg:landscape:overflow-auto min-h-0">
+                <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden landscape:overflow-auto min-h-0">
                     {/* TabBars - Desktop OR Mobile Portrait (hidden only on mobile landscape) */}
                     {!showCardbackLibrary && (
-                        <div className="hidden lg:block max-lg:portrait:block">
+                        <div className="landscape:hidden portrait:block">
                             {/* Flex container for TabBar and Close Button (Mobile Portrait) */}
                             <div className="flex items-start justify-between">
                                 <div className="flex-1 overflow-x-auto">
@@ -716,15 +716,14 @@ export function ArtworkModal() {
                                     />
                                 </div>
                                 {/* Close button - Mobile Portrait only (inline with tabs) */}
-                                <div className="lg:hidden p-2">
-                                    <button
-                                        onClick={closeModal}
-                                        className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors max-lg:landscape:order-first"
-                                    >
-                                        <X className="w-5 h-5" />
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={closeModal}
+                                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors landscape:order-last"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
+
 
                             <TabBar
                                 tabs={[
@@ -784,7 +783,7 @@ export function ArtworkModal() {
                         </div>
                     )}
                 </div>
-            </ResponsiveModal>
+            </ResponsiveModal >
             <AdvancedSearch
                 isOpen={isSearchOpen}
                 onClose={() => setIsSearchOpen(false)}
@@ -811,58 +810,60 @@ export function ArtworkModal() {
                 initialSource={artSource}
             />
             {/* Delete Cardback Confirmation Dialog - rendered outside Modal */}
-            {pendingDeleteId && (
-                <div
-                    className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        if (e.target === e.currentTarget) {
-                            cancelDelete();
-                        }
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                >
+            {
+                pendingDeleteId && (
                     <div
-                        className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center"
-                        onClick={(e) => e.stopPropagation()}
+                        className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (e.target === e.currentTarget) {
+                                cancelDelete();
+                            }
+                        }}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
-                        <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-                            Delete Cardback?
-                        </div>
-                        <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                            Are you sure you want to delete "{pendingDeleteName}"?
-                            {pendingDeleteId === defaultCardbackId && (
-                                <span className="block mt-2 font-medium text-amber-600 dark:text-amber-400">
-                                    This is your default cardback. A new default will be assigned.
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center justify-center gap-2 mb-5">
-                            <Checkbox
-                                id="dont-show-again"
-                                checked={dontShowAgain}
-                                onChange={(e) => setDontShowAgain(e.target.checked)}
-                            />
-                            <Label htmlFor="dont-show-again" className="text-sm text-gray-500 dark:text-gray-400">
-                                Don't show this again
-                            </Label>
-                        </div>
-                        <div className="flex justify-center gap-4">
-                            <Button
-                                color="failure"
-                                className="bg-red-600 hover:bg-red-700 text-white"
-                                onClick={confirmDelete}
-                            >
-                                Yes, delete
-                            </Button>
-                            <Button color="gray" onClick={cancelDelete}>
-                                No, cancel
-                            </Button>
+                        <div
+                            className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        >
+                            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                                Delete Cardback?
+                            </div>
+                            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                                Are you sure you want to delete "{pendingDeleteName}"?
+                                {pendingDeleteId === defaultCardbackId && (
+                                    <span className="block mt-2 font-medium text-amber-600 dark:text-amber-400">
+                                        This is your default cardback. A new default will be assigned.
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-center gap-2 mb-5">
+                                <Checkbox
+                                    id="dont-show-again"
+                                    checked={dontShowAgain}
+                                    onChange={(e) => setDontShowAgain(e.target.checked)}
+                                />
+                                <Label htmlFor="dont-show-again" className="text-sm text-gray-500 dark:text-gray-400">
+                                    Don't show this again
+                                </Label>
+                            </div>
+                            <div className="flex justify-center gap-4">
+                                <Button
+                                    color="failure"
+                                    className="bg-red-600 hover:bg-red-700 text-white"
+                                    onClick={confirmDelete}
+                                >
+                                    Yes, delete
+                                </Button>
+                                <Button color="gray" onClick={cancelDelete}>
+                                    No, cancel
+                                </Button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </>
     );
 }

@@ -249,8 +249,8 @@ button.no-active-translate:active {
 
 /* Ensure hidden utility works by default, but if we need deeper specificity rewrite: */
 /* Actually, the utility class *should* win if it's generated later, but to be safe: */
-@media (orientation: portrait) and (max-width: 1023px) {
-  .landscape-sidebar-header.max-lg\:portrait\:hidden {
+@media (orientation: portrait) {
+  .landscape-sidebar-header.portrait\:hidden {
     display: none !important;
   }
 }
@@ -261,7 +261,7 @@ button.no-active-translate:active {
   }
 }
 
-@media (orientation: landscape) and (max-width: 1023px) {
+@media (orientation: landscape) {
   .landscape-sidebar-header {
     flex-direction: column;
     height: 100%;
@@ -282,7 +282,7 @@ button.no-active-translate:active {
   gap: 0.75rem; /* gap-3 */
 }
 
-@media (orientation: landscape) and (max-width: 1023px) {
+@media (orientation: landscape) {
   .landscape-sidebar-row {
     flex-direction: column;
     align-items: stretch;
@@ -294,7 +294,7 @@ button.no-active-translate:active {
   display: none;
 }
 
-@media (orientation: landscape) and (max-width: 1023px) {
+@media (orientation: landscape) {
   .landscape-only {
     display: block;
   }
@@ -305,7 +305,7 @@ button.no-active-translate:active {
 }
 
 /* Element hidden on mobile landscape */
-@media (orientation: landscape) and (max-width: 1023px) {
+@media (orientation: landscape) {
   .landscape-hidden {
     display: none;
   }
@@ -316,7 +316,7 @@ button.no-active-translate:active {
   display: none;
 }
 
-@media (orientation: landscape) and (max-width: 1023px) {
+@media (orientation: landscape) {
   .landscape-spacer {
     display: block;
     flex: 1;
