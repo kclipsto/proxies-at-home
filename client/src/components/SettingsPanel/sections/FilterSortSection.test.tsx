@@ -60,6 +60,7 @@ vi.mock('dexie-react-hooks', () => ({
         { uuid: '1', type_line: 'Creature — Human', category: 'Mainboard' },
         { uuid: '2', type_line: 'Instant', category: 'Commander' },
         { uuid: '3', type_line: 'Artifact', category: null },
+        { uuid: '4', type_line: 'Land', linkedFrontId: 'some-id' }, // DFC
     ]),
 }));
 
@@ -70,7 +71,7 @@ vi.mock('@/db', () => ({
 }));
 
 vi.mock('@/hooks/useFilteredAndSortedCards', () => ({
-    getPrimaryType: (typeLine: string | undefined) => {
+    getCardTypes: (typeLine: string | undefined) => {
         if (!typeLine) return null;
         if (typeLine.includes('Creature')) return 'Creature';
         if (typeLine.includes('Instant')) return 'Instant';
@@ -127,6 +128,12 @@ describe('FilterSortSection', () => {
         it('should render Deck Categories when available', () => {
             render(<FilterSortSection />);
             expect(screen.getByText('Deck Categories')).toBeDefined();
+        });
+
+        it('should render Dual Faced in Card Types section when DFCs exist', () => {
+            render(<FilterSortSection />);
+            expect(screen.getByText('Card Types')).toBeDefined();
+            expect(screen.getByText('Dual Faced')).toBeDefined();
         });
     });
 
@@ -224,6 +231,21 @@ describe('FilterSortSection', () => {
             render(<FilterSortSection />);
             fireEvent.click(screen.getByText('Commander'));
             expect(mockSetters.setFilterCategories).toHaveBeenCalledWith(['Commander']);
+        });
+    });
+
+    describe('dual faced filter', () => {
+        it('should call setFilterTypes when Dual Faced clicked', () => {
+            render(<FilterSortSection />);
+            fireEvent.click(screen.getByText('Dual Faced'));
+            expect(mockSetters.setFilterTypes).toHaveBeenCalledWith(['Dual Faced']);
+        });
+
+        it('should remove Dual Faced type when already selected', () => {
+            mockState.filterTypes = ['Dual Faced'];
+            render(<FilterSortSection />);
+            fireEvent.click(screen.getByText('Dual Faced'));
+            expect(mockSetters.setFilterTypes).toHaveBeenCalledWith([]);
         });
     });
 

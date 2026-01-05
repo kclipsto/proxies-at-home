@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { extractCardInfo } from "../helpers/cardInfoHelper";
 import { useSettingsStore } from "../store/settings";
 import type { CardOption } from "../../../shared/types";
+import { isCardbackId } from "../helpers/cardbackLibrary";
+import { useSelectionStore } from "../store/selection";
 
 // Constants moved outside for reusability
 const COLOR_ORDER: string[] = ['g', 'u', 'r', 'w', 'b', 'c'];
@@ -58,12 +60,78 @@ const getRarityValue = (c: CardOption) => {
 // Extract primary type from type_line (e.g., "Legendary Creature - Human Wizard" -> "Creature")
 const PRIMARY_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
 
-export const getPrimaryType = (typeLine: string | undefined): string | undefined => {
-    if (!typeLine) return undefined;
+export const getCardTypes = (typeLine: string | undefined): string[] => {
+    if (!typeLine) return [];
+    const types: string[] = [];
     for (const type of PRIMARY_TYPES) {
-        if (typeLine.includes(type)) return type;
+        if (typeLine.includes(type)) types.push(type);
     }
-    return undefined;
+    return types;
+};
+
+// --- Check Filter Helper ---
+// Checks if a card face matches the current filters (except Features/Mana/Categories which are card-level usually)
+// We treat mana cost as card level for now (sum of faces? usually front face).
+// But for type/color, we check the specific face.
+// --- Check Filter Helper ---
+const matchesFilters = (
+    c: CardOption,
+    filterColors: string[],
+    filterTypes: string[],
+    filterMatchType: "partial" | "exact",
+    otherFace?: CardOption
+): boolean => {
+    // 1. Color Filter
+    if (filterColors.length > 0) {
+        const colors = c.colors || [];
+        const otherColors = otherFace?.colors || [];
+        // Combine colors if checking union
+        const combinedColors = otherFace ? Array.from(new Set([...colors, ...otherColors])) : colors;
+
+        const wantsMulticolor = filterColors.includes("M");
+        const wantsColorless = filterColors.includes("C");
+        const selectedSpecificColors = filterColors.filter(col => col !== "M" && col !== "C");
+
+        if (filterMatchType === "exact") {
+            if (wantsMulticolor && selectedSpecificColors.length === 0 && !wantsColorless) {
+                if (combinedColors.length <= 1) return false;
+            } else if (wantsColorless && selectedSpecificColors.length === 0 && !wantsMulticolor) {
+                if (combinedColors.length !== 0) return false;
+            } else if (selectedSpecificColors.length > 0) {
+                if (combinedColors.length !== selectedSpecificColors.length) return false;
+                if (!selectedSpecificColors.every(col => combinedColors.includes(col))) return false;
+            } else {
+                return false;
+            }
+        } else {
+            // Partial
+            let matches = false;
+            if (wantsMulticolor && combinedColors.length > 1) matches = true;
+            else if (wantsColorless && combinedColors.length === 0) matches = true;
+            else if (selectedSpecificColors.length > 0) {
+                if (combinedColors.some((col) => selectedSpecificColors.includes(col))) matches = true;
+            }
+            if (!matches) return false;
+        }
+    }
+
+    // 2. Type Filter (exclude pseudo-types like "Dual Faced")
+    const actualTypes = filterTypes.filter(t => t !== "Dual Faced");
+    if (actualTypes.length > 0) {
+        const myTypes = getCardTypes(c.type_line);
+        const otherTypes = otherFace ? getCardTypes(otherFace.type_line) : [];
+        const combinedTypes = Array.from(new Set([...myTypes, ...otherTypes]));
+
+        if (filterMatchType === "exact") {
+            // Must match ALL selected types
+            if (!actualTypes.every(t => combinedTypes.includes(t))) return false;
+        } else {
+            // Must match ANY selected type
+            if (!actualTypes.some(t => combinedTypes.includes(t))) return false;
+        }
+    }
+
+    return true;
 };
 
 export function useFilteredAndSortedCards(cards: CardOption[] = []) {
@@ -74,76 +142,113 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
     const filterTypes = useSettingsStore((state) => state.filterTypes);
     const filterCategories = useSettingsStore((state) => state.filterCategories);
     const filterMatchType = useSettingsStore((state) => state.filterMatchType);
+    const flippedCardsSet = useSelectionStore((state) => state.flippedCards);
+
 
     // Step 1: Filter cards (separate memo for better granularity)
-    const filteredCards = useMemo(() => {
-
-        let result = cards;
-
-        // Filter by mana cost
-        if (filterManaCost.length > 0) {
-            result = result.filter((c) => {
-                const cmc = c.cmc ?? 0;
-                if (filterManaCost.includes(7) && cmc >= 7) return true;
-                return filterManaCost.includes(cmc);
-            });
+    const { result: filteredCards, idsToFlip } = useMemo(() => {
+        // Create a lookup map for DFC linking
+        const needsAutoFlip = filterColors.length > 0 || filterTypes.length > 0;
+        const cardMap = needsAutoFlip ? new Map<string, CardOption>() : null;
+        if (cardMap) {
+            for (const c of cards) {
+                cardMap.set(c.uuid, c);
+            }
         }
 
-        // Filter by colors
-        if (filterColors.length > 0) {
-            result = result.filter((c) => {
-                const colors = c.colors || [];
+        const result: CardOption[] = [];
+        const idsToFlip: { uuid: string, targetState: boolean }[] = [];
+        // Track unique UUIDs we've effectively displayed to avoid duplicates
+        const processedUuids = new Set<string>();
 
-                // Handle Colorless special case
-                if (filterColors.includes("C") && colors.length === 0) return true;
+        for (const c of cards) {
+            // Skip cards that are linked back faces of another card (prevent duplicates)
+            if (c.linkedFrontId && cardMap && cardMap.has(c.linkedFrontId)) {
+                continue;
+            }
+            // If this card entity was already displayed
+            if (processedUuids.has(c.uuid)) continue;
 
-                if (filterMatchType === "exact") {
-                    const wantsMulticolor = filterColors.includes("M");
-                    const wantsColorless = filterColors.includes("C");
-                    const selectedSpecificColors = filterColors.filter(col => col !== "M" && col !== "C");
+            // 1. Filter by deck categories (Archidekt) - Card Level
+            if (filterCategories.length > 0) {
+                if (!c.category || !filterCategories.includes(c.category)) continue;
+            }
 
-                    if (wantsMulticolor && selectedSpecificColors.length === 0 && !wantsColorless) {
-                        return colors.length > 1;
-                    }
-                    if (wantsColorless && selectedSpecificColors.length === 0 && !wantsMulticolor) {
-                        return colors.length === 0;
-                    }
 
-                    if (selectedSpecificColors.length > 0) {
-                        if (colors.length !== selectedSpecificColors.length) return false;
-                        return selectedSpecificColors.every(col => colors.includes(col));
-                    }
+            // 2. Filter by Dual Faced pseudo-type - Card Level
+            // In Exact mode OR when "Dual Faced" is the only type: strictly enforce DFC requirement
+            // In Partial mode with other types: DFC is optional (just one of many acceptable types)
+            const otherTypes = filterTypes.filter(t => t !== "Dual Faced");
+            const dfcIsStrictRequirement = filterTypes.includes("Dual Faced") &&
+                (filterMatchType === "exact" || otherTypes.length === 0);
 
-                    return false;
-                } else {
-                    if (filterColors.includes("M") && colors.length > 1) return true;
-                    if (filterColors.includes("C") && colors.length === 0) return true;
-
-                    const specificFilters = filterColors.filter(c => c !== "M" && c !== "C");
-                    if (specificFilters.length === 0) return false;
-
-                    return colors.some((col) => specificFilters.includes(col));
+            if (dfcIsStrictRequirement) {
+                if (!c.linkedFrontId && !c.linkedBackId) continue;
+                if (c.linkedBackId && cardMap) {
+                    const back = cardMap.get(c.linkedBackId);
+                    if (back && back.imageId && isCardbackId(back.imageId)) continue;
                 }
-            });
+            }
+
+
+            // 3. Filter by mana cost - Card Level
+            if (filterManaCost.length > 0) {
+                const cmc = c.cmc ?? 0;
+                const match = filterManaCost.includes(7) && cmc >= 7 ? true : filterManaCost.includes(cmc);
+                if (!match) continue;
+            }
+
+            // --- DFC Logic: Resolve Visible vs Hidden Face ---
+            let visibleFace = c;
+            let hiddenFace: CardOption | undefined = undefined;
+
+            // Use STORE state for flipped status, fallback to card prop
+            const isFlipped = flippedCardsSet.has(c.uuid);
+
+            if (isFlipped && c.linkedBackId && cardMap && cardMap.has(c.linkedBackId)) {
+                // Showing Back
+                visibleFace = cardMap.get(c.linkedBackId)!;
+                hiddenFace = c;
+            } else if (!isFlipped && c.linkedBackId && cardMap && cardMap.has(c.linkedBackId)) {
+                // Showing Front (and has Back)
+                visibleFace = c;
+                hiddenFace = cardMap.get(c.linkedBackId);
+            } else if (c.linkedFrontId && cardMap && cardMap.has(c.linkedFrontId)) {
+                // Should be skipped by continue above, but for safety:
+                // behaving as Front logic for now
+                visibleFace = c;
+                hiddenFace = cardMap.get(c.linkedFrontId);
+            }
+
+            // 1. Check Visible Face (Alone)
+            if (matchesFilters(visibleFace, filterColors, filterTypes, filterMatchType)) {
+                result.push(c);
+                processedUuids.add(c.uuid);
+                continue;
+            }
+
+            // 2. Check Hidden Face (Alone) -> Suggest Auto-Flip AND Keep Visible
+            if (hiddenFace && matchesFilters(hiddenFace, filterColors, filterTypes, filterMatchType)) {
+                // Add to flip list so it auto-flips to the matching face when filters change
+                idsToFlip.push({ uuid: c.uuid, targetState: !isFlipped });
+                // Also add to result so the card stays visible (user can manually flip back)
+                result.push(c);
+                processedUuids.add(c.uuid);
+                continue;
+            }
+
+            // 3. Check Union of Faces (Fallback for DFCs in Exact Mode) -> Show Current Face
+            // If we are here, neither face matched individually. But maybe the COMBINATION does?
+            // Pass hiddenFace as 'otherFace' to matchesFilters
+            if (hiddenFace && matchesFilters(visibleFace, filterColors, filterTypes, filterMatchType, hiddenFace)) {
+                result.push(c);
+                processedUuids.add(c.uuid);
+                continue;
+            }
         }
 
-        // Filter by card types
-        if (filterTypes.length > 0) {
-            result = result.filter((c) => {
-                const primaryType = getPrimaryType(c.type_line);
-                return primaryType && filterTypes.includes(primaryType);
-            });
-        }
-
-        // Filter by deck categories (Archidekt)
-        if (filterCategories.length > 0) {
-            result = result.filter((c) => {
-                return c.category && filterCategories.includes(c.category);
-            });
-        }
-
-        return result;
-    }, [cards, filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType]);
+        return { result, idsToFlip };
+    }, [cards, filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType, flippedCardsSet]);
 
     // Step 2: Sort filtered cards (separate memo - only reruns when sort settings or filtered cards change)
     const filteredAndSortedCards = useMemo(() => {
@@ -232,6 +337,7 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
 
     return {
         cards,
-        filteredAndSortedCards
+        filteredAndSortedCards,
+        idsToFlip
     };
 }

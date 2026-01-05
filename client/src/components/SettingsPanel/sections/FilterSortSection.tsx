@@ -5,7 +5,7 @@ import { ManaIcon } from "@/components/common";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db";
 import { useMemo, useCallback } from "react";
-import { getPrimaryType } from "@/hooks/useFilteredAndSortedCards";
+import { getCardTypes } from "@/hooks/useFilteredAndSortedCards";
 
 // Collapsible section component with persisted state
 interface FilterSectionProps {
@@ -102,12 +102,16 @@ export function FilterSortSection() {
     const availableTypes = useMemo(() => {
         if (!cardsFromDb) return [];
         const types = new Set<string>();
+        let hasDfc = false;
         for (const card of cardsFromDb) {
-            const primaryType = getPrimaryType(card.type_line);
-            if (primaryType) types.add(primaryType);
+            const primaryType = getCardTypes(card.type_line);
+            if (primaryType.length > 0) types.add(primaryType[0]);
+            if (card.linkedFrontId || card.linkedBackId) hasDfc = true;
         }
-        const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
-        return Array.from(types).sort((a, b) => typeOrder.indexOf(a)-typeOrder.indexOf(b));
+        const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Dual Faced"];
+        const sortedTypes = Array.from(types).sort((a, b) => typeOrder.indexOf(a) - typeOrder.indexOf(b));
+        if (hasDfc) sortedTypes.push("Dual Faced");
+        return sortedTypes;
     }, [cardsFromDb]);
 
     // Extract unique categories from loaded cards (Archidekt only)
@@ -251,6 +255,8 @@ export function FilterSortSection() {
                 </FilterSection>
             )}
 
+
+
             {/* Mana Cost Filter */}
             <FilterSection id="manaValue" title="Mana Value" activeCount={filterManaCost.length} onClear={() => setFilterManaCost([])}>
                 <div className="flex flex-wrap gap-1 my-1">
@@ -301,8 +307,8 @@ rounded-full cursor-pointer select-none transition-all
                     <button
                         onClick={() => setFilterMatchType("partial")}
                         className={`px-3 py-1 text-xs rounded-md transition-colors ${filterMatchType === "partial"
-                                ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                            ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
+                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                             } `}
                     >
                         Partial
@@ -310,8 +316,8 @@ rounded-full cursor-pointer select-none transition-all
                     <button
                         onClick={() => setFilterMatchType("exact")}
                         className={`px-3 py-1 text-xs rounded-md transition-colors ${filterMatchType === "exact"
-                                ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                            ? "bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white"
+                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                             } `}
                     >
                         Exact

@@ -124,6 +124,21 @@ export async function ensureBuiltinCardbacksInDb(): Promise<void> {
     builtinCardbacksEnsured = true;
 }
 
+// Cache for active blob URLs to prevent redundant creation/revocation
+const cardbackUrlCache = new Map<string, string>();
+
+/**
+ * Invalidates the cached URL for a given cardback ID.
+ * Call this when a cardback is updated or deleted.
+ */
+export function invalidateCardbackUrl(id: string) {
+    const url = cardbackUrlCache.get(id);
+    if (url) {
+        URL.revokeObjectURL(url);
+        cardbackUrlCache.delete(id);
+    }
+}
+
 /**
  * Get all available cardbacks from the cardbacks table.
  * Returns built-in cardbacks plus any user-uploaded or MPC-imported cardbacks.
@@ -149,15 +164,28 @@ export async function getAllCardbacks(): Promise<CardbackOption[]> {
         // hasBuiltInBleed priority: image record override > builtin default > fallback false for uploaded
         const hasBuiltInBleed = img.hasBuiltInBleed ?? builtinInfo?.hasBuiltInBleed ?? false;
 
+        // Resolve URL
+        let imageUrl = '';
+        if (cardbackUrlCache.has(img.id)) {
+            // console.log(`[CardbackLib] Cache hit for ${img.id}`);
+            imageUrl = cardbackUrlCache.get(img.id)!;
+        } else {
+            console.log(`[CardbackLib] Creating new Blob URL for ${img.id}`);
+            if (img.displayBlob) {
+                imageUrl = URL.createObjectURL(img.displayBlob);
+                cardbackUrlCache.set(img.id, imageUrl);
+            } else if (img.originalBlob) {
+                imageUrl = URL.createObjectURL(img.originalBlob);
+                cardbackUrlCache.set(img.id, imageUrl);
+            } else {
+                imageUrl = img.sourceUrl || '';
+            }
+        }
+
         return {
             id: img.id,
             name,
-            // Priority: displayBlob (processed) > originalBlob (unprocessed) > sourceUrl
-            imageUrl: img.displayBlob
-                ? URL.createObjectURL(img.displayBlob)
-                : img.originalBlob
-                    ? URL.createObjectURL(img.originalBlob)
-                    : img.sourceUrl || '',
+            imageUrl,
             source: builtinInfo ? 'builtin' : 'uploaded',
             hasBuiltInBleed,
         };

@@ -209,6 +209,20 @@ class ProxxiedDexie extends Dexie {
       effectCache: '&key, cachedAt',
       mpcSearchCache: '&[query+cardType], cachedAt',
     });
+    // Version 10: Clear cardMetadataCache to fix stale DFC data
+    this.version(10).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+    }).upgrade(tx => {
+      // Clear all cached metadata to force re-enrichment with correct DFC handling
+      return tx.table('cardMetadataCache').clear();
+    });
   }
 }
 

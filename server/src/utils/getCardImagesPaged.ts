@@ -52,15 +52,20 @@ interface ScryfallCardFace {
   name?: string;
   image_uris?: {
     png?: string;
+    large?: string;
+    normal?: string;
   };
   colors?: string[];
   mana_cost?: string;
+  type_line?: string;
 }
 
 export interface ScryfallApiCard {
   name?: string;
   image_uris?: {
     png?: string;
+    large?: string;
+    normal?: string;
   };
   card_faces?: ScryfallCardFace[];
   colors?: string[];

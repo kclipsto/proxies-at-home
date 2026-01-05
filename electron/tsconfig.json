@@ -12,7 +12,8 @@
         "resolveJsonModule": true
     },
     "include": [
-        "main.ts"
+        "main.ts",
+        "preload.cts"
     ],
     "exclude": [
         "node_modules",

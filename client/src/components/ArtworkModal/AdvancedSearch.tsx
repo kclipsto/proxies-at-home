@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
-import { Button, TextInput } from "flowbite-react";
-import { X, Plus, Filter } from "lucide-react";
+import { TextInput } from "flowbite-react";
+import { X, Filter } from "lucide-react";
 import { useCardAutocomplete } from "@/hooks/useCardAutocomplete";
 import { useScryfallPreview } from "@/hooks/useScryfallPreview";
 import { extractCardInfo } from "@/helpers/cardInfoHelper";
-import { SearchCarousel } from "./SearchCarousel";
-import { SearchResultsList } from "./SearchResultsList";
-import { MpcArtContent } from "../MpcArt";
-import { ArtSourceToggle, ResponsiveModal } from "../common";
+import { ArtSourceToggle, ResponsiveModal, FloatingZoomPanel, CardGrid } from "../common";
 import { useToastStore } from "@/store/toast";
 import { getMpcAutofillImageUrl, parseMpcCardName, type MpcAutofillCard } from "@/helpers/mpcAutofillApi";
 import type { ScryfallCard } from "../../../../shared/types";
+import { useZoomShortcuts } from "@/hooks/useZoomShortcuts";
+import { useArtworkModalStore } from "@/store/artworkModal";
+import { MpcArtContent } from "../MpcArt";
 
 type ArtSource = 'scryfall' | 'mpc';
 
@@ -40,12 +40,20 @@ export function AdvancedSearch({
         return true;
     });
     const [activeFilterCount, setActiveFilterCount] = useState(0);
+    const cardZoom = useArtworkModalStore((state) => state.advancedSearchZoom);
+    const setCardZoom = useArtworkModalStore((state) => state.setAdvancedSearchZoom);
+
+    useZoomShortcuts({
+        setZoom: setCardZoom,
+        isOpen,
+        minZoom: 0.5,
+        maxZoom: 5,
+    });
 
     const {
         query,
         suggestions,
         hoveredIndex,
-        setHoveredIndex,
         handleInputChange,
         handleClear,
         handleKeyDown,
@@ -55,8 +63,6 @@ export function AdvancedSearch({
             // We don't add it immediately, we just show the preview
         }
     });
-
-    const [showResultsList, setShowResultsList] = useState(false);
 
     // Get neighbor cards
     const getScryfallImageUrl = (name: string) => `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&format=image&version=large`;
@@ -89,31 +95,10 @@ export function AdvancedSearch({
         } as ScryfallCard];
     }
 
-    // Duplicate slides if fewer than 10 to ensure infinite scroll feel
-    const originalLength = displaySuggestions.length;
-    let loopSuggestions = [...displaySuggestions];
-    const MIN_SLIDES_FOR_LOOP = 12;
-
-    if (loopSuggestions.length > 0 && loopSuggestions.length < MIN_SLIDES_FOR_LOOP) {
-        while (loopSuggestions.length < MIN_SLIDES_FOR_LOOP) {
-            loopSuggestions = [...loopSuggestions, ...displaySuggestions];
-        }
-    }
-
-    const shouldLoop = loopSuggestions.length >= 10;
-
-    const handleToggleResultsList = (e?: React.MouseEvent | React.TouchEvent) => {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        setShowResultsList(!showResultsList);
-    };
-
     const handleAddCurrentCard = (indexOverride?: number) => {
         const idx = indexOverride ?? hoveredIndex;
-        if (idx !== null && loopSuggestions[idx]) {
-            const cardName = loopSuggestions[idx].name;
+        if (idx !== null && displaySuggestions[idx]) {
+            const cardName = displaySuggestions[idx].name;
             onSelectCard(cardName);
             if (keepOpenOnAdd) {
                 useToastStore.getState().showSuccessToast(cardName);
@@ -121,7 +106,7 @@ export function AdvancedSearch({
                 handleClear();
                 onClose();
             }
-        } else if (query && loopSuggestions.length === 0) {
+        } else if (query && displaySuggestions.length === 0) {
             onSelectCard(query);
             if (keepOpenOnAdd) {
                 useToastStore.getState().showSuccessToast(query);
@@ -184,25 +169,41 @@ export function AdvancedSearch({
             isOpen={isOpen}
             onClose={onClose}
             mobileLandscapeSidebar
-            desktopHeight="65vh"
-            debugHeights
             header={modalHeader}
         >
             <div className="flex-1 flex flex-col overflow-hidden max-lg:landscape:overflow-auto min-h-0">
                 <div className="relative flex-1 overflow-hidden bg-gray-50 dark:bg-gray-700 flex flex-col min-h-0">
                     <div className={`flex-1 h-full w-full overflow-x-hidden overflow-y-auto pt-4 scrollbar-hide flex flex-col min-h-0 ${artSource === 'scryfall' ? 'space-y-4' : ''}`}>
                         {artSource === 'scryfall' && (
-                            <SearchCarousel
-                                suggestions={suggestions}
-                                displaySuggestions={loopSuggestions}
-                                hoveredIndex={hoveredIndex}
-                                setHoveredIndex={setHoveredIndex}
-                                shouldLoop={shouldLoop}
-                                getScryfallImageUrl={getScryfallImageUrl}
-                                onAddCard={handleAddCurrentCard}
-                                onToggleResultsList={handleToggleResultsList}
-                                originalLength={originalLength}
-                            />
+                            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6">
+                                {displaySuggestions.length > 0 ? (
+                                    <CardGrid cardSize={cardZoom}>
+                                        {displaySuggestions.map((suggestion, index) => (
+                                            <div
+                                                key={`${suggestion.name}-${index}`}
+                                                className="relative group cursor-pointer"
+                                                onClick={() => handleAddCurrentCard(index)}
+                                            >
+                                                <img
+                                                    src={suggestion.imageUrls?.[0] || getScryfallImageUrl(suggestion.name)}
+                                                    alt={suggestion.name}
+                                                    loading="lazy"
+                                                    className="w-full h-auto rounded-[4.75%] shadow-md hover:shadow-xl transition-shadow select-none"
+                                                    draggable="false"
+                                                />
+                                            </div>
+                                        ))}
+                                    </CardGrid>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
+                                        <div className="text-center p-8">
+                                            <p className="text-sm font-medium">
+                                                {query ? 'No cards found.' : 'Search for a card to preview.'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* MPC content - always rendered, hidden via CSS to preserve state */}
@@ -216,18 +217,20 @@ export function AdvancedSearch({
                                 containerClassStyle="flex-1 h-full"
                                 onFiltersCollapsedChange={setMpcFiltersCollapsed}
                                 onFilterCountChange={setActiveFilterCount}
+                                cardSize={cardZoom}
                             />
                         </div>
 
-                    </div>
-                    {showResultsList && artSource === 'scryfall' && (
-                        <SearchResultsList
-                            suggestions={suggestions}
-                            hoveredIndex={hoveredIndex}
-                            setHoveredIndex={setHoveredIndex}
-                            onClose={() => setShowResultsList(false)}
+                        {/* Floating Zoom Controls - Shared for both modes */}
+                        <FloatingZoomPanel
+                            zoom={cardZoom}
+                            onZoomChange={setCardZoom}
+                            minZoom={0.5}
+                            maxZoom={5}
+                            className="hidden lg:block"
                         />
-                    )}
+
+                    </div>
                 </div>
 
                 {/* Footer - always visible, but toggle is hidden on mobile landscape (uses header sidebar) */}
@@ -310,18 +313,7 @@ export function AdvancedSearch({
                                 </button>
                             )}
                         </div>
-                        {artSource === 'scryfall' && (
-                            <Button
-                                color="indigo"
-                                onClick={() => {
-                                    handleAddCurrentCard();
-                                }}
-                                disabled={!query}
-                                className="h-10 w-10 p-0 flex items-center justify-center"
-                            >
-                                <Plus className="w-6 h-6" />
-                            </Button>
-                        )}
+
                     </div>
                 </div>
 

@@ -1,14 +1,24 @@
 {
   "name": "mtg-proxy-builder",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "Proxxied",
   "main": "electron/dist/main.js",
   "private": true,
+  "bin": {
+    "release": "./scripts/release.mjs"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
     "electron:dev": "concurrently \"npm run dev --prefix client\" \"npm run build --prefix server && tsc -p electron/tsconfig.json && wait-on http://localhost:5173 && cross-env NODE_ENV=development electron electron/dist/main.js\"",
     "electron:build": "npm run build --prefix client && npm run build --prefix server && tsc -p electron/tsconfig.json && electron-builder",
-    "electron:build:win": "npm run build --prefix client && npm run build --prefix server && cd server/node_modules/better-sqlite3 && npx prebuild-install --platform win32 --arch x64 --runtime electron --target 38.0.0 && cd ../../.. && tsc -p electron/tsconfig.json && electron-builder --win && cd server && npm rebuild better-sqlite3 && cd .."
+    "electron:build:win": "npm run build --prefix client && npm run build --prefix server && cd server/node_modules/better-sqlite3 && npx prebuild-install --platform win32 --arch x64 --runtime electron --target 39.0.0 && cd ../../.. && tsc -p electron/tsconfig.json && electron-builder --win && cd server && npm rebuild better-sqlite3 && cd ..",
+    "release": "node scripts/release.mjs",
+    "release:dry": "node scripts/release.mjs --dry-run",
+    "release:patch": "node scripts/release.mjs --patch",
+    "release:minor": "node scripts/release.mjs --minor",
+    "release:major": "node scripts/release.mjs --major",
+    "release:promote": "node scripts/release.mjs --promote-stable",
+    "release:revert": "node scripts/release.mjs --revert"
   },
   "devDependencies": {
     "@babel/preset-typescript": "^7.28.5",
@@ -60,6 +70,14 @@
       ],
       "category": "Utility",
       "icon": "client/public/pwa-512x512.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "client/public/pwa-512x512.png",
+      "category": "public.app-category.utilities"
     },
     "win": {
       "target": "nsis",

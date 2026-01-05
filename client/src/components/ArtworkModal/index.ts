@@ -7,5 +7,3 @@ export { CardbackLibrary } from './CardbackLibrary';
 export { CardbackTile } from './CardbackTile';
 export { DefaultCardbackCheckbox } from './DefaultCardbackCheckbox';
 export { AdvancedSearch } from './AdvancedSearch';
-export { SearchCarousel } from './SearchCarousel';
-export { SearchResultsList } from './SearchResultsList';

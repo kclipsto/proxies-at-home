@@ -75,6 +75,11 @@ interface SelectionState {
      * Check if a card is flipped.
      */
     isFlipped: (uuid: string) => boolean;
+
+    /**
+     * Explicitly set flip state for specific cards.
+     */
+    setFlipped: (uuids: string[], isFlipped: boolean) => void;
 }
 
 export const useSelectionStore = create<SelectionState>((set, get) => ({
@@ -188,6 +193,24 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
     },
 
     isFlipped: (uuid) => get().flippedCards.has(uuid),
+
+    setFlipped: (uuids, isFlipped) => {
+        set((state) => {
+            const newFlipped = new Set(state.flippedCards);
+            uuids.forEach(uuid => {
+                if (isFlipped) newFlipped.add(uuid);
+                else newFlipped.delete(uuid);
+            });
+            return { flippedCards: newFlipped };
+        });
+
+        // Persist
+        import('../db').then(({ db }) => {
+            db.cards.bulkUpdate(
+                uuids.map(id => ({ key: id, changes: { isFlipped } }))
+            );
+        });
+    },
 }));
 
 /**

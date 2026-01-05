@@ -24,6 +24,7 @@ import { AdvancedSearch } from "./AdvancedSearch";
 import { getAllCardbacks, isCardbackId, type CardbackOption } from "@/helpers/cardbackLibrary";
 import { useSettingsStore } from "@/store/settings";
 import { useSelectionStore } from "@/store/selection";
+import { useZoomShortcuts } from "@/hooks/useZoomShortcuts";
 
 
 export function ArtworkModal() {
@@ -87,17 +88,14 @@ export function ArtworkModal() {
     // Fetch cardback options when Back tab is selected
     useEffect(() => {
         if (selectedFace === 'back') {
-            getAllCardbacks().then(setCardbackOptions);
-        }
-        // Cleanup blob URLs when options change or component unmounts
-        return () => {
-            cardbackOptions.forEach(option => {
-                if (option.imageUrl.startsWith('blob:')) {
-                    URL.revokeObjectURL(option.imageUrl);
-                }
+            console.log("[ArtworkModal] 'back' face selected. Fetching cardback options...");
+            getAllCardbacks().then(options => {
+                console.log(`[ArtworkModal] Fetched ${options.length} cardback options.`);
+                setCardbackOptions(options);
             });
-        };
-    }, [selectedFace]); // eslint-disable-line react-hooks/exhaustive-deps
+        }
+        // No cleanup needed - caching is global in cardbackLibrary.ts
+    }, [selectedFace]);
 
     // Fetch linked back card if it exists
     const linkedBackCard = useLiveQuery(
@@ -349,6 +347,11 @@ export function ArtworkModal() {
             );
         }
 
+        // Auto-flip card to show the face that was just edited
+        if (modalCard?.uuid) {
+            useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
+        }
+
         closeModal();
     }
 
@@ -409,6 +412,11 @@ export function ArtworkModal() {
             }
         }
 
+        // Auto-flip card to show the face that was just edited
+        if (modalCard?.uuid) {
+            useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
+        }
+
         closeModal();
     }
 
@@ -459,6 +467,11 @@ export function ArtworkModal() {
             frontCardUuids = [modalCard.uuid];
         }
         await undoableChangeCardback(frontCardUuids, cardbackId, cardbackName, hasBleed);
+
+        // Auto-flip card to show the face that was just edited
+        if (modalCard?.uuid) {
+            useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
+        }
 
         closeModal();
     }
@@ -591,6 +604,13 @@ export function ArtworkModal() {
     // ResponsiveModal handles backdrop clicks correctly
 
     const [zoomLevel, setZoomLevel] = useState(1);
+
+    useZoomShortcuts({
+        setZoom: setZoomLevel,
+        isOpen: isModalOpen && activeTab === 'artwork',
+        minZoom: 0.5,
+        maxZoom: 3,
+    });
     const gridRef = useRef<HTMLDivElement>(null);
     const zoomRef = useRef(zoomLevel);
     useEffect(() => {
@@ -646,8 +666,6 @@ export function ArtworkModal() {
                 isOpen={isModalOpen}
                 onClose={pendingDeleteId ? () => { } : closeModal}
                 mobileLandscapeSidebar
-                desktopHeight="65vh"
-                debugHeights
                 header={
                     // Header container:
                     // - Hidden on Mobile Portrait (uses inline controls in body)
@@ -774,6 +792,7 @@ export function ArtworkModal() {
                             activeTab={activeTab}
                             setActiveTab={setActiveTab}
                             setSelectedFace={setSelectedFace}
+                            setZoomLevel={setZoomLevel}
                         />
                     )}
 

@@ -43,7 +43,13 @@ type UpdateEventInfo = UpdateInfo | ProgressInfo | string | null;
 interface Window {
   electronAPI?: {
     serverUrl: () => Promise<string>;
+    getAppVersion: () => Promise<string>;
+    getUpdateChannel: () => Promise<string>;
+    setUpdateChannel: (channel: string) => Promise<boolean>;
+    getAutoUpdateEnabled: () => Promise<boolean>;
+    setAutoUpdateEnabled: (enabled: boolean) => Promise<boolean>;
     onUpdateStatus: (callback: (status: UpdateStatus, info?: UpdateEventInfo) => void) => void;
+    onShowAbout: (callback: () => void) => void;
     checkForUpdates: () => Promise<void>;
     downloadUpdate: () => Promise<void>;
     installUpdate: () => Promise<void>;

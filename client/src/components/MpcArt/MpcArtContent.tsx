@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
+import logoSvg from "@/assets/logo.svg";
 import { Button } from "flowbite-react";
 import { ArrowUpNarrowWide, ArrowDownWideNarrow, ChevronRight, ChevronDown, Star, X } from "lucide-react";
 import { SelectDropdown, MultiSelectDropdown, CardGrid } from "../common";
@@ -18,6 +19,8 @@ export interface MpcArtContentProps {
     onFiltersCollapsedChange?: (collapsed: boolean) => void;
     /** Callback when active filter count changes */
     onFilterCountChange?: (count: number) => void;
+    /** Card size multiplier for the grid (1.0 = default, 0.5-2.0 range) */
+    cardSize?: number;
 }
 
 /**
@@ -32,6 +35,7 @@ export function MpcArtContent({
     autoSearch = true,
     filtersCollapsed: externalFiltersCollapsed,
     onFilterCountChange,
+    cardSize = 1.0,
 }: MpcArtContentProps) {
     // Settings store for favorites
     const favoriteMpcSources = useSettingsStore(s => s.favoriteMpcSources);
@@ -245,7 +249,7 @@ export function MpcArtContent({
             <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden relative scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent flex flex-col min-h-0">
                 {mpcLoading ? (
                     <div className="px-6 w-full">
-                        <CardGrid>
+                        <CardGrid cardSize={cardSize}>
                             <div className="col-span-full">
                                 <MpcArtGrid cards={[]} onSelectCard={() => { }} isLoading />
                             </div>
@@ -627,53 +631,56 @@ export function MpcArtContent({
                                 </Button>
                             </div>
                         ) : (
-                            <CardGrid>
-                                {mpcSortBy === "source" && groupedMpcResults ? (
-                                    <div className="col-span-full flex flex-col gap-4">
-                                        {Array.from(groupedMpcResults.entries()).map(([sourceName, cards]) => (
-                                            <div key={sourceName} className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                                                <button
-                                                    onClick={() => toggleSourceCollapse(sourceName)}
-                                                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-900 transition-colors"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                toggleFavoriteMpcSource(sourceName);
-                                                            }}
-                                                            className="p-1 hover:text-yellow-500 transition-colors"
-                                                            title={favoriteMpcSources.includes(sourceName) ? "Remove from favorites" : "Add to favorites"}
-                                                        >
-                                                            <Star className={`w-4 h-4 ${favoriteMpcSources.includes(sourceName) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} />
-                                                        </button>
-                                                        <span className="font-medium text-gray-900 dark:text-white">{sourceName}</span>
-                                                    </div>
-                                                    <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                                                        <span>{cards.length} cards</span>
-                                                        {collapsedSources.has(sourceName) ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                                    </span>
-                                                </button>
-                                                {!collapsedSources.has(sourceName) && (
-                                                    <div className="p-4">
-                                                        <CardGrid>
-                                                            <MpcArtGrid
-                                                                cards={cards}
-                                                                onSelectCard={onSelectCard}
-                                                                onFilterDpi={handleDpiFilter}
-                                                                onFilterSource={handleSourceFilter}
-                                                                onFilterTag={handleTagFilter}
-                                                                activeMinDpi={mpcMinDpi}
-                                                                activeSources={mpcSourceFilters}
-                                                                activeTags={mpcTagFilters}
-                                                            />
-                                                        </CardGrid>
-                                                    </div>
-                                                )}
+                            mpcSortBy === "source" && groupedMpcResults ? (
+                                <div className="col-span-full flex flex-col gap-4">
+                                    {Array.from(groupedMpcResults.entries()).map(([sourceName, cards]) => (
+                                        <div key={sourceName} className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() => toggleSourceCollapse(sourceName)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleSourceCollapse(sourceName); }}
+                                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleFavoriteMpcSource(sourceName);
+                                                        }}
+                                                        className="p-1 hover:text-yellow-500 transition-colors"
+                                                        title={favoriteMpcSources.includes(sourceName) ? "Remove from favorites" : "Add to favorites"}
+                                                    >
+                                                        <Star className={`w-4 h-4 ${favoriteMpcSources.includes(sourceName) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} />
+                                                    </button>
+                                                    <span className="font-medium text-gray-900 dark:text-white">{sourceName}</span>
+                                                </div>
+                                                <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                                    <span>{cards.length} cards</span>
+                                                    {collapsedSources.has(sourceName) ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                </span>
                                             </div>
-                                        ))}
-                                    </div>
-                                ) : (
+                                            {!collapsedSources.has(sourceName) && (
+                                                <div className="p-4">
+                                                    <CardGrid cardSize={cardSize}>
+                                                        <MpcArtGrid
+                                                            cards={cards}
+                                                            onSelectCard={onSelectCard}
+                                                            onFilterDpi={handleDpiFilter}
+                                                            onFilterSource={handleSourceFilter}
+                                                            onFilterTag={handleTagFilter}
+                                                            activeMinDpi={mpcMinDpi}
+                                                            activeSources={mpcSourceFilters}
+                                                            activeTags={mpcTagFilters}
+                                                        />
+                                                    </CardGrid>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <CardGrid cardSize={cardSize}>
                                     <MpcArtGrid
                                         cards={filteredMpcResults}
                                         onSelectCard={onSelectCard}
@@ -684,13 +691,13 @@ export function MpcArtContent({
                                         activeSources={mpcSourceFilters}
                                         activeTags={mpcTagFilters}
                                     />
-                                )}
-                            </CardGrid>
+                                </CardGrid>
+                            )
                         )}
                     </div>
                 ) : mpcSearched && cardName.trim() ? (
                     <div className="px-6 col-span-full flex flex-col items-center justify-center w-full flex-1 text-gray-400 dark:text-gray-500">
-                        <img src="/logo.svg" alt="Proxxied Logo" className="w-24 h-24 mb-4 opacity-50" />
+                        <img src={logoSvg} alt="Proxxied Logo" className="w-24 h-24 mb-4 opacity-50" />
                         <p className="text-sm font-medium text-center mb-4">No MPC art found for "{cardName}"</p>
                         {onSwitchToScryfall && (
                             <Button color="blue" onClick={onSwitchToScryfall}>
@@ -701,7 +708,7 @@ export function MpcArtContent({
                     </div>
                 ) : (
                     <div className="px-6 col-span-full flex flex-col items-center justify-center w-full flex-1 text-gray-400 dark:text-gray-500">
-                        <img src="/logo.svg" alt="Proxxied Logo" className="w-24 h-24 mb-4 opacity-50" />
+                        <img src={logoSvg} alt="Proxxied Logo" className="w-24 h-24 mb-4 opacity-50" />
                         <p className="text-sm font-medium text-center">Search for a card to find custom art.<br />Results from <a href="https://mpcfill.com" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">MPC Autofill</a>.</p>
                         <div className="mt-4 h-8 w-full" aria-hidden="true" />
                     </div>

@@ -1,0 +1,17 @@
+#!/bin/bash
+# Pre-push hook for Proxxied
+# Warns when pushing tags directly instead of using the release script
+
+# Only warn for tag creation, not deletion
+# During 'git push --delete', the local_sha will be all zeros
+
+while read local_ref local_sha remote_ref remote_sha
+do
+    # Check if we're creating a tag (not deleting)
+    if [[ "$remote_ref" == refs/tags/* ]] && [[ "$local_sha" != "0000000000000000000000000000000000000000" ]]; then
+        echo ""
+        echo "⚠  You're pushing a tag directly."
+        echo "   Consider using the release script instead: npm run release"
+        echo ""
+    fi
+done
