@@ -76,7 +76,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                     {/* Links */}
                     <div className="flex flex-col gap-2">
                         <Button
-                            onClick={() => openExternal('https://github.com/nathanmilot/proxies-at-home')}
+                            onClick={() => openExternal('https://github.com/kclipsto/proxies-at-home')}
                             className="w-full bg-[#0d1117] hover:bg-[#010409] dark:bg-[#0d1117] dark:hover:bg-[#010409]"
                         >
                             <svg className="mr-2 h-5 w-5" role="img" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
