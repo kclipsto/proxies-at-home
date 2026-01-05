@@ -66,6 +66,12 @@ export function DefaultCardbackCheckbox({
                     }))
                 );
             }
+
+            // Auto-flip card to show the back face
+            if (modalCard?.uuid) {
+                useSelectionStore.getState().setFlipped([modalCard.uuid], true);
+            }
+
             onClose();
         } else {
             if (isMultiSelect) {

@@ -347,6 +347,11 @@ export function ArtworkModal() {
             );
         }
 
+        // Auto-flip card to show the face that was just edited
+        if (modalCard?.uuid) {
+            useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
+        }
+
         closeModal();
     }
 
@@ -407,6 +412,11 @@ export function ArtworkModal() {
             }
         }
 
+        // Auto-flip card to show the face that was just edited
+        if (modalCard?.uuid) {
+            useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
+        }
+
         closeModal();
     }
 
@@ -457,6 +467,11 @@ export function ArtworkModal() {
             frontCardUuids = [modalCard.uuid];
         }
         await undoableChangeCardback(frontCardUuids, cardbackId, cardbackName, hasBleed);
+
+        // Auto-flip card to show the face that was just edited
+        if (modalCard?.uuid) {
+            useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
+        }
 
         closeModal();
     }
