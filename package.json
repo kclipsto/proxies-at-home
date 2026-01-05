@@ -40,7 +40,7 @@
     "artifactName": "${productName}-Setup-${version}.${ext}",
     "publish": {
       "provider": "github",
-      "owner": "nathanmilot",
+      "owner": "kclipsto",
       "repo": "proxies-at-home"
     },
     "extraResources": [

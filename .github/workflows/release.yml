@@ -19,6 +19,7 @@ permissions:
 jobs:
   # Determine version and release type
   prepare:
+    if: github.repository == 'kclipsto/proxies-at-home'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
