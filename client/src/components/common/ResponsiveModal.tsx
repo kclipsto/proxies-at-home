@@ -119,14 +119,14 @@ export function ResponsiveModal({
         'relative bg-gray-50 dark:bg-gray-700 rounded-2xl shadow-2xl overflow-hidden',
         // Mobile: near full-screen with small gap
         'w-[calc(100%-1rem)] h-[calc(100%-1rem)] max-w-[calc(100%-1rem)] max-h-[calc(100%-1rem)]',
-        // Desktop (lg+): centered 90% width
-        'lg:w-[90%] lg:max-w-[90%] lg:max-h-[90vh]',
-        // Desktop height: fixed or auto
-        desktopHeight === '65vh' ? 'lg:h-[65vh]' : 'lg:h-auto',
+        // Desktop (lg+): centered 90% width (only if NOT sidebar mode)
+        !mobileLandscapeSidebar && 'lg:w-[90%] lg:max-w-[90%] lg:max-h-[90vh]',
+        // Desktop height: fixed or auto (only if NOT sidebar mode)
+        !mobileLandscapeSidebar && (desktopHeight === '65vh' ? 'lg:h-[65vh]' : 'lg:h-auto'),
         // Flex layout
         'flex flex-col',
         // Mobile landscape sidebar layout (optional)
-        mobileLandscapeSidebar && 'max-lg:landscape:flex-row',
+        mobileLandscapeSidebar && 'landscape:flex-row',
         // Custom className
         className,
     ].filter(Boolean).join(' ');

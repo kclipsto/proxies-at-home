@@ -130,7 +130,7 @@ export function ArtworkTabContent({
             {/* Header */}
             <header className="flex-none bg-white dark:bg-gray-700 p-6 pb-4 space-y-4">
                 {/* Mobile Landscape Only: Toggles moved from Sidebar */}
-                <div className="hidden max-lg:landscape:flex gap-2 mb-2">
+                <div className="hidden landscape:flex gap-2 mb-2">
                     <div className="flex-1">
                         <ToggleButtonGroup
                             options={[
@@ -155,14 +155,14 @@ export function ArtworkTabContent({
 
                 {/* Mobile Landscape Only: Cardback Button (Relocated) */}
                 {showCardbackButton && (
-                    <Button color="light" onClick={() => setShowCardbackLibrary(true)} title="Use a cardback from the library instead" className="w-full hidden max-lg:landscape:flex">
+                    <Button color="light" onClick={() => setShowCardbackLibrary(true)} title="Use a cardback from the library instead" className="w-full hidden landscape:flex">
                         <CardbackIcon />
                         Use Cardback
                     </Button>
                 )}
 
                 {/* Desktop & Portrait: Original Search & Cardback Buttons (Hidden on Landscape) */}
-                <div className="flex gap-2 max-lg:landscape:hidden">
+                <div className="flex gap-2 landscape:hidden">
                     <Button color="blue" className="flex-1" onClick={onOpenSearch}>
                         <Search className="mr-2 h-4 w-4" />
                         Search for a different card...
@@ -244,7 +244,7 @@ export function ArtworkTabContent({
                 !showCardbackLibraryGrid && (
                     <footer className="flex-none p-4 bg-white dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 flex flex-col gap-2">
                         {/* Source toggle - mobile portrait only (desktop has inline toggle, landscape has sidebar toggle) */}
-                        <div className="lg:hidden max-lg:landscape:hidden">
+                        <div className="landscape:hidden">
                             <ArtSourceToggle
                                 value={artSource}
                                 onChange={setArtSource}
@@ -255,7 +255,7 @@ export function ArtworkTabContent({
                         {/* Second row: Controls (filter + action button) */}
                         <div className="flex gap-2 items-center">
                             {/* Desktop Only: Toggle inline (Landscape uses sidebar) */}
-                            <div className="hidden lg:block">
+                            <div className="hidden portrait:block">
                                 <ArtSourceToggle
                                     value={artSource}
                                     onChange={setArtSource}
@@ -289,7 +289,7 @@ export function ArtworkTabContent({
                             </Button>
 
                             {/* Mobile Landscape Only: Search Button (Relocated) */}
-                            <Button className="flex-1 hidden max-lg:landscape:flex" color="blue" onClick={onOpenSearch}>
+                            <Button className="flex-1 hidden landscape:flex" color="blue" onClick={onOpenSearch}>
                                 <Search className="w-4 h-4 mr-2" />
                                 Search for a different card...
                             </Button>
