@@ -17,12 +17,16 @@ vi.mock("./mpcSearchCache", () => ({
 import {
     getMpcAutofillImageUrl,
     extractMpcIdentifierFromImageId,
-    parseMpcCardName,
+    searchMpcAutofill,
+    batchSearchMpcAutofill,
 } from "./mpcAutofillApi";
+
+import { parseMpcCardName } from "./mpcUtils";
 
 describe("mpcAutofillApi", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal("fetch", vi.fn());
     });
 
     describe("getMpcAutofillImageUrl", () => {
@@ -32,7 +36,7 @@ describe("mpcAutofillApi", () => {
             const result = getMpcAutofillImageUrl("abc123");
 
             expect(result).toBe("https://example.com/mpc/abc123");
-            expect(mockGetMpcImageUrl).toHaveBeenCalledWith("abc123");
+            expect(mockGetMpcImageUrl).toHaveBeenCalledWith("abc123", "full");
         });
 
         it("should return empty string if getMpcImageUrl returns null", () => {
@@ -121,6 +125,107 @@ describe("mpcAutofillApi", () => {
             // Edge case: name starts with special character
             const result = parseMpcCardName("Test Card");
             expect(result).toBe("Test Card");
+        });
+    });
+
+    describe("searchMpcAutofill", () => {
+        it("should parse card names before returning results", async () => {
+            // Setup: API returns unparsed names
+            const mockResponse = {
+                cards: [
+                    { identifier: "id1", name: "Deflecting Swat (Borderless Greg Staples)", dpi: 300, tags: [], sourceName: "Test", source: "test", extension: "png", size: 1000, smallThumbnailUrl: "", mediumThumbnailUrl: "" },
+                    { identifier: "id2", name: "Deflecting Swat {311} (Patrick Gañas) (Elemental Frame)", dpi: 300, tags: [], sourceName: "Test", source: "test", extension: "png", size: 1000, smallThumbnailUrl: "", mediumThumbnailUrl: "" },
+                ],
+            };
+            mockGetCachedMpcSearch.mockResolvedValue(null); // No cache hit
+            vi.mocked(fetch).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(mockResponse),
+            } as Response);
+
+            const results = await searchMpcAutofill("Deflecting Swat");
+
+            // Verify returned names are parsed
+            expect(results[0].name).toBe("Deflecting Swat");
+            expect(results[1].name).toBe("Deflecting Swat");
+        });
+
+        it("should cache parsed names, not unparsed names", async () => {
+            const mockResponse = {
+                cards: [
+                    { identifier: "id1", name: "Sol Ring {C21} (Artist Name)", dpi: 300, tags: [], sourceName: "Test", source: "test", extension: "png", size: 1000, smallThumbnailUrl: "", mediumThumbnailUrl: "" },
+                ],
+            };
+            mockGetCachedMpcSearch.mockResolvedValue(null);
+            vi.mocked(fetch).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(mockResponse),
+            } as Response);
+
+            await searchMpcAutofill("Sol Ring");
+
+            // Verify cacheMpcSearch was called with parsed names
+            expect(mockCacheMpcSearch).toHaveBeenCalled();
+            const cachedCards = mockCacheMpcSearch.mock.calls[0][2];
+            expect(cachedCards[0].name).toBe("Sol Ring");
+        });
+
+        it("should return empty array for empty query", async () => {
+            const results = await searchMpcAutofill("");
+            expect(results).toEqual([]);
+        });
+    });
+
+    describe("batchSearchMpcAutofill", () => {
+        it("should parse card names before returning results", async () => {
+            const mockResponse = {
+                results: {
+                    "Lightning Bolt": [
+                        { identifier: "id1", name: "Lightning Bolt (M21) (Artist)", dpi: 300, tags: [], sourceName: "Test", source: "test", extension: "png", size: 1000, smallThumbnailUrl: "", mediumThumbnailUrl: "" },
+                    ],
+                    "Forest": [
+                        { identifier: "id2", name: "Forest [THB] {254}", dpi: 300, tags: [], sourceName: "Test", source: "test", extension: "png", size: 1000, smallThumbnailUrl: "", mediumThumbnailUrl: "" },
+                    ],
+                },
+            };
+            mockGetCachedMpcSearch.mockResolvedValue(null);
+            vi.mocked(fetch).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(mockResponse),
+            } as Response);
+
+            const results = await batchSearchMpcAutofill(["Lightning Bolt", "Forest"]);
+
+            // Verify returned names are parsed
+            expect(results["Lightning Bolt"][0].name).toBe("Lightning Bolt");
+            expect(results["Forest"][0].name).toBe("Forest");
+        });
+
+        it("should cache parsed names, not unparsed names", async () => {
+            const mockResponse = {
+                results: {
+                    "Dark Ritual": [
+                        { identifier: "id1", name: "Dark Ritual {311} (Borderless)", dpi: 300, tags: [], sourceName: "Test", source: "test", extension: "png", size: 1000, smallThumbnailUrl: "", mediumThumbnailUrl: "" },
+                    ],
+                },
+            };
+            mockGetCachedMpcSearch.mockResolvedValue(null);
+            vi.mocked(fetch).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(mockResponse),
+            } as Response);
+
+            await batchSearchMpcAutofill(["Dark Ritual"]);
+
+            // Verify cacheMpcSearch was called with parsed names
+            expect(mockCacheMpcSearch).toHaveBeenCalled();
+            const cachedCards = mockCacheMpcSearch.mock.calls[0][2];
+            expect(cachedCards[0].name).toBe("Dark Ritual");
+        });
+
+        it("should return empty object for empty queries array", async () => {
+            const results = await batchSearchMpcAutofill([]);
+            expect(results).toEqual({});
         });
     });
 });

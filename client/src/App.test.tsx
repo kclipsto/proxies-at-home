@@ -10,6 +10,7 @@ vi.mock('@/pages/ProxyBuilderPage', () => ({
 vi.mock('@/components/common', () => ({
     Loader: () => <div data-testid="loader">Loader</div>,
     UpdateNotification: () => <div data-testid="update-notification">Update</div>,
+    AboutModal: () => <div data-testid="about-modal">AboutModal</div>,
 }));
 
 import App from './App';

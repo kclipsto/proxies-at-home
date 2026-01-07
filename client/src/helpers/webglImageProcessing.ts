@@ -1,6 +1,7 @@
 import {
     IN,
     getBleedInPixels,
+    computeDarknessFactorFromPixels,
 } from "./imageProcessing";
 import {
     createShader,
@@ -47,34 +48,9 @@ function computeDarknessFactor(img: ImageBitmap): number {
     ctx.drawImage(img, 0, 0, w, h);
 
     const imageData = ctx.getImageData(0, 0, w, h);
-    const d = imageData.data;
 
-    // Build luminance histogram (sample every 4th pixel for speed)
-    const hist = new Uint32Array(256);
-    const sampleStep = 4 * 4; // every 4th pixel (4 bytes per pixel)
-
-    for (let i = 0; i < d.length; i += sampleStep) {
-        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-        hist[Math.max(0, Math.min(255, l | 0))]++;
-    }
-
-    // Find 10th percentile luminance
-    const total = hist.reduce((a, b) => a + b, 0);
-    let acc = 0;
-    let p10 = 0;
-
-    for (let i = 0; i < 256; i++) {
-        acc += hist[i];
-        if (acc >= total * 0.1) {
-            p10 = i;
-            break;
-        }
-    }
-
-    // Convert to darknessFactor: (90 - p10) / 70, clamped to 0-1
-    // Dark images (high p10) → lower factor → less aggressive darkening
-    // Light images (low p10) → higher factor → more aggressive darkening
-    return Math.min(1, Math.max(0, (90 - p10) / 70));
+    // Use shared utility for histogram calculation
+    return computeDarknessFactorFromPixels(imageData.data);
 }
 
 /**

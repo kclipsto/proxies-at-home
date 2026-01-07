@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from "express";
 import { batchFetchCards, lookupCardFromBatch, getCardsWithImagesForCardInfo, type ScryfallApiCard } from "../utils/getCardImagesPaged.js";
 import { normalizeCardInfos } from "../utils/cardUtils.js";
+import { debugLog } from "../utils/debug.js";
 import { type ScryfallCard } from "../../../shared/types.js";
 
 const streamRouter = express.Router();
@@ -16,8 +17,12 @@ function extractCardImages(card: ScryfallApiCard, requestedFaceName?: string): {
   const imageUrls: string[] = [];
   const prints: Array<{ imageUrl: string; set: string; number: string; rarity?: string; faceName?: string }> = [];
 
+  debugLog(`[extractCardImages] Processing "${card.name}" (${card.set}:${card.collector_number}), requestedFace="${requestedFaceName}"`);
+  debugLog(`[extractCardImages] Card has image_uris: ${!!card.image_uris?.png}, card_faces: ${card.card_faces?.length ?? 0}`);
+
   if (card.image_uris?.png) {
     // Non-DFC card
+    debugLog(`[extractCardImages] Non-DFC, using image_uris.png: ${card.image_uris.png.substring(0, 60)}...`);
     imageUrls.push(card.image_uris.png);
     prints.push({
       imageUrl: card.image_uris.png,
@@ -28,6 +33,7 @@ function extractCardImages(card: ScryfallApiCard, requestedFaceName?: string): {
   } else if (card.card_faces) {
     // DFC - check if a specific face was requested
     const faces = card.card_faces;
+    debugLog(`[extractCardImages] DFC with ${faces.length} faces:`, faces.map(f => f.name));
 
     // 1. Generate Image URLs (prioritize requested face)
     let orderedFaces = faces;
@@ -35,12 +41,14 @@ function extractCardImages(card: ScryfallApiCard, requestedFaceName?: string): {
       const requestedLower = requestedFaceName.toLowerCase();
       const requestedFace = faces.find(f => f.name?.toLowerCase() === requestedLower);
       if (requestedFace) {
+        debugLog(`[extractCardImages] Found requested face "${requestedFace.name}", prioritizing`);
         orderedFaces = [requestedFace, ...faces.filter(f => f.name?.toLowerCase() !== requestedLower)];
       }
     }
 
     for (const face of orderedFaces) {
       if (face.image_uris?.png) {
+        debugLog(`[extractCardImages] DFC face "${face.name}": ${face.image_uris.png.substring(0, 60)}...`);
         imageUrls.push(face.image_uris.png);
       }
     }
@@ -59,6 +67,7 @@ function extractCardImages(card: ScryfallApiCard, requestedFaceName?: string): {
     }
   }
 
+  debugLog(`[extractCardImages] Result: ${imageUrls.length} imageUrls, ${prints.length} prints`);
   return { imageUrls, prints };
 }
 
@@ -201,10 +210,13 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
         try {
           let card = lookupCardFromBatch(batchResults, ci);
+          debugLog(`[STREAM] Lookup for "${ci.name}":`, card ? `Found "${card.name}"` : 'Not in batch');
 
           // Fallback to search API if batch lookup failed
           if (!card) {
+            debugLog(`[STREAM] Fallback search for "${ci.name}"...`);
             const searchResults = await getCardsWithImagesForCardInfo(ci, "art", language, true);
+            debugLog(`[STREAM] Search returned ${searchResults.length} results:`, searchResults.map(c => c.name));
             if (searchResults.length > 0) {
               card = searchResults[0];
             }
@@ -212,9 +224,19 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
 
           if (card) {
             const { imageUrls } = extractCardImages(card, ci.name);
+            debugLog(`[STREAM] Card data for "${ci.name}":`, {
+              name: card.name,
+              set: card.set,
+              number: card.collector_number,
+              hasImageUris: !!card.image_uris,
+              hasFaces: !!card.card_faces,
+              facesCount: card.card_faces?.length,
+              imageUrls: imageUrls.slice(0, 2), // First 2 URLs
+            });
 
             if (imageUrls.length > 0) {
               const cardToSend = buildCardResponse(ci.name, ci.set, ci.number, card, language);
+              debugLog(`[STREAM] Sending imageUrls[0]:`, imageUrls[0]?.substring(0, 80) + '...');
               res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
             } else {
               throw new Error("No images found for card on Scryfall.");

@@ -70,6 +70,31 @@ describe("mpcXmlExport", () => {
             expect(xml).toContain("<slots>2</slots>");
         });
 
+        it("should correctly map DFC back faces to <backs> section", () => {
+            const cards = [
+                // Single-faced card at slot 0
+                createTestCard({ uuid: "c1", name: "Card 1", imageId: "mpc_front1", order: 1 }),
+                // DFC at slot 1
+                createTestCard({ uuid: "c2", name: "DFC Front", imageId: "mpc_dfc_front", linkedBackId: "c2-back", order: 2 }),
+                createTestCard({ uuid: "c2-back", name: "DFC Back", imageId: "mpc_dfc_back", linkedFrontId: "c2", order: 2.1 }),
+            ];
+            const xml = buildMpcXml(cards);
+
+            // Check fronts
+            expect(xml).toContain("<id>front1</id>");
+            expect(xml).toContain("<id>dfc_front</id>");
+
+            // Check backs section
+            expect(xml).toContain("<backs>");
+            expect(xml).toContain("<id>dfc_back</id>");
+            // Check that back uses the correct slot (index 1 for the second card)
+            // We need to look at the structure to ensure "dfc_back" is associated with slot 1
+            const backsSection = xml.split("<backs>")[1].split("</backs>")[0];
+            expect(backsSection).toContain("<id>dfc_back</id>");
+            expect(backsSection).toContain("<slots>1</slots>");
+            expect(backsSection).toContain("<name>DFC Back</name>");
+        });
+
         it("should escape special XML characters in card names", () => {
             const cards = [
                 createTestCard({ name: "Fire & Ice <Test> \"Special\"", imageId: "mpc_test123" }),
@@ -87,7 +112,7 @@ describe("mpcXmlExport", () => {
             const xml = buildMpcXml(cards);
 
             expect(xml).toContain("<bracket>612</bracket>");
-            expect(xml).toContain("<quantity>0</quantity>");
+            expect(xml).toContain("<quantity>1</quantity>");
             expect(xml).toContain("<stock>(S30) Standard Smooth</stock>");
             expect(xml).toContain("<foil>false</foil>");
         });

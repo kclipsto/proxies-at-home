@@ -15,6 +15,7 @@ import {
     rebalanceCardOrders,
     createLinkedBackCard,
     createLinkedBackCardsBulk,
+    modifyImageRefCount,
 } from "./dbUtils";
 import { useUndoRedoStore } from "@/store/undoRedo";
 import { useSettingsStore } from "@/store/settings";
@@ -44,17 +45,8 @@ export async function undoableDeleteCard(uuid: string): Promise<void> {
         undo: async () => {
             // Restore the card
             await db.cards.add(card);
-
-            // Restore or increment image ref
             if (card.imageId && imageData) {
-                const existingImage = await db.images.get(card.imageId);
-                if (existingImage) {
-                    await db.images.update(card.imageId, {
-                        refCount: existingImage.refCount + 1,
-                    });
-                } else {
-                    await db.images.add({ ...imageData, refCount: 1 });
-                }
+                await modifyImageRefCount(card.imageId, 1, imageData);
             }
         },
         redo: async () => {
@@ -103,17 +95,8 @@ export async function undoableDeleteCardsBatch(uuids: string[]): Promise<void> {
             // Restore all cards
             for (const [, { card, imageData }] of cardImageData) {
                 await db.cards.add(card);
-
-                // Restore or increment image ref
                 if (card.imageId && imageData) {
-                    const existingImage = await db.images.get(card.imageId);
-                    if (existingImage) {
-                        await db.images.update(card.imageId, {
-                            refCount: existingImage.refCount + 1,
-                        });
-                    } else {
-                        await db.images.add({ ...imageData, refCount: 1 });
-                    }
+                    await modifyImageRefCount(card.imageId, 1, imageData);
                 }
             }
         },

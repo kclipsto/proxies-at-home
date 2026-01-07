@@ -1,6 +1,7 @@
 import { API_BASE } from "../constants";
 import { getMpcImageUrl } from "./mpc";
 import { debugLog } from "./debug";
+import { parseMpcCardName } from "./mpcUtils";
 
 /**
  * MPC Autofill card data from the community database
@@ -67,7 +68,11 @@ export async function searchMpcAutofill(
         }
 
         const data: MpcSearchResponse = await response.json();
-        const cards = data.cards || [];
+        // Parse card names to extract base names (strips { } and ( ) suffixes)
+        const cards = (data.cards || []).map((card) => ({
+            ...card,
+            name: parseMpcCardName(card.name, card.name),
+        }));
 
         // Store in client cache
         if (cards.length > 0) {
@@ -136,11 +141,16 @@ export async function batchSearchMpcAutofill(
         const data: MpcBatchSearchResponse = await response.json();
 
         // Cache and merge results (batch always uses fuzzy=true)
-        for (const [query, cards] of Object.entries(data.results || {})) {
-            results[query] = cards;
-            if (cards.length > 0) {
+        // Parse card names to extract base names (strips { } and ( ) suffixes)
+        for (const [query, rawCards] of Object.entries(data.results || {})) {
+            const parsedCards = rawCards.map((card) => ({
+                ...card,
+                name: parseMpcCardName(card.name, card.name),
+            }));
+            results[query] = parsedCards;
+            if (parsedCards.length > 0) {
                 const cacheKey = `${query.toLowerCase()}:fuzzy`;
-                await cacheMpcSearch(cacheKey, cardType, cards);
+                await cacheMpcSearch(cacheKey, cardType, parsedCards);
             }
         }
 
@@ -155,8 +165,8 @@ export async function batchSearchMpcAutofill(
  * Get the full-resolution image URL for an MPC card
  * Uses the existing MPC proxy endpoint
  */
-export function getMpcAutofillImageUrl(identifier: string): string {
-    return getMpcImageUrl(identifier) || "";
+export function getMpcAutofillImageUrl(identifier: string, size: "small" | "large" | "full" = "full"): string {
+    return getMpcImageUrl(identifier, size) || "";
 }
 
 /**
@@ -175,27 +185,24 @@ export function extractMpcIdentifierFromImageId(imageId?: string): string | null
         return match ? match[1] : null;
     }
 
+    // Exclude known internal prefixes
+    if (imageId.startsWith('cardback_') || imageId.startsWith('scryfall_') || imageId.startsWith('local_')) {
+        return null;
+    }
+
+    // Exclude SHA-256 hashes used for custom uploaded images
+    // Can be: 64 hex chars alone, OR with suffix like "-mpc", "-std"
+    if (/^[a-f0-9]{64}(-[a-z]+)?$/i.test(imageId)) {
+        return null;
+    }
+
     // If imageId is a bare identifier (alphanumeric, typical MPC format)
-    // MPC identifiers are typically 20+ chars of alphanumeric
+    // Relaxed check: at least 15 chars (Google Drive IDs are 33, hashes 32)
+    // Reverting to 15 to avoid very short collisions, but keeping it flexible.
     if (/^[a-zA-Z0-9_-]{15,}$/.test(imageId)) {
         return imageId;
     }
 
     // Not an MPC image (e.g., Scryfall URL)
     return null;
-}
-
-/**
- * Parse an MPC card name to extract just the base card name.
- * MPC names often include set/collector info like "Forest [THB] {254}" or "Lightning Bolt (M21)".
- * This extracts just "Forest" or "Lightning Bolt".
- * @param mpcName The full MPC card name
- * @param fallback Optional fallback if parsing fails
- * @returns The base card name
- */
-export function parseMpcCardName(mpcName: string, fallback?: string): string {
-    if (!mpcName) return fallback || "";
-    // Match everything before the first bracket, parenthesis, or brace
-    const match = mpcName.match(/^([^([{\r\n]+)/);
-    return match ? match[1].trim() : (mpcName.trim() || fallback || "");
 }

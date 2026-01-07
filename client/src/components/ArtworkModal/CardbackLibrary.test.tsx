@@ -18,6 +18,7 @@ const mockGetAllCardbacks = vi.fn().mockResolvedValue([]);
 vi.mock("@/helpers/cardbackLibrary", () => ({
     getAllCardbacks: () => mockGetAllCardbacks(),
     isCardbackId: vi.fn().mockReturnValue(false),
+    invalidateCardbackUrl: vi.fn(),
 }));
 
 // Mock child components to simplify testing

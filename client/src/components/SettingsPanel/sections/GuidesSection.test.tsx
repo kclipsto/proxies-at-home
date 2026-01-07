@@ -41,6 +41,9 @@ vi.mock('flowbite-react', () => ({
     Select: ({ id, value, onChange, children }: { id?: string; value: string; onChange: (e: { target: { value: string } }) => void; children: React.ReactNode }) => (
         <select data-testid={id || 'select'} value={value} onChange={onChange}>{children}</select>
     ),
+    Button: ({ children, onClick, color, size }: { children: React.ReactNode; onClick?: () => void; color?: string; size?: string }) => (
+        <button onClick={onClick} data-color={color} data-size={size}>{children}</button>
+    ),
 }));
 
 vi.mock('@/components/common', () => ({

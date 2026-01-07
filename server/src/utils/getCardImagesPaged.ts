@@ -1,6 +1,7 @@
 import axios, { type AxiosResponse } from "axios";
 import type { CardInfo } from "../../../shared/types.js";
 import { lookupCardBySetNumber, lookupCardByName, insertOrUpdateCard } from "../db/proxxiedCardLookup.js";
+import { debugLog } from "./debug.js";
 
 const SCRYFALL_API = "https://api.scryfall.com/cards/search";
 
@@ -95,6 +96,7 @@ async function fetchAllPages<T>(
   extractor: (card: ScryfallApiCard) => T[]
 ): Promise<T[]> {
   const encodedUrl = `${SCRYFALL_API}?q=${encodeURIComponent(query)}`;
+  debugLog(`[Scryfall] fetchAllPages URL: ${encodedUrl}`);
   const results: T[] = [];
   let next: string | null = encodedUrl;
 
@@ -106,6 +108,7 @@ async function fetchAllPages<T>(
       const { data, has_more, next_page } = resp.data;
 
       if (data) {
+        debugLog(`[Scryfall] Page returned ${data.length} cards:`, data.slice(0, 3).map(c => c.name));
         for (const card of data) {
           results.push(...extractor(card));
         }
@@ -170,6 +173,8 @@ export async function batchFetchCards(
 
   const lang = language.toLowerCase();
 
+  debugLog(`[batchFetchCards] Starting batch fetch for ${cardInfos.length} cards, lang=${lang}`);
+
   // Step 1: Check local DB first for all cards
   const cardsToFetch: CardInfo[] = [];
 
@@ -182,6 +187,7 @@ export async function batchFetchCards(
 
     if (local && local.name) {
       // Found in local DB
+      debugLog(`[batchFetchCards] Cache HIT for "${ci.name}" -> "${local.name}" (${local.set}:${local.collector_number})`);
       const key = local.name.toLowerCase();
       results.set(key, local);
 
@@ -203,11 +209,13 @@ export async function batchFetchCards(
       }
     } else {
       // Not found locally, need to fetch from Scryfall
+      debugLog(`[batchFetchCards] Cache MISS for "${ci.name}" (set=${ci.set}, num=${ci.number})`);
       cardsToFetch.push(ci);
     }
   }
 
   // Step 2: Fetch missing cards from Scryfall
+  debugLog(`[batchFetchCards] ${results.size} from cache, ${cardsToFetch.length} to fetch from Scryfall`);
   if (cardsToFetch.length > 0) {
     const batches = chunkArray(cardsToFetch, 75);
 
@@ -232,8 +240,10 @@ export async function batchFetchCards(
         );
 
         if (response.data?.data) {
+          debugLog(`[batchFetchCards] Scryfall batch ${batchIdx + 1} returned ${response.data.data.length} cards`);
           for (const card of response.data.data) {
             if (!card.name) continue;
+            debugLog(`[batchFetchCards] Scryfall returned: "${card.name}" (${card.set}:${card.collector_number})`);
 
             // Store by lowercase name for lookup
             const key = card.name.toLowerCase();
@@ -311,15 +321,24 @@ export function lookupCardFromBatch(
   batchResults: Map<string, ScryfallApiCard>,
   cardInfo: CardInfo
 ): ScryfallApiCard | undefined {
+  debugLog(`[lookupCardFromBatch] Looking for "${cardInfo.name}" (set=${cardInfo.set}, num=${cardInfo.number})`);
+  debugLog(`[lookupCardFromBatch] Batch has ${batchResults.size} entries, keys:`, Array.from(batchResults.keys()).slice(0, 10));
+
   // Try set+number first (most specific)
   if (cardInfo.set && cardInfo.number) {
     const setNumKey = `${cardInfo.set.toLowerCase()}:${cardInfo.number}`;
     const exact = batchResults.get(setNumKey);
-    if (exact) return exact;
+    if (exact) {
+      debugLog(`[lookupCardFromBatch] Found by set+number: "${exact.name}"`);
+      return exact;
+    }
   }
 
   // Fall back to name lookup
-  return batchResults.get(cardInfo.name.toLowerCase());
+  const nameKey = cardInfo.name.toLowerCase();
+  const byName = batchResults.get(nameKey);
+  debugLog(`[lookupCardFromBatch] Name key "${nameKey}" -> ${byName ? `"${byName.name}"` : 'NOT FOUND'}`);
+  return byName;
 }
 
 /**
@@ -337,10 +356,13 @@ async function searchScryfallWithFallback<T>(
 ): Promise<T[]> {
   const lang = (language || "en").toLowerCase();
   const q = queryBuilder(lang);
+  debugLog(`[Scryfall] Query: ${q}`);
   let results = await searchFn(q);
+  debugLog(`[Scryfall] Results: ${results.length}`);
 
   if (!results.length && fallbackToEnglish && lang !== "en") {
     const qEn = queryBuilder("en");
+    debugLog(`[Scryfall] Fallback query: ${qEn}`);
     results = await searchFn(qEn);
   }
 
@@ -426,15 +448,44 @@ export async function getCardsWithImagesForCardInfo(
     `!"${name}" include:extras unique:${unique} lang:${lang}`
   );
 
-  // Prioritize non-art-series cards
-  // Art series cards often have CMC 0 and type "Card", which is not useful for metadata
-  results.sort((a, b) => {
-    const aIsArt = a.layout === "art_series";
-    const bIsArt = b.layout === "art_series";
-    if (aIsArt && !bIsArt) return 1;
-    if (!aIsArt && bIsArt) return -1;
-    return 0;
-  });
+  // Score and sort results to prioritize best matches
+  const queryLower = name.toLowerCase();
+
+  const scoreCard = (card: ScryfallApiCard): number => {
+    let score = 0;
+    const cardName = card.name?.toLowerCase() || '';
+
+    // Exact full name match (highest priority)
+    if (cardName === queryLower) {
+      score += 100;
+    }
+    // DFC: query matches one of the faces
+    else if (cardName.includes(' // ')) {
+      const [front, back] = cardName.split(' // ').map(s => s.trim());
+      if (front === queryLower || back === queryLower) {
+        score += 90;
+      }
+    }
+    // Query is DFC format, card matches one face
+    else if (queryLower.includes(' // ')) {
+      const [front, back] = queryLower.split(' // ').map(s => s.trim());
+      if (cardName === front || cardName === back) {
+        score += 90;
+      }
+    }
+
+    // Deprioritize art_series (often have wrong metadata)
+    if (card.layout === 'art_series') {
+      score -= 50;
+    }
+
+    return score;
+  };
+
+  results.sort((a, b) => scoreCard(b) - scoreCard(a));
+
+  debugLog(`[Scryfall] Sorted results for "${name}":`,
+    results.slice(0, 3).map(c => `${c.name} (score: ${scoreCard(c)})`));
 
   return results;
 }

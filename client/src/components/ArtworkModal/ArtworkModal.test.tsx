@@ -17,6 +17,7 @@ const {
     mockDbCards,
     mockDbCardbacks,
     mockLiveQueryResult,
+    mockUpdateCard,
 } = vi.hoisted(() => {
     return {
         mockCloseModal: vi.fn(),
@@ -30,6 +31,7 @@ const {
             initialFace: 'front' as 'front' | 'back',
             initialArtSource: undefined as 'scryfall' | 'mpc' | undefined,
             defaultCardbackId: 'default-cardback-1',
+            allCards: [] as { uuid: string; name: string }[],
         },
         mockChangeCardArtwork: vi.fn(),
         mockCreateLinkedBackCard: vi.fn(),
@@ -47,6 +49,7 @@ const {
             delete: vi.fn().mockResolvedValue(undefined),
         },
         mockLiveQueryResult: { value: null as unknown },
+        mockUpdateCard: vi.fn(),
     };
 });
 
@@ -57,7 +60,9 @@ vi.mock('@/store/artworkModal', () => {
         initialTab: mockState.initialTab,
         initialFace: mockState.initialFace,
         initialArtSource: mockState.initialArtSource,
+        allCards: mockState.allCards,
         closeModal: mockCloseModal,
+        updateCard: mockUpdateCard,
     });
 
     const fn = (selector: (state: ReturnType<typeof getStore>) => unknown) => {
@@ -93,6 +98,7 @@ vi.mock('@/store/selection', () => ({
     useSelectionStore: {
         getState: () => ({
             selectedCards: mockSelectedCards,
+            setFlipped: vi.fn(),
         }),
     },
 }));
@@ -132,6 +138,13 @@ vi.mock('@/helpers/cardbackLibrary', () => ({
 
 vi.mock('@/helpers/mpcAutofillApi', () => ({
     getMpcAutofillImageUrl: vi.fn((id: string) => `https://mpc.example.com/${id}`),
+    extractMpcIdentifierFromImageId: vi.fn((imageId: string) => {
+        // Return the imageId if it looks like an MPC identifier (contains 'mpc')
+        if (imageId?.includes('/api/cards/images/mpc') || imageId?.includes('mpc')) {
+            return imageId;
+        }
+        return null;
+    }),
 }));
 
 vi.mock('@/helpers/mpcImportIntegration', () => ({
@@ -447,12 +460,17 @@ describe('ArtworkModal', () => {
             });
         });
 
-        it('should close modal after selecting artwork', async () => {
+
+
+        it('should sync store with updated card data', async () => {
+            const updatedCard = { uuid: 'test-uuid', name: 'Test Card', imageId: 'new-id' };
+            mockDbCards.get.mockResolvedValue(updatedCard);
+
             render(<ArtworkModal />);
             fireEvent.click(screen.getByTestId('select-artwork'));
 
             await waitFor(() => {
-                expect(mockCloseModal).toHaveBeenCalled();
+                expect(mockUpdateCard).toHaveBeenCalledWith(updatedCard);
             });
         });
     });
@@ -472,12 +490,18 @@ describe('ArtworkModal', () => {
             });
         });
 
-        it('should close modal after selecting MPC art', async () => {
+
+
+        it('should sync store with updated card data and mark for enrichment', async () => {
+            const updatedCard = { uuid: 'test-uuid', name: 'Test Card', imageId: 'mpc-id' };
+            mockDbCards.get.mockResolvedValue(updatedCard);
+
             render(<ArtworkModal />);
             fireEvent.click(screen.getByTestId('select-mpc-art'));
 
             await waitFor(() => {
-                expect(mockCloseModal).toHaveBeenCalled();
+                expect(mockUpdateCard).toHaveBeenCalledWith(updatedCard);
+                expect(mockDbCards.update).toHaveBeenCalledWith('test-uuid', expect.objectContaining({ needsEnrichment: true }));
             });
         });
     });
@@ -815,6 +839,7 @@ describe('ArtworkModal', () => {
                     false,
                     undefined,
                     undefined,
+                    undefined,
                     undefined
                 );
                 expect(mockChangeCardArtwork).toHaveBeenCalledWith(
@@ -822,6 +847,7 @@ describe('ArtworkModal', () => {
                     'https://example.com/art.jpg',
                     expect.objectContaining({ uuid: 'card-2' }),
                     false,
+                    undefined,
                     undefined,
                     undefined,
                     undefined

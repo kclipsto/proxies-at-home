@@ -15,6 +15,13 @@ const AX = axios.create({
   validateStatus: (s) => s >= 200 && s < 500, // surface 4xx/429 to logic
 });
 
+// Separate axios instance for Google Drive/MPC images with longer timeout
+const AX_GDRIVE = axios.create({
+  timeout: 30000, // 30s for large Google Drive files
+  headers: { "User-Agent": "Proxxied/1.0 (+contact@example.com)" },
+  validateStatus: (s) => s >= 200 && s < 500,
+});
+
 // Improved retry with exponential backoff (reduced retries for faster failure)
 async function getWithRetry(url: string, opts: AxiosRequestConfig = {}, tries = 2): Promise<AxiosResponse> {
   let lastErr: unknown;
@@ -401,11 +408,12 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
 
 imageRouter.get("/mpc", async (req: Request, res: Response) => {
   const id = String(req.query.id || "").trim();
+  const size = String(req.query.size || "full").toLowerCase();
   if (!id) return res.status(400).send("Missing id");
 
   // Use same cache infrastructure as /proxy
-  const cacheKey = `gdrive_${id}`;
-  const localPath = path.join(cacheDir, cacheKey);
+  const cacheKey = `gdrive_${id}_${size}`;
+  let localPath = path.join(cacheDir, cacheKey);
 
   // Check cache first
   try {
@@ -419,33 +427,58 @@ imageRouter.get("/mpc", async (req: Request, res: Response) => {
     // Cache check failed, proceed to fetch
   }
 
-  // Google Drive URL candidates (try in order)
-  const candidates = [
-    `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`,
-    `https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`,
-  ];
+  // URL candidates to try (in order of preference)
+  // Google Drive direct download is preferred but often fails due to:
+  // - Access restrictions
+  // - Virus scan interstitials for large files
+  // - Rate limiting
+  // MPC Autofill CDN is more reliable as a fallback
+  const candidates: string[] = [];
+
+  if (size === "full") {
+    // Try Google Drive URLs - include confirm=t to bypass virus scan interstitials
+    // Order: confirm URL first (bypasses interstitial), then regular URLs as fallback
+    candidates.push(`https://drive.google.com/uc?export=download&confirm=t&id=${encodeURIComponent(id)}`);
+    candidates.push(`https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`);
+    candidates.push(`https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`);
+    // Fallback to MPC Autofill CDN large size (lower quality but more reliable)
+    candidates.push(`https://img.mpcautofill.com/${id}-large-google_drive`);
+  } else {
+    // For thumbnails (small, large), use MPC Autofill CDN (more reliable)
+    candidates.push(`https://img.mpcautofill.com/${id}-${size}-google_drive`);
+  }
 
   // Use imageFetchLimit to prevent overwhelming server with concurrent fetches
+  let lastError: string | undefined;
   try {
     const result = await imageFetchLimit(async () => {
       for (const url of candidates) {
         try {
-          // Use getWithRetry for consistent retry/backoff logic
-          const r = await getWithRetry(url, {
+          // Use AX_GDRIVE with longer timeout for large Google Drive files
+          const r = await AX_GDRIVE.get(url, {
             responseType: "arraybuffer",
             maxRedirects: 5,
           });
 
           const ct = (r.headers["content-type"] || "").toLowerCase();
           if (!ct.startsWith("image/")) {
+            lastError = `Non-image response from ${url}: ${ct}`;
             continue; // Not an image (HTML interstitial), try next candidate
+          }
+
+          // If we fell back to the MPC CDN "large" image while requesting "full",
+          // save it as "large" so we don't pollute the "full" cache slot with lower res.
+          if (size === "full" && url.includes("-large-google_drive")) {
+            localPath = path.join(cacheDir, `gdrive_${id}_large`);
           }
 
           // Cache the image
           await fs.promises.writeFile(localPath, Buffer.from(r.data));
           return { contentType: ct };
-        } catch {
-          // Candidate failed after retries, try next
+        } catch (err) {
+          // Log each failed candidate for debugging
+          const msg = err instanceof Error ? err.message : String(err);
+          lastError = `Failed to fetch ${url}: ${msg}`;
         }
       }
       return null;
@@ -458,10 +491,15 @@ imageRouter.get("/mpc", async (req: Request, res: Response) => {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("Google Drive fetch error:", { message: msg, id });
+    console.error("Google Drive fetch error:", { message: msg, id, lastError });
   }
 
-  return res.status(502).send("Could not fetch Google Drive image");
+  // Log the final failure reason if we have one
+  if (lastError) {
+    console.error("MPC image proxy failed:", { id, size, lastError });
+  }
+
+  return res.status(502).send("Could not fetch MPC image");
 });
 
 export { imageRouter };

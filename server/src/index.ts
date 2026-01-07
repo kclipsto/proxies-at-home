@@ -6,6 +6,7 @@ import { moxfieldRouter } from "./routes/moxfieldRouter.js";
 import { imageRouter } from "./routes/imageRouter.js";
 import { streamRouter } from "./routes/streamRouter.js";
 import { mpcAutofillRouter } from "./routes/mpcAutofillRouter.js";
+import { scryfallRouter } from "./routes/scryfallRouter.js";
 import { initDatabase } from "./db/db.js";
 import { startImportScheduler } from "./services/importScheduler.js";
 
@@ -36,6 +37,7 @@ export function startServer(port: number = 3001): Promise<number> {
   app.use("/api/cards/images", imageRouter);
   app.use("/api/stream", streamRouter);
   app.use("/api/mpcfill", mpcAutofillRouter);
+  app.use("/api/scryfall", scryfallRouter);
 
   return new Promise((resolve) => {
     const server = app.listen(port, "0.0.0.0", () => {

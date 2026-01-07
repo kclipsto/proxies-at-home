@@ -257,7 +257,7 @@ export function useCardEnrichment() {
                             // Process Back Art
                             if (needsBackArt) {
                                 try {
-                                    console.log(`[Enrichment] DFC Back Art Needed for ${back.name}. existingBack: ${!!existingBack}`);
+
                                     const mpcResults = await searchMpcAutofill(back.name);
                                     if (mpcResults && mpcResults.length > 0) {
                                         const settings = useSettingsStore.getState();
@@ -269,7 +269,7 @@ export function useCardEnrichment() {
                                             const backUrl = getMpcAutofillImageUrl(bestBack.identifier);
                                             // this creates its own transaction on images table, safe to parallelize
                                             const imgId = await addRemoteImage([backUrl], 1);
-                                            console.log(`[Enrichment] Got back imageId: ${imgId}`);
+
                                             if (imgId) backArtMap.set(card.uuid, imgId);
                                         }
                                     }
@@ -281,7 +281,7 @@ export function useCardEnrichment() {
                             // Process Front Art (Fixing back-face import)
                             if (isBackFaceImport) {
                                 try {
-                                    console.log(`[Enrichment] Back-face import detected (${card.name}). Fetching correct Front art for ${front.name}...`);
+
                                     const mpcResults = await searchMpcAutofill(front.name);
                                     if (mpcResults && mpcResults.length > 0) {
                                         const settings = useSettingsStore.getState();
@@ -292,7 +292,7 @@ export function useCardEnrichment() {
                                         if (bestFront) {
                                             const frontUrl = getMpcAutofillImageUrl(bestFront.identifier);
                                             const imgId = await addRemoteImage([frontUrl], 1);
-                                            console.log(`[Enrichment] Fixed Front imageId: ${imgId}`);
+
                                             if (imgId) frontArtMap.set(card.uuid, imgId);
                                         }
                                     }

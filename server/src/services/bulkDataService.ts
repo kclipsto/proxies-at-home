@@ -7,6 +7,8 @@ import { getDatabase } from '../db/db.js';
 import { batchInsertCards, getCardCount } from '../db/proxxiedCardLookup.js';
 import type { ScryfallApiCard } from '../utils/getCardImagesPaged.js';
 
+// Use default-cards bulk data for broad coverage on set+number lookups.
+// Name-only queries bypass this cache and use live Scryfall API search with scoring.
 const BULK_DATA_API = 'https://api.scryfall.com/bulk-data/default-cards';
 const BATCH_SIZE = 1000;
 

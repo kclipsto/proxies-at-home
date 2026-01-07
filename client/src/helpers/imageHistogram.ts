@@ -3,6 +3,8 @@
  * Used to auto-detect optimal darknessFactor for the darken effect.
  */
 
+import { computeDarknessFactorFromPixels } from "./imageProcessing";
+
 /**
  * Calculate the darkness factor from an image blob using luminance histogram analysis.
  * 
@@ -43,36 +45,9 @@ export async function calculateDarknessFactorFromBlob(blob: Blob): Promise<numbe
 
                 ctx.drawImage(img, 0, 0);
                 const imageData = ctx.getImageData(0, 0, img.width, img.height);
-                const d = imageData.data;
 
-                // Build luminance histogram (sampled every 4th pixel for speed)
-                const hist = new Uint32Array(256);
-                const sampleStep = 4 * 4; // every 4th pixel (4 bytes per pixel)
-
-                for (let i = 0; i < d.length; i += sampleStep) {
-                    // Standard luminance formula
-                    const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-                    hist[Math.max(0, Math.min(255, l | 0))]++;
-                }
-
-                // Find 10th percentile luminance
-                const total = hist.reduce((a, b) => a + b, 0);
-                let acc = 0;
-                let p10 = 0;
-
-                for (let i = 0; i < 256; i++) {
-                    acc += hist[i];
-                    if (acc >= total * 0.1) {
-                        p10 = i;
-                        break;
-                    }
-                }
-
-                // Calculate darkness factor
-                // Dark images (low p10) → higher factor
-                // Light images (high p10) → lower factor
-                const darknessFactor = Math.min(1, Math.max(0, (90 - p10) / 70));
-
+                // Use shared utility for histogram calculation
+                const darknessFactor = computeDarknessFactorFromPixels(imageData.data);
                 resolve(darknessFactor);
             } catch (err) {
                 console.error('[imageHistogram] Error calculating darkness factor:', err);

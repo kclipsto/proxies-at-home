@@ -38,16 +38,13 @@ export function ApplicationSection() {
                 }
             }
 
-            // Clear individual tables but preserve cardbacks and imageCache
-            await db.transaction("rw", db.cards, db.images, db.settings, db.cardMetadataCache, async () => {
-                await db.cards.clear();
-                await db.images.clear();
-                await db.settings.clear();
-                await db.cardMetadataCache.clear();
-                // Note: cardbacks and imageCache are intentionally NOT cleared
-            });
-            // Clear MPC search cache separately (Dexie transaction limit)
+            // Clear all tables except cardbacks (user-uploaded, should be preserved)
+            await db.cards.clear();
+            await db.images.clear();
+            await db.settings.clear();
+            await db.cardMetadataCache.clear();
             await db.mpcSearchCache.clear();
+            await db.imageCache.clear();
 
             // Clear localStorage preferences that should reset with app data
             localStorage.removeItem("cardback-delete-confirm-disabled");

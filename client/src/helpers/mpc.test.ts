@@ -45,9 +45,21 @@ describe('Mpc', () => {
       expect(getMpcImageUrl(undefined)).toBeNull();
     });
 
-    it('should construct the correct image URL', () => {
+    it('should construct URL without size param for full resolution (default)', () => {
       const frontId = 'some-front-id';
+      // Full resolution (default) omits size param for cache compatibility
       expect(getMpcImageUrl(frontId)).toBe(`${constants.API_BASE}/api/cards/images/mpc?id=${frontId}`);
+      expect(getMpcImageUrl(frontId, 'full')).toBe(`${constants.API_BASE}/api/cards/images/mpc?id=${frontId}`);
+    });
+
+    it('should include size param for small thumbnails', () => {
+      const frontId = 'some-front-id';
+      expect(getMpcImageUrl(frontId, 'small')).toBe(`${constants.API_BASE}/api/cards/images/mpc?id=${frontId}&size=small`);
+    });
+
+    it('should include size param for large thumbnails', () => {
+      const frontId = 'some-front-id';
+      expect(getMpcImageUrl(frontId, 'large')).toBe(`${constants.API_BASE}/api/cards/images/mpc?id=${frontId}&size=large`);
     });
   });
 

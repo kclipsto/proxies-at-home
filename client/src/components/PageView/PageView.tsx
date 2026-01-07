@@ -696,7 +696,7 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
         >
           {cards.length === 0 ? (
             // Empty state
-            <div className="flex flex-col items-center justify-center h-full px-4 text-center">
+            <div className="flex flex-col items-center justify-center h-full px-4 text-center select-none">
               <div className={`flex flex-col ${!mobile ? 'md:flex-row' : ''} flex-wrap items-center justify-center gap-x-4 gap-y-3 mt-4 md:mt-0`}>
                 <span className={`text-3xl ${!mobile ? 'sm:text-4xl md:text-5xl lg:text-7xl' : ''} font-bold text-gray-900 dark:text-white`}>
                   Welcome to
@@ -768,6 +768,7 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
                   <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
                     <CardControlsOverlay
                       cardLayouts={cardControlLayouts}
+                      allCards={localCards}
                       containerWidth={pageWidthPx * effectiveZoom}
                       containerHeight={containerHeight}
                       scrollContainerRef={scrollRef}

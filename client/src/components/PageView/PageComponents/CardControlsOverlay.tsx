@@ -24,6 +24,7 @@ export interface CardControlLayout {
 
 interface CardControlsOverlayProps {
     cardLayouts: CardControlLayout[];
+    allCards: CardOption[]; // All navigable cards for modal navigation
     containerWidth: number;
     containerHeight: number;
     scrollContainerRef: React.RefObject<HTMLDivElement | null>; // Direct ref for synchronous scroll sync
@@ -50,12 +51,14 @@ const CardControl = memo(function CardControl({
     width,
     height,
     hasImage,
+    allCards,
     mobile,
     disabled,
     zoom,
     onRangeSelect,
     setContextMenu,
 }: CardControlLayout & {
+    allCards: CardOption[];
     mobile?: boolean;
     disabled?: boolean;
     zoom: number;
@@ -129,6 +132,7 @@ const CardControl = memo(function CardControl({
                     openArtworkModal({
                         card,
                         index: globalIndex,
+                        allCards,
                         initialTab: isSelected ? 'settings' : 'artwork',
                         initialFace: isFlipped ? 'back' : 'front',
                         initialArtSource,
@@ -140,12 +144,13 @@ const CardControl = memo(function CardControl({
             openArtworkModal({
                 card,
                 index: globalIndex,
+                allCards,
                 initialTab: isSelected ? 'settings' : 'artwork',
                 initialFace: isFlipped ? 'back' : 'front',
                 initialArtSource,
             });
         }
-    }, [card, globalIndex, isFlipped, isSelected, mobile, onRangeSelect, openArtworkModal, setContextMenu, toggleSelection]);
+    }, [allCards, card, globalIndex, isFlipped, isSelected, mobile, onRangeSelect, openArtworkModal, setContextMenu, toggleSelection]);
 
     const handleContextMenu = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
@@ -267,6 +272,7 @@ const CardControl = memo(function CardControl({
  */
 export const CardControlsOverlay = memo(function CardControlsOverlay({
     cardLayouts,
+    allCards,
     containerWidth,
     containerHeight,
     scrollContainerRef,
@@ -309,6 +315,7 @@ export const CardControlsOverlay = memo(function CardControlsOverlay({
                     <CardControl
                         key={layout.card.uuid}
                         {...layout}
+                        allCards={allCards}
                         mobile={mobile}
                         disabled={disabled}
                         zoom={zoom}
