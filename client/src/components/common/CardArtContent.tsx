@@ -112,48 +112,46 @@ export function CardArtContent({
         [scryfallPrintsData.prints]
     );
 
-    // SORT-ON-TOGGLE: Internal sort key state - only updates on tab toggle (false→true)
-    // This keeps the selected card sorted to top but defers the sort until the tab is active
-    const [scryfallSortKey, setScryfallSortKey] = useState<string | undefined>(undefined);
-    const [mpcSortKey, setMpcSortKey] = useState<string | undefined>(undefined);
+    // STABLE SORT KEY & SELECTED ART: Only updates when prints data actually changes
+    // This prevents the old card's grid from re-sorting/unhighlighting during navigation transition
+    // We use prints array reference as stability indicator since it's the actual displayed data
+    const lastPrintsRef = useRef(scryfallPrintsData.prints);
+    const lastMpcCardsRef = useRef(mpcData.filteredCards);
+    const stableScryfallSortKeyRef = useRef<string | undefined>(undefined);
+    const stableMpcSortKeyRef = useRef<string | undefined>(undefined);
+    // Stable selectedArtId for highlight ring (same stability as sort key)
+    const stableSelectedArtIdRef = useRef<string | undefined>(selectedArtId ?? undefined);
+    const stableSelectedMpcIdRef = useRef<string | undefined>(selectedMpcId);
 
-    // Track previous isActive to detect activation transition (false/undefined → true)
-    const wasActiveRef = useRef<boolean | undefined>(undefined);
-
-    // Track previous query to detect card navigation
-    const prevQueryRef = useRef(query);
-
-    // Reset sort keys when card changes (query changes)
-    useEffect(() => {
-        if (prevQueryRef.current !== query) {
-            prevQueryRef.current = query;
-
-            setScryfallSortKey(undefined);
-            setMpcSortKey(undefined);
+    // Update Scryfall values only when prints data actually changes
+    if (lastPrintsRef.current !== scryfallPrintsData.prints) {
+        lastPrintsRef.current = scryfallPrintsData.prints;
+        // Reset to new card's selected art
+        if (isActive && artSource === 'scryfall' && !selectedArtIsMpc) {
+            stableScryfallSortKeyRef.current = selectedArtId ?? undefined;
+            stableSelectedArtIdRef.current = selectedArtId ?? undefined;
+        } else {
+            stableScryfallSortKeyRef.current = undefined;
+            // Keep stableSelectedArtIdRef for cross-source highlighting
         }
-    }, [query]);
+    }
 
-    // Update sort keys when tab becomes active (sort-on-toggle)
-    // Always update: if selectedArtId matches this tab, pin it; otherwise undefined for natural order
-    useEffect(() => {
-        const wasActive = wasActiveRef.current;
-        wasActiveRef.current = isActive;
-
-        // Only trigger on activation transition (false/undefined → true)
-        if (isActive && !wasActive) {
-
-            if (artSource === 'scryfall') {
-                // If selectedArtId is a Scryfall URL, use it; otherwise undefined (natural order)
-                const sortId = !selectedArtIsMpc ? selectedArtId ?? undefined : undefined;
-
-                setScryfallSortKey(sortId);
-            } else if (artSource === 'mpc') {
-                // If selectedArtId is an MPC URL, use extracted ID; otherwise undefined (natural order)
-
-                setMpcSortKey(selectedMpcId);
-            }
+    // Update MPC values only when MPC data actually changes
+    if (lastMpcCardsRef.current !== mpcData.filteredCards) {
+        lastMpcCardsRef.current = mpcData.filteredCards;
+        if (isActive && artSource === 'mpc') {
+            stableMpcSortKeyRef.current = selectedMpcId;
+            stableSelectedMpcIdRef.current = selectedMpcId;
+        } else {
+            stableMpcSortKeyRef.current = undefined;
         }
-    }, [isActive, artSource, selectedArtId, selectedArtIsMpc, selectedMpcId]);
+    }
+
+    const scryfallSortKey = stableScryfallSortKeyRef.current;
+    const mpcSortKey = stableMpcSortKeyRef.current;
+    // Use stable versions for highlighting
+    const stableSelectedArtId = stableSelectedArtIdRef.current;
+    const stableSelectedMpcId = stableSelectedMpcIdRef.current;
 
     const filteredPrints = useMemo(
         () => {
@@ -237,7 +235,7 @@ export function CardArtContent({
     // Render a single Scryfall card (search mode)
     const renderScryfallCard = (card: ScryfallCard, index: number) => {
         const imageUrl = card.imageUrls?.[0] || '';
-        const isSelected = stripQuery(selectedArtId) === stripQuery(imageUrl);
+        const isSelected = stripQuery(stableSelectedArtId) === stripQuery(imageUrl);
 
         const displayUrl = isSelected && processedDisplayUrl ? processedDisplayUrl : imageUrl;
 
@@ -267,7 +265,7 @@ export function CardArtContent({
 
     // Render a single print (prints mode - used in ArtworkModal)
     const renderPrint = (print: PrintInfo, index: number) => {
-        const isSelected = stripQuery(selectedArtId) === stripQuery(print.imageUrl);
+        const isSelected = stripQuery(stableSelectedArtId) === stripQuery(print.imageUrl);
 
         const displayUrl = isSelected && processedDisplayUrl ? processedDisplayUrl : print.imageUrl;
 
@@ -300,7 +298,7 @@ export function CardArtContent({
 
     // Render a single MPC card with bleed cropping and filter badges
     const renderMpcCard = (card: MpcAutofillCard, index: number) => {
-        const isSelected = selectedMpcId === card.identifier;
+        const isSelected = stableSelectedMpcId === card.identifier;
         // Use proxied URLs for consistent loading and caching
         const primaryUrl = getMpcAutofillImageUrl(card.identifier, 'small');
         const fallbackUrl = card.smallThumbnailUrl || '';
