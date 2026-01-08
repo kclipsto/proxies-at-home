@@ -26,6 +26,9 @@ export interface CardArtFilterBarProps {
     /** Collapsed sources state (for source sort mode) */
     collapsedSources: Set<string>;
     setCollapsedSources: React.Dispatch<React.SetStateAction<Set<string>>>;
+    /** Whether all sources should be collapsed by default (for new sources on card navigation) */
+    allSourcesCollapsed: boolean;
+    setAllSourcesCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 /**
@@ -45,8 +48,10 @@ export function CardArtFilterBar({
     clearFilters,
     setSourceFilters,
     setTagFilters,
-    collapsedSources,
+    // Note: collapsedSources is part of interface but unused here - parent reads it via isSourceCollapsed
     setCollapsedSources,
+    allSourcesCollapsed,
+    setAllSourcesCollapsed,
 }: CardArtFilterBarProps) {
     // Settings store for favorites
     const favoriteMpcSources = useSettingsStore(s => s.favoriteMpcSources);
@@ -480,15 +485,19 @@ export function CardArtFilterBar({
                 {filters.sortBy === "source" && groupedBySource && (
                     <button
                         onClick={() => {
-                            if (collapsedSources.size === groupedBySource.size) {
+                            if (allSourcesCollapsed) {
+                                // Switch to normal mode (all expanded by default)
+                                setAllSourcesCollapsed(false);
                                 setCollapsedSources(new Set());
                             } else {
-                                setCollapsedSources(new Set(groupedBySource.keys()));
+                                // Switch to collapsed mode (all collapsed by default)
+                                setAllSourcesCollapsed(true);
+                                setCollapsedSources(new Set());
                             }
                         }}
                         className="h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 text-xs"
                     >
-                        {collapsedSources.size === groupedBySource.size ? "Expand All" : "Collapse All"}
+                        {allSourcesCollapsed ? "Expand All" : "Collapse All"}
                     </button>
                 )}
 
