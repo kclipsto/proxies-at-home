@@ -75,8 +75,16 @@ export function useMpcSearch(
     const [minDpi, setMinDpi] = useState<number>(() => favoriteMpcDpi ?? 800);
     const [sourceFilters, setSourceFilters] = useState<Set<string>>(() => new Set(favoriteMpcSources));
     const [tagFilters, setTagFilters] = useState<Set<string>>(() => new Set(favoriteMpcTags));
-    const [sortBy, setSortBy] = useState<"name" | "dpi" | "source">(() => favoriteMpcSort ?? "dpi");
-    const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+    const [sortBy, setSortByInternal] = useState<"name" | "dpi" | "source">(() => favoriteMpcSort ?? "dpi");
+    // Default direction: ascending for name/source, descending for DPI
+    const getDefaultSortDir = (sort: "name" | "dpi" | "source") => sort === "dpi" ? "desc" : "asc";
+    const [sortDir, setSortDir] = useState<"asc" | "desc">(() => getDefaultSortDir(favoriteMpcSort ?? "dpi"));
+
+    // Wrapper for setSortBy that also updates direction to smart default
+    const setSortBy = (sort: "name" | "dpi" | "source") => {
+        setSortByInternal(sort);
+        setSortDir(getDefaultSortDir(sort));
+    };
 
     // Refs for search deduplication
     const lastSearchParams = useRef<{ name: string; fuzzy: boolean } | null>(null);

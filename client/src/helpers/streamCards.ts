@@ -24,6 +24,8 @@ export interface StreamCardsOptions {
     language: string;
     importType: ImportType;
     signal: AbortSignal;
+    /** Override preferred art source (if not specified, uses preferredArtSource from settings) */
+    artSource?: 'scryfall' | 'mpc';
     onProgress?: (processed: number, total: number) => void;
     onFirstCard?: () => void;
     onComplete?: () => void;
@@ -44,7 +46,7 @@ const cardKey = (info: CardInfo) =>
     `${normalizeDfcName(info.name).toLowerCase()}|${info.set?.toLowerCase() ?? ""}|${info.number ?? ""}`;
 
 export async function streamCards(options: StreamCardsOptions): Promise<StreamCardsResult> {
-    const { cardInfos, language, importType, signal, onProgress, onFirstCard, onComplete } = options;
+    const { cardInfos, language, importType, signal, artSource, onProgress, onFirstCard, onComplete } = options;
 
     // Get initial max order to compute starting positions for all cards
     const initialMaxOrder = (await db.cards.orderBy("order").last())?.order ?? 0;
@@ -107,9 +109,10 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     let uniqueInfos = cardsWithoutMpcId.map(v => v.info);
 
     // --- MPC Autofill Integration ---
-    const preferredArtSource = useSettingsStore.getState().preferredArtSource;
-    console.log('[streamCards] Preferred art source:', preferredArtSource);
-    if (preferredArtSource === 'mpc') {
+    // Use explicit artSource override if provided, otherwise fall back to settings
+    const effectiveArtSource = artSource ?? useSettingsStore.getState().preferredArtSource;
+    console.log('[streamCards] Preferred art source:', effectiveArtSource);
+    if (effectiveArtSource === 'mpc') {
         console.log('[streamCards] MPC mode enabled, searching for', uniqueInfos.length, 'cards');
         // Debug log removed
 

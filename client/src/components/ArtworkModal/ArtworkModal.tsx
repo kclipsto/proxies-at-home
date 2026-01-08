@@ -43,9 +43,9 @@ export function ArtworkModal() {
     const [artSource, setArtSource] = useState<'scryfall' | 'mpc'>('scryfall');
     const [mpcFiltersCollapsed, setMpcFiltersCollapsed] = useState(true);
 
-    // User's art selection (reset on card change) - single source of truth
-    // This is the URL/ID of the currently selected art (either Scryfall URL or MPC proxied URL)
-    const [selectedArtId, setSelectedArtId] = useState<string | null>(null);
+    // User's art selection - includes cardUuid to detect stale selections
+    // When selection is for a different card, it's ignored and we fall back to cardImageId
+    const [selectedArtState, setSelectedArtState] = useState<{ cardUuid: string; artId: string } | null>(null);
     const [lastOpenCardUuid, setLastOpenCardUuid] = useState<string | undefined>(undefined);
 
     const isModalOpen = useArtworkModalStore((state) => state.open);
@@ -75,7 +75,8 @@ export function ArtworkModal() {
         setApplyToAll(false);
         setIsSearchOpen(false);
         setShowCardbackLibrary(false);
-        setSelectedArtId(null);
+        // Note: Don't reset selectedArtState here - we use cardUuid matching to ignore stale selections
+        // This avoids intermediate render states that cause visual flicker
 
         // Re-initialize view preferences
         setActiveTab(initialTab);
@@ -99,10 +100,17 @@ export function ArtworkModal() {
         }
     }, [isModalOpen]);
 
+    // Helper to set selected art with current card's UUID
+    const setSelectedArtId = (artId: string) => {
+        if (modalCard?.uuid) {
+            setSelectedArtState({ cardUuid: modalCard.uuid, artId });
+        }
+    };
     const setAppliedImageUrl = setSelectedArtId;
     const setAppliedMpcCardId = (mpcId: string) => {
         // Convert MPC ID to full URL for consistent storage
-        setSelectedArtId(getMpcAutofillImageUrl(mpcId));
+        const url = getMpcAutofillImageUrl(mpcId);
+        if (url) setSelectedArtId(url);
     };
 
     // Auto-search for placeholder cards (no imageId)
@@ -160,8 +168,12 @@ export function ArtworkModal() {
     // SIMPLE: Get the card's image source directly from modalCard.imageId
     const cardImageId = modalCard?.imageId;
 
-    // SIMPLE: The selected art is either user's click or canvas card
-    // selectedArtId is a URL (Scryfall or MPC proxied) - single source of truth
+    // Derive selectedArtId: only use if it belongs to current card (avoids stale selections)
+    const selectedArtId = (selectedArtState && selectedArtState.cardUuid === modalCard?.uuid)
+        ? selectedArtState.artId
+        : null;
+
+    // The effective art is either user's explicit click or the card's current image
     const effectiveArtId = selectedArtId ?? cardImageId;
 
     const displayData = useMemo(() => {
@@ -793,7 +805,7 @@ export function ArtworkModal() {
                     {/* Content area */}
                     {activeTab === 'artwork' && (
                         <ArtworkTabContent
-                            key={modalCard?.uuid ?? 'empty'}
+                            // key={modalCard?.uuid ?? 'empty'}
                             modalCard={modalCard}
                             linkedBackCard={linkedBackCard}
                             selectedFace={selectedFace}

@@ -1,5 +1,6 @@
 import logoSvg from "@/assets/logo.svg";
 import { Button } from "flowbite-react";
+import { ChevronDown, ChevronRight, Star } from "lucide-react";
 import { CardGrid } from "./CardGrid";
 import { CardArtFilterBar } from "./CardArtFilterBar";
 import { CardImageSvg } from "./CardImageSvg";
@@ -11,6 +12,7 @@ import { filterPrintsByFace, getFaceNamesFromPrints, type PrintInfo } from "@/he
 import { type MpcAutofillCard, getMpcAutofillImageUrl, extractMpcIdentifierFromImageId } from "@/helpers/mpcAutofillApi";
 import { inferImageSource } from "@/helpers/imageSourceUtils";
 import type { ScryfallCard } from "../../../../shared/types";
+import { useSettingsStore } from "@/store";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 
 type ArtSource = 'scryfall' | 'mpc';
@@ -112,48 +114,62 @@ export function CardArtContent({
         [scryfallPrintsData.prints]
     );
 
-    // SORT-ON-TOGGLE: Internal sort key state - only updates on tab toggle (false→true)
-    // This keeps the selected card sorted to top but defers the sort until the tab is active
-    const [scryfallSortKey, setScryfallSortKey] = useState<string | undefined>(undefined);
-    const [mpcSortKey, setMpcSortKey] = useState<string | undefined>(undefined);
+    // STABLE SORT KEY: Only updates when prints data actually changes
+    // This prevents the old card's grid from re-sorting during navigation transition
+    // We use prints array reference as stability indicator since it's the actual displayed data
+    const lastPrintsRef = useRef(scryfallPrintsData.prints);
+    const lastMpcCardsRef = useRef(mpcData.filteredCards);
+    const stableScryfallSortKeyRef = useRef<string | undefined>(undefined);
+    const stableMpcSortKeyRef = useRef<string | undefined>(undefined);
 
-    // Track previous isActive to detect activation transition (false/undefined → true)
-    const wasActiveRef = useRef<boolean | undefined>(undefined);
+    // Track query and selection for hybrid highlight logic
+    // During card navigation: query changes but data stays stale -> preserve highlight
+    // During same-card selection: query is same, selection changes -> update highlight immediately
+    const lastQueryRef = useRef(query);
+    const stableHighlightMpcIdRef = useRef<string | undefined>(selectedMpcId);
+    const stableHighlightArtIdRef = useRef<string | undefined>(selectedArtId ?? undefined);
 
-    // Track previous query to detect card navigation
-    const prevQueryRef = useRef(query);
+    // Detect if we're mid-navigation (query changed but data hasn't updated yet)
+    const isNavigating = query !== lastQueryRef.current;
 
-    // Reset sort keys when card changes (query changes)
-    useEffect(() => {
-        if (prevQueryRef.current !== query) {
-            prevQueryRef.current = query;
+    // When query changes back to same (data loaded), or on same card, update highlight immediately
+    if (!isNavigating) {
+        // Same card - use live values for immediate highlight updates
+        stableHighlightMpcIdRef.current = selectedMpcId;
+        stableHighlightArtIdRef.current = selectedArtId ?? undefined;
+    }
+    // If navigating, keep the old stable highlight values until data changes
 
-            setScryfallSortKey(undefined);
-            setMpcSortKey(undefined);
+    // Update Scryfall sort key only when prints data actually changes
+    if (lastPrintsRef.current !== scryfallPrintsData.prints) {
+        lastPrintsRef.current = scryfallPrintsData.prints;
+        lastQueryRef.current = query; // Reset query tracking when data updates
+        // Reset to new card's selected art for sorting and highlighting
+        if (isActive && artSource === 'scryfall' && !selectedArtIsMpc) {
+            stableScryfallSortKeyRef.current = selectedArtId ?? undefined;
+            stableHighlightArtIdRef.current = selectedArtId ?? undefined;
+        } else {
+            stableScryfallSortKeyRef.current = undefined;
         }
-    }, [query]);
+    }
 
-    // Update sort keys when tab becomes active (sort-on-toggle)
-    // Always update: if selectedArtId matches this tab, pin it; otherwise undefined for natural order
-    useEffect(() => {
-        const wasActive = wasActiveRef.current;
-        wasActiveRef.current = isActive;
-
-        // Only trigger on activation transition (false/undefined → true)
-        if (isActive && !wasActive) {
-
-            if (artSource === 'scryfall') {
-                // If selectedArtId is a Scryfall URL, use it; otherwise undefined (natural order)
-                const sortId = !selectedArtIsMpc ? selectedArtId ?? undefined : undefined;
-
-                setScryfallSortKey(sortId);
-            } else if (artSource === 'mpc') {
-                // If selectedArtId is an MPC URL, use extracted ID; otherwise undefined (natural order)
-
-                setMpcSortKey(selectedMpcId);
-            }
+    // Update MPC sort key only when MPC data actually changes
+    if (lastMpcCardsRef.current !== mpcData.filteredCards) {
+        lastMpcCardsRef.current = mpcData.filteredCards;
+        lastQueryRef.current = query; // Reset query tracking when data updates
+        if (isActive && artSource === 'mpc') {
+            stableMpcSortKeyRef.current = selectedMpcId;
+            stableHighlightMpcIdRef.current = selectedMpcId;
+        } else {
+            stableMpcSortKeyRef.current = undefined;
         }
-    }, [isActive, artSource, selectedArtId, selectedArtIsMpc, selectedMpcId]);
+    }
+
+    const scryfallSortKey = stableScryfallSortKeyRef.current;
+    const mpcSortKey = stableMpcSortKeyRef.current;
+    // Use stable highlight values (immediate updates on same card, preserved during navigation)
+    const highlightSelectedArtId = stableHighlightArtIdRef.current;
+    const highlightSelectedMpcId = stableHighlightMpcIdRef.current;
 
     const filteredPrints = useMemo(
         () => {
@@ -214,12 +230,39 @@ export function CardArtContent({
         : mpcData.filteredCards.length > 0;
 
     // Collapsed source groups state (for MPC source sort mode)
+    // We track both explicitly collapsed sources AND whether "collapse all" mode is active
     const [collapsedSources, setCollapsedSources] = useState<Set<string>>(new Set());
+    const [allSourcesCollapsed, setAllSourcesCollapsed] = useState(false);
+
+    // Get favorites from settings for source group headers
+    const favoriteMpcSources = useSettingsStore(s => s.favoriteMpcSources);
+    const toggleFavoriteMpcSource = useSettingsStore(s => s.toggleFavoriteMpcSource);
+
+    // Check if a source should be collapsed (either explicitly or via allCollapsed mode)
+    const isSourceCollapsed = useCallback((sourceName: string) => {
+        if (allSourcesCollapsed) {
+            // In "all collapsed" mode, only explicitly expanded sources are shown
+            return !collapsedSources.has(sourceName);
+        }
+        // In normal mode, only explicitly collapsed sources are hidden
+        return collapsedSources.has(sourceName);
+    }, [allSourcesCollapsed, collapsedSources]);
+
+    // Toggle source collapse state
+    const toggleSourceCollapse = useCallback((sourceName: string) => {
+        setCollapsedSources(prev => {
+            const next = new Set(prev);
+            if (next.has(sourceName)) {
+                next.delete(sourceName);
+            } else {
+                next.add(sourceName);
+            }
+            return next;
+        });
+    }, []);
 
     // Handler for MPC card selection
     const handleMpcCardSelect = (card: MpcAutofillCard) => {
-
-
         if (onSelectMpcCard) {
             onSelectMpcCard(card);
         } else {
@@ -237,7 +280,7 @@ export function CardArtContent({
     // Render a single Scryfall card (search mode)
     const renderScryfallCard = (card: ScryfallCard, index: number) => {
         const imageUrl = card.imageUrls?.[0] || '';
-        const isSelected = stripQuery(selectedArtId) === stripQuery(imageUrl);
+        const isSelected = stripQuery(highlightSelectedArtId) === stripQuery(imageUrl);
 
         const displayUrl = isSelected && processedDisplayUrl ? processedDisplayUrl : imageUrl;
 
@@ -267,7 +310,7 @@ export function CardArtContent({
 
     // Render a single print (prints mode - used in ArtworkModal)
     const renderPrint = (print: PrintInfo, index: number) => {
-        const isSelected = stripQuery(selectedArtId) === stripQuery(print.imageUrl);
+        const isSelected = stripQuery(highlightSelectedArtId) === stripQuery(print.imageUrl);
 
         const displayUrl = isSelected && processedDisplayUrl ? processedDisplayUrl : print.imageUrl;
 
@@ -300,7 +343,7 @@ export function CardArtContent({
 
     // Render a single MPC card with bleed cropping and filter badges
     const renderMpcCard = (card: MpcAutofillCard, index: number) => {
-        const isSelected = selectedMpcId === card.identifier;
+        const isSelected = highlightSelectedMpcId === card.identifier;
         // Use proxied URLs for consistent loading and caching
         const primaryUrl = getMpcAutofillImageUrl(card.identifier, 'small');
         const fallbackUrl = card.smallThumbnailUrl || '';
@@ -434,6 +477,8 @@ export function CardArtContent({
                                 setTagFilters={mpcData.setTagFilters}
                                 collapsedSources={collapsedSources}
                                 setCollapsedSources={setCollapsedSources}
+                                allSourcesCollapsed={allSourcesCollapsed}
+                                setAllSourcesCollapsed={setAllSourcesCollapsed}
                             />
                         )}
 
@@ -451,15 +496,59 @@ export function CardArtContent({
 
                         {/* Card Grid */}
                         <div className={artSource === 'mpc' && !filtersCollapsed ? '' : 'pt-6'}>
-                            <CardGrid cardSize={cardSize}>
-                                {artSource === 'scryfall'
-                                    ? (mode === 'prints'
+                            {artSource === 'scryfall' ? (
+                                <CardGrid cardSize={cardSize}>
+                                    {mode === 'prints'
                                         ? (filteredPrints || []).map(renderPrint)
                                         : scryfallSearchData.cards.map(renderScryfallCard)
-                                    )
-                                    : sortedMpcCards.map(renderMpcCard)
-                                }
-                            </CardGrid>
+                                    }
+                                </CardGrid>
+                            ) : mpcData.filters.sortBy === 'source' && mpcData.groupedBySource ? (
+                                /* Grouped by source with collapsible sections */
+                                <div className="flex flex-col gap-4">
+                                    {Array.from(mpcData.groupedBySource.entries()).map(([sourceName, cards]) => (
+                                        <div key={sourceName} className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() => toggleSourceCollapse(sourceName)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleSourceCollapse(sourceName); }}
+                                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleFavoriteMpcSource(sourceName);
+                                                        }}
+                                                        className="p-1 hover:text-yellow-500 transition-colors"
+                                                        title={favoriteMpcSources.includes(sourceName) ? "Remove from favorites" : "Add to favorites"}
+                                                    >
+                                                        <Star className={`w-4 h-4 ${favoriteMpcSources.includes(sourceName) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} />
+                                                    </button>
+                                                    <span className="font-medium text-gray-900 dark:text-white">{sourceName}</span>
+                                                </div>
+                                                <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                                    <span>{cards.length} card{cards.length !== 1 ? 's' : ''}</span>
+                                                    {isSourceCollapsed(sourceName) ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                </span>
+                                            </div>
+                                            {!isSourceCollapsed(sourceName) && (
+                                                <div className="p-4">
+                                                    <CardGrid cardSize={cardSize}>
+                                                        {cards.map(renderMpcCard)}
+                                                    </CardGrid>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                /* Flat grid for non-source sorting */
+                                <CardGrid cardSize={cardSize}>
+                                    {sortedMpcCards.map(renderMpcCard)}
+                                </CardGrid>
+                            )}
                         </div>
                     </div>
                 ) : (
