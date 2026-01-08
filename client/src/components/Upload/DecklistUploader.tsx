@@ -34,7 +34,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
 
     // --- Fetch Logic ---
 
-    const processCardFetch = async (infos: CardInfo[]) => {
+    const processCardFetch = async (infos: CardInfo[], artSource?: 'scryfall' | 'mpc') => {
         onUploadComplete?.();
 
         if (fetchController.current) {
@@ -56,6 +56,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                 language: globalLanguage,
                 importType: 'scryfall',
                 signal: fetchController.current.signal,
+                artSource,
                 onComplete: () => {
                     setDeckText("");
                     onUploadComplete?.();
@@ -107,12 +108,13 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
 
         // Standard Scryfall-based card addition
         // Include specific print details if available (set/number) so backend can match exactly
+        // Force artSource to 'scryfall' to prevent MPC override when user explicitly selected Scryfall art
         await processCardFetch([{
             name: cardName,
             quantity: 1,
             set: specificPrint?.set,
             number: specificPrint?.number
-        }]);
+        }], 'scryfall');
     };
 
     // --- Clear Logic ---
