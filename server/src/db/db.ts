@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'proxxied-cards.db');
 
 // Current schema version - increment when adding migrations
-const CURRENT_DB_VERSION = 2;
+const CURRENT_DB_VERSION = 3;
 
 // Migration definitions - each entry upgrades from (version-1) to (version)
 // Add new migrations to the end of this array
@@ -69,6 +69,13 @@ const migrations: Migration[] = [
         PRIMARY KEY (endpoint, query_hash)
       );`,
       'CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);',
+    ],
+  },
+  {
+    version: 3,
+    description: 'Add all_parts column for token data',
+    up: [
+      'ALTER TABLE cards ADD COLUMN all_parts TEXT;',
     ],
   },
 ];
@@ -159,6 +166,7 @@ export function initDatabase(): Database.Database {
       -- Image data
       image_uris TEXT,                  -- JSON: { "png": "https://...", ... }
       card_faces TEXT,                  -- JSON array for DFCs
+      all_parts TEXT,                   -- JSON array for related cards/tokens
       
       -- Sync tracking
       updated_at TEXT                   -- ISO timestamp for incremental updates

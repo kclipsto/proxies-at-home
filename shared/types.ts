@@ -110,6 +110,9 @@ export interface CardOption {
   isFlipped?: boolean;  // If true, card displays back face
   // Per-card rendering overrides (M1)
   overrides?: CardOverrides;
+  // Token metadata
+  token_parts?: TokenPart[];  // Associated tokens this card can create
+  needs_token?: boolean;  // True if this card has associated tokens
 }
 
 export interface PrintInfo {
@@ -138,6 +141,9 @@ export interface ScryfallCard {
     name: string;
     imageUrl?: string;
   }>;
+  // Token metadata
+  token_parts?: TokenPart[];  // Associated tokens this card can create
+  needs_token?: boolean;  // True if this card has associated tokens
 }
 
 export type CardInfo = {
@@ -149,3 +155,14 @@ export type CardInfo = {
   category?: string | undefined; // Archidekt deck category
   mpcIdentifier?: string | undefined; // MPC Autofill identifier for exact art matching
 };
+
+/**
+ * Token information from Scryfall's all_parts field.
+ * Used to track which tokens are associated with a card.
+ */
+export interface TokenPart {
+  id?: string;       // Scryfall ID for the token
+  name: string;      // Token name (e.g., "Rat", "Soldier")
+  type_line?: string; // Type line of the token
+  uri?: string;      // Scryfall URI to fetch full token data
+}

@@ -78,6 +78,14 @@ export interface ScryfallApiCard {
   set?: string;
   collector_number?: string;
   lang?: string;
+  // Related cards/tokens from Scryfall
+  all_parts?: Array<{
+    id?: string;
+    component?: string;  // "token", "combo_piece", "meld_part", etc.
+    name?: string;
+    type_line?: string;
+    uri?: string;
+  }>;
 }
 
 interface ScryfallResponse {
