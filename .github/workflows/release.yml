@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   # Determine version and release type
@@ -188,13 +189,51 @@ jobs:
             printf "# Changelog\n\n%s" "$ENTRY" > CHANGELOG.md
           fi
 
-      - name: Commit and push version bump
+      - name: Create release branch and PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          NEW_VERSION="${{ needs.prepare.outputs.version }}"
+          BRANCH_NAME="release/v${NEW_VERSION}"
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create and checkout release branch
+          git checkout -b "$BRANCH_NAME"
+          
+          # Stage and commit changes
           git add package.json CHANGELOG.md
-          git commit -m "chore: bump version to ${{ needs.prepare.outputs.version }} [skip ci]" || echo "No changes to commit"
-          git push
+          git commit -m "chore: bump version to ${NEW_VERSION}" || echo "No changes to commit"
+          
+          # Push release branch
+          git push origin "$BRANCH_NAME"
+          
+          # Create PR
+          NOTES="${{ steps.changelog.outputs.notes }}"
+          PR_BODY="## Release v${NEW_VERSION}
+          
+          This PR bumps the version to ${NEW_VERSION} and updates the changelog.
+          
+          ### Release Notes
+          ${NOTES:-'No release notes generated.'}
+          
+          ---
+          *Merging this PR will trigger the build and release workflow.*"
+          
+          # Create PR and enable auto-merge
+          PR_URL=$(gh pr create \
+            --title "chore: release v${NEW_VERSION}" \
+            --body "$PR_BODY" \
+            --base main \
+            --head "$BRANCH_NAME")
+          
+          echo "Created PR: $PR_URL"
+          
+          # Enable auto-merge (requires auto-merge to be enabled in repo settings)
+          gh pr merge "$PR_URL" --auto --squash || echo "Auto-merge not available, PR requires manual merge"
+          
+          echo "release_branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
   build:
     needs: [prepare, update-version]
