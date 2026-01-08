@@ -1,12 +1,13 @@
 import { db, type MpcSearchCacheEntry } from '../db';
 import type { MpcAutofillCard } from './mpcAutofillApi';
+import { parseMpcCardName } from './mpcUtils';
 
 /**
  * Client-side MPC search cache with hybrid TTL + LRU eviction.
  * Persists across sessions, cleared on reset app data.
  */
 
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours (aligned with server)
 const MAX_ENTRIES = 1000;
 
 /**
@@ -38,7 +39,12 @@ export async function getCachedMpcSearch(
         // Update cachedAt for LRU (touch on access)
         await db.mpcSearchCache.update([normalizedQuery, cardType], { cachedAt: now });
 
-        return entry.cards as MpcAutofillCard[];
+        // Parse card names in case of stale cache entries with unparsed names
+        const cards = (entry.cards as MpcAutofillCard[]).map((card) => ({
+            ...card,
+            name: parseMpcCardName(card.name, card.name),
+        }));
+        return cards;
     } catch (error) {
         console.warn('[MPC Client Cache] Failed to get cached search:', error);
         return null;

@@ -140,9 +140,9 @@ describe("ZoomControls", () => {
         }));
 
         render(<ZoomControls compact={true} />);
-        // Compact mode doesn't have slider
-        expect(screen.queryByRole("slider")).toBeNull();
-        // But still has buttons
+        // Compact mode now includes slider (but uses xs button size)
+        expect(screen.getByRole("slider")).toBeDefined();
+        // Still has buttons
         expect(screen.getAllByRole("button").length).toBe(2);
     });
 

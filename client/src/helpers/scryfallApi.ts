@@ -34,8 +34,9 @@ async function apiCall<T>(request: () => Promise<{ data: T }>): Promise<T> {
     }
 }
 
+// Route through server proxy for rate limiting and caching
 const scryfallApi = axios.create({
-    baseURL: 'https://api.scryfall.com',
+    baseURL: `${API_BASE}/api/scryfall`,
 });
 
 export interface RawScryfallCard {
@@ -50,6 +51,7 @@ export interface RawScryfallCard {
     type_line?: string;
     rarity?: string;
     image_uris?: {
+        png?: string;
         large?: string;
         normal?: string;
     };
@@ -57,6 +59,7 @@ export interface RawScryfallCard {
         colors?: string[];
         mana_cost?: string;
         image_uris?: {
+            png?: string;
             large?: string;
             normal?: string;
         };
@@ -67,12 +70,14 @@ export function getImages(data: RawScryfallCard): string[] {
     const imageUrls: string[] = [];
 
     if (data.image_uris) {
-        if (data.image_uris.large) imageUrls.push(data.image_uris.large);
+        if (data.image_uris.png) imageUrls.push(data.image_uris.png);
+        else if (data.image_uris.large) imageUrls.push(data.image_uris.large);
         else if (data.image_uris.normal) imageUrls.push(data.image_uris.normal);
     } else if (data.card_faces) {
-        data.card_faces.forEach((face: { image_uris?: { large?: string; normal?: string } }) => {
+        data.card_faces.forEach((face: { image_uris?: { png?: string; large?: string; normal?: string } }) => {
             if (face.image_uris) {
-                if (face.image_uris.large) imageUrls.push(face.image_uris.large);
+                if (face.image_uris.png) imageUrls.push(face.image_uris.png);
+                else if (face.image_uris.large) imageUrls.push(face.image_uris.large);
                 else if (face.image_uris.normal) imageUrls.push(face.image_uris.normal);
             }
         });
@@ -169,7 +174,7 @@ export async function fetchCardWithPrints(query: string, exact: boolean = false,
 }
 
 export async function searchCards(query: string, signal?: AbortSignal): Promise<ScryfallCard[]> {
-    const data = await apiCall<{ data: RawScryfallCard[] }>(() => scryfallApi.get('/cards/search', {
+    const data = await apiCall<{ data: RawScryfallCard[] }>(() => scryfallApi.get('/search', {
         params: { q: query },
         signal,
     }));
@@ -177,7 +182,7 @@ export async function searchCards(query: string, signal?: AbortSignal): Promise<
 }
 
 export async function autocomplete(query: string, signal?: AbortSignal): Promise<string[]> {
-    const data = await apiCall<{ data: string[] }>(() => scryfallApi.get('/cards/autocomplete', {
+    const data = await apiCall<{ data: string[] }>(() => scryfallApi.get('/autocomplete', {
         params: { q: query },
         signal,
     }));
@@ -185,8 +190,15 @@ export async function autocomplete(query: string, signal?: AbortSignal): Promise
 }
 
 export async function getCardByName(name: string, signal?: AbortSignal): Promise<ScryfallCard> {
-    const data = await apiCall<RawScryfallCard>(() => scryfallApi.get('/cards/named', {
+    const data = await apiCall<RawScryfallCard>(() => scryfallApi.get('/named', {
         params: { exact: name },
+        signal,
+    }));
+    return mapScryfallDataToCard(data);
+}
+
+export async function fetchCardBySetAndNumber(set: string, number: string, signal?: AbortSignal): Promise<ScryfallCard> {
+    const data = await apiCall<RawScryfallCard>(() => scryfallApi.get(`/cards/${set}/${number}`, {
         signal,
     }));
     return mapScryfallDataToCard(data);

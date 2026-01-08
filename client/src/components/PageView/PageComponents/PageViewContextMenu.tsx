@@ -115,7 +115,7 @@ export function PageViewContextMenu({ contextMenu, setContextMenu, cards, flippe
                         onClick={() => {
                             const card = cards?.find(c => c.uuid === contextMenu.cardUuid);
                             if (card) {
-                                openArtworkModal({ card, index: null, initialTab: 'settings' });
+                                openArtworkModal({ card, index: null, allCards: cards, initialTab: 'settings' });
                             }
                             setContextMenu({ ...contextMenu, visible: false });
                         }}
@@ -173,7 +173,7 @@ export function PageViewContextMenu({ contextMenu, setContextMenu, cards, flippe
                         onClick={() => {
                             const card = cards?.find(c => c.uuid === contextMenu.cardUuid);
                             if (card) {
-                                openArtworkModal({ card, index: null, initialTab: 'settings' });
+                                openArtworkModal({ card, index: null, allCards: cards, initialTab: 'settings' });
                             }
                             setContextMenu({ ...contextMenu, visible: false });
                         }}

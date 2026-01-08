@@ -18,6 +18,7 @@ vi.mock("@/store/selection", () => ({
     useSelectionStore: {
         getState: vi.fn(() => ({
             selectedCards: new Set<string>(),
+            setFlipped: vi.fn(),
         })),
     },
 }));
@@ -54,6 +55,7 @@ describe("DefaultCardbackCheckbox", () => {
         vi.clearAllMocks();
         (useSelectionStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
             selectedCards: new Set<string>(),
+            setFlipped: vi.fn(),
         });
     });
 
@@ -169,6 +171,7 @@ describe("DefaultCardbackCheckbox", () => {
             const selectedUuids = ["front-uuid", "front-uuid-2"];
             (useSelectionStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
                 selectedCards: new Set(selectedUuids),
+                setFlipped: vi.fn(),
             });
 
             // Mock bulkGet for front cards
@@ -209,6 +212,7 @@ describe("DefaultCardbackCheckbox", () => {
             const selectedUuids = ["front-uuid", "front-uuid-2"];
             (useSelectionStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
                 selectedCards: new Set(selectedUuids),
+                setFlipped: vi.fn(),
             });
 
             // Mock bulkGet for finding back cards
@@ -239,6 +243,7 @@ describe("DefaultCardbackCheckbox", () => {
             const selectedUuids = ["front-uuid", "front-uuid-no-back"];
             (useSelectionStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
                 selectedCards: new Set(selectedUuids),
+                setFlipped: vi.fn(),
             });
 
             (db.cards.bulkGet as ReturnType<typeof vi.fn>).mockResolvedValue([

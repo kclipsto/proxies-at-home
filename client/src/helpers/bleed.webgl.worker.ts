@@ -1,4 +1,14 @@
-import { fetchWithRetry, toProxied, calibratedBleedTrimPxForHeight } from "./imageProcessing";
+import {
+    fetchWithRetry,
+    toProxied,
+    calibratedBleedTrimPxForHeight,
+    MM_TO_PX,
+    getBleedInPixels,
+    computeDarknessFactorFromImageData,
+    applyEdgeContrastCPU,
+    applyContrastFullCPU,
+    applyDarkenAllCPU,
+} from "./imageProcessing";
 import { processCardImageWebGL } from "./webglImageProcessing";
 import { db } from "../db";
 
@@ -12,153 +22,6 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // In-flight requests map to prevent duplicate fetches within a session
 const inflightRequests = new Map<string, Promise<Blob>>();
-
-// Helper: Convert mm to pixels at given DPI
-const MM_TO_PX = (mm: number, dpi: number) => Math.round((mm / 25.4) * dpi);
-
-// Helper: Convert bleed width to pixels
-function getBleedInPixels(bleedMm: number, unit: 'mm' | 'in', dpi: number): number {
-    if (unit === 'in') {
-        return bleedMm * dpi;
-    }
-    return (bleedMm / 25.4) * dpi;
-}
-
-/**
- * Compute the darknessFactor from pixel data by building a luminance histogram.
- * Same algorithm as in webglImageProcessing.ts but works with raw pixel data.
- */
-function computeDarknessFactorFromImageData(imageData: ImageData): number {
-    const d = imageData.data;
-
-    // Build luminance histogram (sample every 4th pixel for speed)
-    const hist = new Uint32Array(256);
-    const sampleStep = 4 * 4; // every 4th pixel (4 bytes per pixel)
-
-    for (let i = 0; i < d.length; i += sampleStep) {
-        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-        hist[Math.max(0, Math.min(255, l | 0))]++;
-    }
-
-    // Find 10th percentile luminance
-    const total = hist.reduce((a, b) => a + b, 0);
-    let acc = 0;
-    let p10 = 0;
-
-    for (let i = 0; i < 256; i++) {
-        acc += hist[i];
-        if (acc >= total * 0.1) {
-            p10 = i;
-            break;
-        }
-    }
-
-    return Math.min(1, Math.max(0, (90 - p10) / 70));
-}
-
-/**
- * Apply adaptive edge contrast to an ImageData object.
- * Same algorithm as the GLSL shader version.
- */
-function applyEdgeContrastCPU(imageData: ImageData, darknessFactor: number): void {
-    const d = imageData.data;
-    const width = imageData.width;
-    const height = imageData.height;
-
-    // DPI-aware edge zone (assuming ~300dpi baseline for standard card)
-    const dpiScale = height / 1039; // ~1039px at 300dpi for 88mm card + bleed
-    const EDGE_PX = Math.round(64 * dpiScale);
-
-    const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
-    const MAX_BRIGHTNESS = -8 * darknessFactor;
-    const HIGHLIGHT_SOFT = 230;
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const i = (y * width + x) * 4;
-
-            const edgeDist = Math.min(x, y, width - x - 1, height - y - 1);
-            if (edgeDist >= EDGE_PX) continue;
-
-            let edgeFactor = 1 - edgeDist / EDGE_PX;
-            edgeFactor *= edgeFactor; // smooth falloff
-
-            for (let c = 0; c < 3; c++) {
-                const v = d[i + c];
-
-                // Adaptive tone gating - only affect dark pixels
-                if (v > 140) continue;
-
-                const toneFactor = Math.min(1, (140 - v) / 110);
-                const strength = edgeFactor * toneFactor;
-                if (strength <= 0) continue;
-
-                const contrast = 1 + (MAX_CONTRAST - 1) * strength;
-                const brightness = MAX_BRIGHTNESS * strength;
-
-                let nv = (v - 128) * contrast + 128 + brightness;
-
-                if (nv > HIGHLIGHT_SOFT) {
-                    nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
-                }
-
-                d[i + c] = nv < 0 ? 0 : nv > 255 ? 255 : nv;
-            }
-        }
-    }
-}
-
-/**
- * Apply full-card contrast to an ImageData object.
- * Same as edge contrast but applies to entire card (no edge distance check).
- */
-function applyContrastFullCPU(imageData: ImageData, darknessFactor: number): void {
-    const d = imageData.data;
-
-    const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
-    const MAX_BRIGHTNESS = -8 * darknessFactor;
-    const HIGHLIGHT_SOFT = 230;
-
-    for (let i = 0; i < d.length; i += 4) {
-        for (let c = 0; c < 3; c++) {
-            const v = d[i + c];
-
-            // Only affect dark pixels (< 140)
-            if (v > 140) continue;
-
-            const toneFactor = Math.min(1, (140 - v) / 110);
-            if (toneFactor <= 0) continue;
-
-            const contrast = 1 + (MAX_CONTRAST - 1) * toneFactor;
-            const brightness = MAX_BRIGHTNESS * toneFactor;
-
-            let nv = (v - 128) * contrast + 128 + brightness;
-
-            if (nv > HIGHLIGHT_SOFT) {
-                nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
-            }
-
-            d[i + c] = nv < 0 ? 0 : nv > 255 ? 255 : nv;
-        }
-    }
-}
-
-/**
- * Apply legacy darken-all to an ImageData object.
- * Simple threshold: pixels with all RGB < 30 become pure black.
- */
-function applyDarkenAllCPU(imageData: ImageData): void {
-    const d = imageData.data;
-    const threshold = 30;
-
-    for (let i = 0; i < d.length; i += 4) {
-        if (d[i] < threshold && d[i + 1] < threshold && d[i + 2] < threshold) {
-            d[i] = 0;
-            d[i + 1] = 0;
-            d[i + 2] = 0;
-        }
-    }
-}
 
 // Note: DarkenMode type removed - all modes are now pre-generated
 

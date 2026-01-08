@@ -80,7 +80,7 @@ export function ToggleButtonGroup<T extends string>({
                             onChange(option.id);
                         }}
                         className={
-                            `flex-1 justify-center ${buttonOrientationClasses} px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap
+                            `flex-1 justify-center ${buttonOrientationClasses} px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap select-none
                             ${isSelected
                                 ? getSelectedClasses(option)
                                 : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white'

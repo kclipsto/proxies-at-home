@@ -1,14 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { useCardAutocomplete } from './useCardAutocomplete';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as scryfallApi from '@/helpers/scryfallApi';
-
-// Mock scryfallApi
-vi.mock('@/helpers/scryfallApi', () => ({
-    autocomplete: vi.fn(),
-    searchCards: vi.fn(),
-    getCardByName: vi.fn(),
-}));
 
 describe('useCardAutocomplete', () => {
     beforeEach(() => {
@@ -18,8 +10,7 @@ describe('useCardAutocomplete', () => {
     it('should initialize with default values', () => {
         const { result } = renderHook(() => useCardAutocomplete({ onSelect: vi.fn() }));
         expect(result.current.query).toBe('');
-        expect(result.current.suggestions).toEqual([]);
-        expect(result.current.showAutocomplete).toBe(false);
+        expect(result.current.hoveredIndex).toBeNull();
     });
 
     it('should update query on input change', () => {
@@ -30,37 +21,7 @@ describe('useCardAutocomplete', () => {
         });
 
         expect(result.current.query).toBe('Sol');
-    });
-
-    it('should fetch suggestions when query length >= 2', async () => {
-        (scryfallApi.autocomplete as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(['Sol Ring', 'Solar']);
-
-        const { result } = renderHook(() => useCardAutocomplete({ onSelect: vi.fn() }));
-
-        await act(async () => {
-            result.current.handleInputChange({ target: { value: 'Sol' } } as React.ChangeEvent<HTMLInputElement>);
-            // Fast-forward timers for debounce if implemented, or wait for promise
-            // Assuming debounce is used, we might need fake timers.
-            // For now, let's assume the hook might debounce.
-            await new Promise(resolve => setTimeout(resolve, 350));
-        });
-
-        expect(scryfallApi.autocomplete).toHaveBeenCalledWith('Sol', expect.any(AbortSignal));
-        expect(result.current.suggestions).toEqual(['Sol Ring', 'Solar']);
-        expect(result.current.showAutocomplete).toBe(true);
-    });
-
-    it('should handle selection', () => {
-        const onSelect = vi.fn();
-        const { result } = renderHook(() => useCardAutocomplete({ onSelect }));
-
-        act(() => {
-            result.current.handleSelect('Sol Ring');
-        });
-
-        expect(onSelect).toHaveBeenCalledWith('Sol Ring');
-        expect(result.current.query).toBe('Sol Ring');
-        expect(result.current.showAutocomplete).toBe(false);
+        expect(result.current.hoveredIndex).toBeNull();
     });
 
     it('should handle clear', () => {
@@ -72,7 +33,78 @@ describe('useCardAutocomplete', () => {
         });
 
         expect(result.current.query).toBe('');
-        expect(result.current.suggestions).toEqual([]);
-        expect(result.current.showAutocomplete).toBe(false);
+        expect(result.current.hoveredIndex).toBeNull();
+    });
+
+    describe('keyboard navigation', () => {
+        it('should navigate down with ArrowDown', () => {
+            const { result } = renderHook(() => useCardAutocomplete({ onSelect: vi.fn() }));
+
+            act(() => {
+                const handler = result.current.createKeyDownHandler(5);
+                handler({ key: 'ArrowDown', preventDefault: vi.fn() } as unknown as React.KeyboardEvent);
+            });
+
+            expect(result.current.hoveredIndex).toBe(0);
+        });
+
+        it('should navigate up with ArrowUp', () => {
+            const { result } = renderHook(() => useCardAutocomplete({ onSelect: vi.fn() }));
+
+            // Start from index 2
+            act(() => {
+                result.current.setHoveredIndex(2);
+            });
+
+            act(() => {
+                const handler = result.current.createKeyDownHandler(5);
+                handler({ key: 'ArrowUp', preventDefault: vi.fn() } as unknown as React.KeyboardEvent);
+            });
+
+            expect(result.current.hoveredIndex).toBe(1);
+        });
+
+        it('should call onSelect on Enter with query', () => {
+            const onSelect = vi.fn();
+            const { result } = renderHook(() => useCardAutocomplete({ onSelect }));
+
+            act(() => {
+                result.current.handleInputChange({ target: { value: 'Sol Ring' } } as React.ChangeEvent<HTMLInputElement>);
+            });
+
+            act(() => {
+                const handler = result.current.createKeyDownHandler(0);
+                handler({ key: 'Enter', preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as React.KeyboardEvent);
+            });
+
+            expect(onSelect).toHaveBeenCalledWith('Sol Ring');
+        });
+
+        it('should not call onSelect on Enter with empty query', () => {
+            const onSelect = vi.fn();
+            const { result } = renderHook(() => useCardAutocomplete({ onSelect }));
+
+            act(() => {
+                const handler = result.current.createKeyDownHandler(0);
+                handler({ key: 'Enter', preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as React.KeyboardEvent);
+            });
+
+            expect(onSelect).not.toHaveBeenCalled();
+        });
+
+        it('should reset hoveredIndex on Escape', () => {
+            const { result } = renderHook(() => useCardAutocomplete({ onSelect: vi.fn() }));
+
+            act(() => {
+                result.current.setHoveredIndex(2);
+            });
+
+            act(() => {
+                const handler = result.current.createKeyDownHandler(5);
+                handler({ key: 'Escape' } as React.KeyboardEvent);
+            });
+
+            expect(result.current.hoveredIndex).toBeNull();
+        });
     });
 });

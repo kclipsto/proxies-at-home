@@ -11,6 +11,8 @@ import { db } from "../../db";
 import { serializePdfSettingsForWorker } from "@/helpers/serializeSettingsForWorker";
 import { useFilteredAndSortedCards } from "@/hooks/useFilteredAndSortedCards";
 import { SplitButton } from "../common";
+import { extractMpcIdentifierFromImageId } from "@/helpers/mpcAutofillApi";
+import { inferImageSource } from "@/helpers/imageSourceUtils";
 import type { CardOption } from "../../../../shared/types";
 
 type Props = {
@@ -92,11 +94,70 @@ export function ExportActions({ cards }: Props) {
     useToastStore.getState().addToast({ message: 'Copied Decklist!', type: 'success', dismissible: true });
   };
 
-  const handleDownloadDecklist = () => {
+  const handleDownloadDecklist = async () => {
     const date = new Date().toISOString().slice(0, 10);
 
     if (downloadMode === 'xml') {
-      downloadMpcXml(frontCards, `mpc_decklist_${date}.xml`);
+      // For XML export, we need:
+      // 1. All front cards (filteredAndSortedCards)
+      // 2. All linked back cards (even if not currently in view)
+      // 3. The default cardback ID (if applicable)
+
+      const cardsToExport = [...filteredAndSortedCards];
+
+      // Collect linked back IDs that might be missing from the current view
+      const linkedBackIds = new Set<string>();
+      for (const card of filteredAndSortedCards) {
+        if (card.linkedBackId) {
+          linkedBackIds.add(card.linkedBackId);
+        }
+      }
+
+      // Check which back cards we already have
+      const existingIds = new Set(cardsToExport.map(c => c.uuid));
+      const missingBackIds = Array.from(linkedBackIds).filter(id => !existingIds.has(id));
+
+      // Fetch missing backs
+      if (missingBackIds.length > 0) {
+        const missingBacks = await db.cards.bulkGet(missingBackIds);
+        // db.bulkGet returns (Card | undefined) array
+        missingBacks.forEach(back => {
+          if (back) cardsToExport.push(back);
+        });
+      }
+
+      // Get default cardback ID. 
+      // The app stores defaultCardbackId in settings, but it's an internal ID like 'cardback_builtin_default'.
+      // However, for MPC export, we ideally want an MPC ID.
+      // If the default cardback is a custom image uploaded by the user, we can try to extract its MPC ID.
+      // If it's a builtin, we probably don't have an MPC ID for it unless we hardcode one.
+      // Let's rely on what we have. 
+      const defaultCardbackId = useSettingsStore.getState().defaultCardbackId;
+      let mpcDefaultBackId: string | undefined;
+
+      if (defaultCardbackId) {
+        // Check if it's a custom cardback with an MPC source
+        const cb = await db.cardbacks.get(defaultCardbackId);
+        if (cb) {
+          // Check source from URL or ID, only extract MPC ID if source is 'mpc'
+          const cbSource = inferImageSource(cb.sourceUrl) ?? inferImageSource(cb.id);
+          if (cbSource === 'mpc') {
+            if (cb.sourceUrl) {
+              mpcDefaultBackId = extractMpcIdentifierFromImageId(cb.sourceUrl) || undefined;
+            }
+            if (!mpcDefaultBackId) {
+              mpcDefaultBackId = extractMpcIdentifierFromImageId(cb.id) || undefined;
+            }
+          }
+        }
+      }
+
+      // Fallback to a known valid MPC cardback if no suitable default is found
+      if (!mpcDefaultBackId) {
+        mpcDefaultBackId = '1LrVX0pUcye9n_0RtaDNVl2xPrQgn7CYf';
+      }
+
+      downloadMpcXml(cardsToExport, `mpc_decklist_${date}.xml`, mpcDefaultBackId);
     } else {
       const style = downloadMode === 'withMpc' ? "withMpc" : "withSetNum";
       const text = buildDecklist(frontCards, { style, sort: decklistSortAlpha ? "alpha" : "none" });

@@ -1,46 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
-// Mock all the hooks and dependencies
-const mockHandleInputChange = vi.fn();
-const mockHandleClear = vi.fn();
-const mockHandleKeyDown = vi.fn();
-const mockSetHoveredIndex = vi.fn();
+// Mock success toast
 const mockShowSuccessToast = vi.fn();
-
-vi.mock('@/hooks/useCardAutocomplete', () => ({
-    useCardAutocomplete: vi.fn(() => ({
-        query: '',
-        setQuery: vi.fn(),
-        suggestions: [] as string[],
-        showAutocomplete: false,
-        setShowAutocomplete: vi.fn(),
-        hoveredIndex: null as number | null,
-        setHoveredIndex: mockSetHoveredIndex,
-        handleInputChange: mockHandleInputChange,
-        handleClear: mockHandleClear,
-        handleKeyDown: mockHandleKeyDown,
-        hoverPreviewUrl: null,
-        containerRef: { current: null },
-        handleSelect: vi.fn(),
-    })),
-}));
-
-vi.mock('@/hooks/useScryfallPreview', () => ({
-    useScryfallPreview: vi.fn(() => ({
-        setVariations: [],
-        validatedPreviewUrl: null,
-    })),
-}));
-
-vi.mock('@/helpers/cardInfoHelper', () => ({
-    extractCardInfo: vi.fn((query: string) => ({ name: query, set: '', number: '' })),
-}));
-
-vi.mock('@/helpers/mpcAutofillApi', () => ({
-    getMpcAutofillImageUrl: vi.fn((id: string) => `https://mpc.example.com/${id}`),
-    parseMpcCardName: vi.fn((name: string) => name.replace(/ \(.*\)$/, '')),
-}));
 
 vi.mock('@/store/toast', () => ({
     useToastStore: {
@@ -50,55 +12,21 @@ vi.mock('@/store/toast', () => ({
     },
 }));
 
-vi.mock('../MpcArt', () => ({
-    MpcArtContent: ({
-        onSelectCard,
-        onSwitchToScryfall,
-        cardName,
-        filtersCollapsed,
-    }: {
-        onSelectCard: (card: { name: string; identifier: string }) => void;
-        onSwitchToScryfall: () => void;
-        cardName: string;
-        filtersCollapsed: boolean;
-    }) => (
-        <div data-testid="mpc-art-content" data-card-name={cardName} data-filters-collapsed={filtersCollapsed}>
-            <button
-                data-testid="mpc-select-card"
-                onClick={() => onSelectCard({ name: 'Test Card (Foil)', identifier: 'abc123' })}
-            >
-                Select MPC Card
-            </button>
-            <button data-testid="mpc-switch-to-scryfall" onClick={onSwitchToScryfall}>
-                Switch to Scryfall
-            </button>
-        </div>
-    ),
+vi.mock('@/store/artworkModal', () => ({
+    useArtworkModalStore: vi.fn((selector) => {
+        const state = {
+            advancedSearchZoom: 1.0,
+            setAdvancedSearchZoom: vi.fn(),
+        };
+        return selector(state);
+    }),
+}));
+
+vi.mock('@/hooks/useZoomShortcuts', () => ({
+    useZoomShortcuts: vi.fn(),
 }));
 
 vi.mock('../common', () => ({
-    ToggleButtonGroup: ({
-        value,
-        onChange,
-        options,
-    }: {
-        value: string;
-        onChange: (val: string) => void;
-        options: { id: string; label: string }[];
-    }) => (
-        <div data-testid="toggle-button-group" data-value={value}>
-            {options.map((opt) => (
-                <button
-                    key={opt.id}
-                    data-testid={`toggle-${opt.id}`}
-                    onClick={() => onChange(opt.id)}
-                    data-selected={value === opt.id}
-                >
-                    {opt.label}
-                </button>
-            ))}
-        </div>
-    ),
     ArtSourceToggle: ({
         value,
         onChange,
@@ -106,7 +34,7 @@ vi.mock('../common', () => ({
         value: string;
         onChange: (val: string) => void;
     }) => (
-        <div data-testid="toggle-button-group" data-value={value}>
+        <div data-testid="art-source-toggle" data-value={value}>
             <button data-testid="toggle-mpc" onClick={() => onChange('mpc')} data-selected={value === 'mpc'}>MPC Autofill</button>
             <button data-testid="toggle-scryfall" onClick={() => onChange('scryfall')} data-selected={value === 'scryfall'}>Scryfall</button>
         </div>
@@ -130,42 +58,73 @@ vi.mock('../common', () => ({
             </div>
         ) : null
     ),
-    CardGrid: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="card-grid">{children}</div>
-    ),
     FloatingZoomPanel: () => <div data-testid="floating-zoom-panel" />,
+    CardArtContent: ({
+        artSource,
+        query,
+        onSelectCard,
+        onSwitchSource,
+        filtersCollapsed,
+    }: {
+        artSource: 'scryfall' | 'mpc';
+        query: string;
+        onSelectCard: (cardName: string, imageUrl?: string, specificPrint?: { set: string; number: string }) => void;
+        onSwitchSource?: () => void;
+        filtersCollapsed?: boolean;
+    }) => (
+        <div
+            data-testid={artSource === 'mpc' ? 'mpc-art-content' : 'scryfall-art-content'}
+            data-query={query}
+            data-filters-collapsed={filtersCollapsed}
+        >
+            {artSource === 'scryfall' ? (
+                <div data-testid="scryfall-grid">
+                    {query && (
+                        <button
+                            data-testid="scryfall-card"
+                            onClick={() => onSelectCard(query)}
+                        >
+                            {query}
+                        </button>
+                    )}
+                    {!query && <span>Search for a card to preview.</span>}
+                </div>
+            ) : (
+                <div data-testid="mpc-grid">
+                    <button
+                        data-testid="mpc-select-card"
+                        onClick={() => onSelectCard('Test Card', 'https://mpc.example.com/abc123')}
+                    >
+                        Select MPC Card
+                    </button>
+                    <button data-testid="mpc-switch-to-scryfall" onClick={onSwitchSource}>
+                        Switch to Scryfall
+                    </button>
+                </div>
+            )}
+        </div>
+    ),
 }));
 
 vi.mock('flowbite-react', () => ({
-    Button: ({ children, onClick, disabled, className }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-        <button data-testid="add-button" onClick={onClick} disabled={disabled} className={className}>
-            {children}
-        </button>
-    ),
     TextInput: ({
         value,
         onChange,
-        onKeyDown,
         placeholder,
     }: {
         value: string;
         onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-        onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
         placeholder: string;
     }) => (
         <input
             data-testid="search-input"
             value={value}
             onChange={onChange}
-            onKeyDown={onKeyDown}
             placeholder={placeholder}
         />
     ),
 }));
 
-// Import the hooks so we can control their return values
-import { useCardAutocomplete } from '@/hooks/useCardAutocomplete';
-import { useScryfallPreview } from '@/hooks/useScryfallPreview';
 import { AdvancedSearch } from './AdvancedSearch';
 
 describe('AdvancedSearch', () => {
@@ -177,26 +136,6 @@ describe('AdvancedSearch', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        // Reset hook mocks to defaults
-        vi.mocked(useCardAutocomplete).mockReturnValue({
-            query: '',
-            setQuery: vi.fn(),
-            suggestions: [],
-            showAutocomplete: false,
-            setShowAutocomplete: vi.fn(),
-            hoveredIndex: null,
-            setHoveredIndex: mockSetHoveredIndex,
-            handleInputChange: mockHandleInputChange,
-            handleClear: mockHandleClear,
-            handleKeyDown: mockHandleKeyDown,
-            hoverPreviewUrl: null,
-            containerRef: { current: null },
-            handleSelect: vi.fn(),
-        });
-        vi.mocked(useScryfallPreview).mockReturnValue({
-            setVariations: [],
-            validatedPreviewUrl: null,
-        });
     });
 
     describe('rendering', () => {
@@ -210,11 +149,6 @@ describe('AdvancedSearch', () => {
             expect(screen.queryByTestId('responsive-modal')).toBeNull();
         });
 
-        it('should render default title "Add Card"', () => {
-            render(<AdvancedSearch {...defaultProps} title="Add Card" />);
-            expect(screen.getByRole('heading', { name: 'Add Card' })).toBeDefined();
-        });
-
         it('should render custom title', () => {
             render(<AdvancedSearch {...defaultProps} title="Custom Title" />);
             expect(screen.getByText('Custom Title')).toBeDefined();
@@ -222,7 +156,7 @@ describe('AdvancedSearch', () => {
 
         it('should render art source toggle', () => {
             render(<AdvancedSearch {...defaultProps} />);
-            expect(screen.getAllByTestId('toggle-button-group').length).toBeGreaterThan(0);
+            expect(screen.getAllByTestId('art-source-toggle').length).toBeGreaterThan(0);
         });
 
         it('should render search input', () => {
@@ -234,51 +168,24 @@ describe('AdvancedSearch', () => {
     describe('art source toggle', () => {
         it('should default to scryfall source', () => {
             render(<AdvancedSearch {...defaultProps} />);
-            const toggles = screen.getAllByTestId('toggle-button-group');
-            toggles.forEach(toggle => {
-                expect(toggle.getAttribute('data-value')).toBe('scryfall');
-            });
+            expect(screen.getByTestId('scryfall-art-content')).toBeDefined();
         });
 
         it('should use initialSource prop', () => {
             render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
-            const toggles = screen.getAllByTestId('toggle-button-group');
-            toggles.forEach(toggle => {
-                expect(toggle.getAttribute('data-value')).toBe('mpc');
-            });
-        });
-
-        it('should show empty state or CardGrid when scryfall is selected', () => {
-            render(<AdvancedSearch {...defaultProps} />);
-            // Default mock has no suggestions, so expect empty state
-            expect(screen.getByText('Search for a card to preview.')).toBeDefined();
-            // MPC content is kept in DOM but hidden
-            const mpcContent = screen.getByTestId('mpc-art-content');
-            expect(mpcContent.parentElement).toHaveProperty('className', 'hidden');
-        });
-
-        it('should show MpcArtContent when mpc is selected', () => {
-            render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
             expect(screen.getByTestId('mpc-art-content')).toBeDefined();
-            expect(screen.queryByTestId('card-grid')).toBeNull();
         });
 
         it('should switch to mpc when clicking mpc toggle', () => {
             render(<AdvancedSearch {...defaultProps} />);
-
-            const mpcToggles = screen.getAllByTestId('toggle-mpc');
-            fireEvent.click(mpcToggles[0]);
-
+            fireEvent.click(screen.getAllByTestId('toggle-mpc')[0]);
             expect(screen.getByTestId('mpc-art-content')).toBeDefined();
         });
 
         it('should switch to scryfall when clicking scryfall toggle', () => {
             render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
-
-            const scryfallToggles = screen.getAllByTestId('toggle-scryfall');
-            fireEvent.click(scryfallToggles[0]);
-
-            expect(screen.getByText('Search for a card to preview.')).toBeDefined();
+            fireEvent.click(screen.getAllByTestId('toggle-scryfall')[0]);
+            expect(screen.getByTestId('scryfall-art-content')).toBeDefined();
         });
     });
 
@@ -293,210 +200,83 @@ describe('AdvancedSearch', () => {
             expect(screen.getByPlaceholderText('Search MPC Autofill...')).toBeDefined();
         });
 
-        it('should call handleInputChange on input change', () => {
+        it('should update query when typing', () => {
             render(<AdvancedSearch {...defaultProps} />);
-
             const input = screen.getByTestId('search-input');
-            fireEvent.change(input, { target: { value: 'test' } });
-
-            expect(mockHandleInputChange).toHaveBeenCalled();
+            fireEvent.change(input, { target: { value: 'Black Lotus' } });
+            expect(input).toHaveProperty('value', 'Black Lotus');
         });
 
-        it('should show clear button when query exists', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: [],
-                showAutocomplete: false,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: null,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            const { container } = render(<AdvancedSearch {...defaultProps} />);
-            // Clear button is within the input container
-            const clearButton = container.querySelector('button.absolute');
-            expect(clearButton).not.toBeNull();
-        });
-
-        it('should call handleClear when clicking clear button', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: [],
-                showAutocomplete: false,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: null,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            const { container } = render(<AdvancedSearch {...defaultProps} />);
-            const clearButton = container.querySelector('button.absolute') as HTMLButtonElement;
-            fireEvent.click(clearButton);
-
-            expect(mockHandleClear).toHaveBeenCalled();
+        it('should pass query to CardArtContent', () => {
+            render(<AdvancedSearch {...defaultProps} />);
+            const input = screen.getByTestId('search-input');
+            fireEvent.change(input, { target: { value: 'Forest' } });
+            expect(screen.getByTestId('scryfall-art-content').getAttribute('data-query')).toBe('Forest');
         });
     });
 
-    describe('add card functionality', () => {
-        it('should show add button when scryfall source', () => {
-            render(<AdvancedSearch {...defaultProps} />);
-            // Add button is removed
-            expect(screen.queryByTestId('add-button')).toBeNull();
-        });
-
-
-
-
-
-        it('should call onSelectCard when adding card from grid', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: ['Black Lotus'],
-                showAutocomplete: true,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: 0,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
+    describe('card selection', () => {
+        it('should call onSelectCard when selecting a scryfall card', () => {
             render(<AdvancedSearch {...defaultProps} />);
 
-            // Simulate clicking the first card in the grid
-            // Since we mocked CardGrid to just render children, we need to find the card div
-            // The actual component renders children with an onClick handler
-            // In the test mock of CardGrid, we might not have exposed the children structure perfectly for clicking,
-            // but let's try to verify the CardGrid is rendered and we can target items if we mock CardGrid correctly.
-            // Actually, CardGrid mock just renders {children}.
-            // AdvancedSearch maps displaySuggestions to divs.
-            // So we need to query for something inside CardGrid.
-            // But we didn't add data-testids to the grid items in AdvancedSearch.tsx.
-            // Assuming we can just test "Add Button" logic for now (which was removed from UI but maybe we should test clicking the item).
-            // Let's rely on the text 'Search for a card to preview' or similar if suggestions are empty.
-            // But here suggestions are ['Black Lotus'].
-            // AdvancedSearch renders:
-            // <CardGrid>
-            //   {displaySuggestions.map(...)}
-            // </CardGrid>
-            // So 'Black Lotus' text won't be visible unless we render proper children in map. 
-            // The mapping uses <img> tags.
-            // Let's skip detailed interaction test for now and just verify Grid presence and general add button behavior is GONE.
+            // Type a query first
+            const input = screen.getByTestId('search-input');
+            fireEvent.change(input, { target: { value: 'Forest' } });
 
-            expect(screen.queryByTestId('add-button')).toBeNull();
+            // Click the card
+            fireEvent.click(screen.getByTestId('scryfall-card'));
+
+            expect(defaultProps.onSelectCard).toHaveBeenCalledWith('Forest', undefined, undefined);
         });
 
-        it('should show toast and stay open when keepOpenOnAdd is true', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: ['Black Lotus'],
-                showAutocomplete: true,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: 0,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            const onClose = vi.fn();
-            render(<AdvancedSearch {...defaultProps} onClose={onClose} keepOpenOnAdd={true} />);
-
-            const cardImage = screen.getByAltText('Black Lotus');
-            fireEvent.click(cardImage);
-
-            expect(mockShowSuccessToast).toHaveBeenCalledWith('Black Lotus');
-        });
-
-        it('should add query directly when no suggestions', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Unknown Card',
-                setQuery: vi.fn(),
-                suggestions: [],
-                showAutocomplete: false,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: null,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            render(<AdvancedSearch {...defaultProps} />);
-
-            // Add button is removed, so this test is invalid unless valid via keyboard?
-            // "Enter" key test covers this.
-            // But we removed the button.
-            const addButton = screen.queryByTestId('add-button');
-            expect(addButton).toBeNull();
-        });
-    });
-
-    describe('MPC card selection', () => {
-        it('should call onSelectCard with MPC image URL', () => {
+        it('should call onSelectCard with MPC URL when selecting an MPC card', () => {
             render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
 
-            const mpcSelectButton = screen.getByTestId('mpc-select-card');
-            fireEvent.click(mpcSelectButton);
+            fireEvent.click(screen.getByTestId('mpc-select-card'));
 
             expect(defaultProps.onSelectCard).toHaveBeenCalledWith('Test Card', 'https://mpc.example.com/abc123');
         });
 
-        it('should switch to scryfall when clicking switch button in MPC', () => {
-            render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
+        it('should close modal after selection by default', () => {
+            const onClose = vi.fn();
+            render(<AdvancedSearch {...defaultProps} onClose={onClose} />);
 
-            const switchButton = screen.getByTestId('mpc-switch-to-scryfall');
-            fireEvent.click(switchButton);
+            const input = screen.getByTestId('search-input');
+            fireEvent.change(input, { target: { value: 'Forest' } });
+            fireEvent.click(screen.getByTestId('scryfall-card'));
 
-            expect(screen.getByText('Search for a card to preview.')).toBeDefined();
+            expect(onClose).toHaveBeenCalled();
+        });
+
+        it('should stay open and show toast when keepOpenOnAdd is true', () => {
+            const onClose = vi.fn();
+            render(<AdvancedSearch {...defaultProps} onClose={onClose} keepOpenOnAdd={true} />);
+
+            const input = screen.getByTestId('search-input');
+            fireEvent.change(input, { target: { value: 'Forest' } });
+            fireEvent.click(screen.getByTestId('scryfall-card'));
+
+            expect(onClose).not.toHaveBeenCalled();
+            expect(mockShowSuccessToast).toHaveBeenCalledWith('Forest');
         });
     });
 
-    // Results list tests removed
+    describe('MPC source switching', () => {
+        it('should switch to scryfall when clicking switch button in MPC content', () => {
+            render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
+
+            fireEvent.click(screen.getByTestId('mpc-switch-to-scryfall'));
+
+            expect(screen.getByTestId('scryfall-art-content')).toBeDefined();
+        });
+    });
 
     describe('modal close', () => {
-        it('should call onClose when clicking close button in header', () => {
-            const onClose = vi.fn();
-            const { container } = render(<AdvancedSearch {...defaultProps} onClose={onClose} />);
-
-            // Find the X close button in the header
-            const headerCloseButton = container.querySelector('[data-testid="modal-header"] button:not([data-testid])');
-            if (headerCloseButton) {
-                fireEvent.click(headerCloseButton);
-                expect(onClose).toHaveBeenCalled();
-            }
-        });
-
         it('should reset art source when modal closes and reopens', () => {
             const { rerender } = render(<AdvancedSearch {...defaultProps} initialSource="scryfall" />);
 
             // Switch to MPC
-            const mpcToggles = screen.getAllByTestId('toggle-mpc');
-            fireEvent.click(mpcToggles[0]);
+            fireEvent.click(screen.getAllByTestId('toggle-mpc')[0]);
             expect(screen.getByTestId('mpc-art-content')).toBeDefined();
 
             // Close modal
@@ -505,184 +285,45 @@ describe('AdvancedSearch', () => {
             // Reopen - should reset to initialSource
             rerender(<AdvancedSearch {...defaultProps} isOpen={true} initialSource="scryfall" />);
 
-            expect(screen.getByText('Search for a card to preview.')).toBeDefined();
+            expect(screen.getByTestId('scryfall-art-content')).toBeDefined();
+        });
+
+        it('should reset query when modal closes and reopens', () => {
+            const { rerender } = render(<AdvancedSearch {...defaultProps} />);
+
+            // Type something
+            const input = screen.getByTestId('search-input');
+            fireEvent.change(input, { target: { value: 'Forest' } });
+            expect(input).toHaveProperty('value', 'Forest');
+
+            // Close modal
+            rerender(<AdvancedSearch {...defaultProps} isOpen={false} />);
+
+            // Reopen - should reset query
+            rerender(<AdvancedSearch {...defaultProps} isOpen={true} />);
+
+            expect(screen.getByTestId('search-input')).toHaveProperty('value', '');
         });
     });
 
-    describe('keyboard navigation', () => {
-        it('should call handleKeyDown on key press', () => {
-            render(<AdvancedSearch {...defaultProps} />);
-
-            const input = screen.getByTestId('search-input');
-            fireEvent.keyDown(input, { key: 'ArrowDown' });
-
-            expect(mockHandleKeyDown).toHaveBeenCalled();
-        });
-
-        it('should add card on Enter key when scryfall source', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: ['Black Lotus'],
-                showAutocomplete: true,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: 0,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            render(<AdvancedSearch {...defaultProps} />);
-
-            const input = screen.getByTestId('search-input');
-            fireEvent.keyDown(input, { key: 'Enter' });
-
-            expect(defaultProps.onSelectCard).toHaveBeenCalled();
-        });
-
-        it('should not add card on Enter key when mpc source', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: [],
-                showAutocomplete: false,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: null,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
+    describe('filter toggle', () => {
+        it('should toggle filter collapse state for MPC', () => {
             render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
 
-            const input = screen.getByTestId('search-input');
-            fireEvent.keyDown(input, { key: 'Enter' });
+            // Default is not collapsed
+            expect(screen.getByTestId('mpc-art-content').getAttribute('data-filters-collapsed')).toBe('false');
 
-            expect(defaultProps.onSelectCard).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('suggestions display', () => {
-        it('should pass suggestions to carousel', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black',
-                setQuery: vi.fn(),
-                suggestions: ['Black Lotus', 'Black Knight'],
-                showAutocomplete: true,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: 0,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            render(<AdvancedSearch {...defaultProps} />);
-
-            // Should show at least 12 items (duplicated for infinite scroll)
-            // Should show grid
-            expect(screen.getByTestId('card-grid')).toBeDefined();
-        });
-
-        it('should use setVariations over suggestions when available', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Black Lotus',
-                setQuery: vi.fn(),
-                suggestions: ['Black Lotus'],
-                showAutocomplete: true,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: 0,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            vi.mocked(useScryfallPreview).mockReturnValue({
-                setVariations: [
-                    { name: 'Black Lotus', set: 'LEA', number: '1', imageUrls: [], lang: 'en' },
-                    { name: 'Black Lotus', set: 'LEB', number: '1', imageUrls: [], lang: 'en' },
-                ],
-                validatedPreviewUrl: null,
-            });
-
-            render(<AdvancedSearch {...defaultProps} />);
-
-            // Should show grid
-            expect(screen.getByTestId('card-grid')).toBeDefined();
-        });
-    });
-
-
-
-    describe('validated preview logic', () => {
-        it('should show validated preview card when no suggestions but validated url exists', () => {
-            vi.mocked(useCardAutocomplete).mockReturnValue({
-                query: 'Validated Card',
-                setQuery: vi.fn(),
-                suggestions: [],
-                showAutocomplete: false,
-                setShowAutocomplete: vi.fn(),
-                hoveredIndex: null,
-                setHoveredIndex: mockSetHoveredIndex,
-                handleInputChange: mockHandleInputChange,
-                handleClear: mockHandleClear,
-                handleKeyDown: mockHandleKeyDown,
-                hoverPreviewUrl: null,
-                containerRef: { current: null },
-                handleSelect: vi.fn(),
-            });
-
-            vi.mocked(useScryfallPreview).mockReturnValue({
-                setVariations: [],
-                validatedPreviewUrl: 'https://example.com/validated.jpg',
-            });
-
-            render(<AdvancedSearch {...defaultProps} />);
-
-            // Should show 1 card (validated one)
-            // Note: Loops logic might duplicated it to 12 if < 10
-            // Should show 1 card (validated one)
-            // We can check if image with correct src is rendered inside the grid
-            // But we need to update test expectations.
-            // For now, ensuring no error.
-            expect(screen.getByTestId('card-grid')).toBeDefined();
-        });
-    });
-
-    describe('MPC filter toggle', () => {
-        it('should toggle filter collapse state', () => {
-            render(<AdvancedSearch {...defaultProps} initialSource="mpc" />);
-
-            // Default is visible on desktop (false)
-            const mpcContent = screen.getByTestId('mpc-art-content');
-            expect(mpcContent.getAttribute('data-filters-collapsed')).toBe('false');
-
-            // Find filter toggle (title="Hide Filters")
+            // Find filter toggle button (title="Hide Filters")
             const hideBtn = screen.getByTitle('Hide Filters');
             fireEvent.click(hideBtn);
 
             // Should be collapsed now
-            expect(mpcContent.getAttribute('data-filters-collapsed')).toBe('true');
+            expect(screen.getByTestId('mpc-art-content').getAttribute('data-filters-collapsed')).toBe('true');
 
             // Click again to show
             const showBtn = screen.getByTitle('Show Filters');
             fireEvent.click(showBtn);
-            expect(mpcContent.getAttribute('data-filters-collapsed')).toBe('false');
+            expect(screen.getByTestId('mpc-art-content').getAttribute('data-filters-collapsed')).toBe('false');
         });
     });
 });

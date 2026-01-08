@@ -20,10 +20,11 @@ vi.mock('flowbite-react', () => ({
     ),
 }));
 
-vi.mock('react-icons/hi', () => ({
-    HiDownload: () => <span data-testid="download-icon">⬇</span>,
-    HiExclamation: () => <span data-testid="exclamation-icon">⚠</span>,
-    HiCheck: () => <span data-testid="check-icon">✓</span>,
+vi.mock('lucide-react', () => ({
+    Download: () => <span data-testid="download-icon">⬇</span>,
+    AlertCircle: () => <span data-testid="alert-icon">⚠</span>,
+    CheckCircle: () => <span data-testid="check-icon">✓</span>,
+    X: () => <span data-testid="close-icon">✕</span>,
 }));
 
 import { UpdateNotification } from './UpdateNotification';
@@ -37,13 +38,11 @@ describe('UpdateNotification', () => {
     });
 
     afterEach(() => {
-        // @ts-expect-error - cleanup
         delete window.electronAPI;
     });
 
     describe('when electronAPI is not available', () => {
         it('should return null', () => {
-            // @ts-expect-error - remove electronAPI
             delete window.electronAPI;
             const { container } = render(<UpdateNotification />);
             expect(container.innerHTML).toBe('');
@@ -79,7 +78,7 @@ describe('UpdateNotification', () => {
             act(() => {
                 updateStatusCallback?.('downloaded');
             });
-            expect(screen.getByText('Update downloaded.')).toBeDefined();
+            expect(screen.getByText('Update downloaded and ready to install.')).toBeDefined();
             expect(screen.getByTestId('check-icon')).toBeDefined();
             expect(screen.getByText('Restart & Install')).toBeDefined();
         });
@@ -101,7 +100,7 @@ describe('UpdateNotification', () => {
                 updateStatusCallback?.('error', 'Network error');
             });
             expect(screen.getByText('Update failed: Network error')).toBeDefined();
-            expect(screen.getByTestId('exclamation-icon')).toBeDefined();
+            expect(screen.getByTestId('alert-icon')).toBeDefined();
         });
 
         it('should show unknown error when info is not a string', () => {
@@ -119,10 +118,12 @@ describe('UpdateNotification', () => {
             act(() => {
                 updateStatusCallback?.('available');
             });
-            expect(screen.getByTestId('toast')).toBeDefined();
+            // Verify toast is visible
+            expect(screen.getByText('Update available! Downloading...')).toBeDefined();
 
-            // Find and click the close button (has sr-only "Close" text)
-            const closeButton = screen.getByText('Close').parentElement;
+            // Find and click the close button (uses X icon from lucide-react)
+            const closeIcon = screen.getByTestId('close-icon');
+            const closeButton = closeIcon.parentElement;
             if (closeButton) {
                 fireEvent.click(closeButton);
             }

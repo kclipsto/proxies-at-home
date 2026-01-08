@@ -54,6 +54,7 @@ vi.mock('@/components/common', () => ({
         </div>
     ),
     AutoTooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    UpdateChannelSelector: () => <div data-testid="update-channel-selector">UpdateChannelSelector</div>,
 }));
 
 vi.mock('../../LayoutSettings/ExportActions', () => ({
@@ -62,7 +63,7 @@ vi.mock('../../LayoutSettings/ExportActions', () => ({
 
 vi.mock('@/db', () => ({
     db: {
-        transaction: vi.fn((mode, ...tablesAndFn) => {
+        transaction: vi.fn((_mode, ...tablesAndFn) => {
             // The last argument is the callback
             const fn = tablesAndFn[tablesAndFn.length - 1];
             return fn();
@@ -72,6 +73,7 @@ vi.mock('@/db', () => ({
         settings: { clear: vi.fn() },
         cardMetadataCache: { clear: vi.fn() },
         mpcSearchCache: { clear: vi.fn() },
+        imageCache: { clear: vi.fn() },
     },
 }));
 
@@ -92,16 +94,17 @@ describe('ApplicationSection', () => {
         mockState.decklistSortAlpha = false;
         mockState.preferredArtSource = 'scryfall';
 
-        // Mock window.location.href
+        // Mock window.location with reload
         delete (window as unknown as { location?: Location }).location;
-        (window as unknown as { location: { href: string; origin: string } }).location = {
+        (window as unknown as { location: { href: string; origin: string; reload: ReturnType<typeof vi.fn> } }).location = {
             href: '',
-            origin: 'http://localhost'
+            origin: 'http://localhost',
+            reload: vi.fn(),
         };
     });
 
     afterEach(() => {
-        window.location = originalLocation;
+        Object.defineProperty(window, 'location', { value: originalLocation, writable: true });
         // Restore other globals if we modify them on the prototype/global object
         // Note: navigator.serviceWorker is read-only usually, so check implementation below
     });
@@ -164,7 +167,6 @@ describe('ApplicationSection', () => {
                 expect(mockUnregister).toHaveBeenCalled();
 
                 // 3. Clear DB
-                expect(db.transaction).toHaveBeenCalled();
                 expect(db.cards.clear).toHaveBeenCalled();
                 expect(db.images.clear).toHaveBeenCalled();
                 expect(db.settings.clear).toHaveBeenCalled();
@@ -182,7 +184,7 @@ describe('ApplicationSection', () => {
                 expect(mockCacheDelete).toHaveBeenCalledWith('cache-v1');
 
                 // 7. Reload page
-                expect(window.location.href).toBe('http://localhost');
+                expect(window.location.reload).toHaveBeenCalled();
             });
         });
 
@@ -195,7 +197,7 @@ describe('ApplicationSection', () => {
             fireEvent.click(screen.getByText("Yes, I'm sure"));
 
             await waitFor(() => {
-                expect(window.location.href).toBe('http://localhost'); // Finally block should still run
+                expect(window.location.reload).toHaveBeenCalled(); // Finally block should still run
             });
 
             consoleSpy.mockRestore();

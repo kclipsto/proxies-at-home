@@ -157,6 +157,7 @@ describe("PageView Performance", () => {
                 getLoadingState={getLoadingState}
                 ensureProcessed={ensureProcessed}
                 cards={cards}
+                allCards={cards}
                 images={images}
             />
         );
@@ -176,6 +177,7 @@ describe("PageView Performance", () => {
                 getLoadingState={getLoadingState}
                 ensureProcessed={ensureProcessed}
                 cards={cards}
+                allCards={cards}
                 images={images}
             />
         );

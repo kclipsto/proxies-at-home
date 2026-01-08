@@ -71,12 +71,13 @@ vi.mock('@/db', () => ({
 }));
 
 vi.mock('@/hooks/useFilteredAndSortedCards', () => ({
-    getCardTypes: (typeLine: string | undefined) => {
-        if (!typeLine) return null;
-        if (typeLine.includes('Creature')) return 'Creature';
-        if (typeLine.includes('Instant')) return 'Instant';
-        if (typeLine.includes('Artifact')) return 'Artifact';
-        return null;
+    getCardTypes: (typeLine: string | undefined): string[] => {
+        if (!typeLine) return [];
+        if (typeLine.includes('Creature')) return ['Creature'];
+        if (typeLine.includes('Instant')) return ['Instant'];
+        if (typeLine.includes('Artifact')) return ['Artifact'];
+        if (typeLine.includes('Land')) return ['Land'];
+        return [];
     },
 }));
 

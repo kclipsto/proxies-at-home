@@ -2,6 +2,8 @@ import { db, type Image } from "@/db";
 import type { CardOption } from "../../../shared/types";
 import { parseImageIdFromUrl } from "./imageHelper";
 import { isCardbackId } from "./cardbackLibrary";
+import { extractMpcIdentifierFromImageId, getMpcAutofillImageUrl } from "./mpcAutofillApi";
+import { inferSourceFromUrl } from "./imageSourceUtils";
 
 /**
  * Calculates the SHA-256 hash of a file or blob.
@@ -43,6 +45,7 @@ export async function addCustomImage(
         id: imageId,
         originalBlob: blob,
         refCount: 1,
+        source: 'custom',
       });
     }
   });
@@ -87,6 +90,7 @@ export async function addRemoteImage(
         imageUrls: imageUrls,
         prints: prints,
         refCount: count,
+        source: inferSourceFromUrl(imageUrls[0]) ?? undefined,
       });
     }
   });
@@ -169,6 +173,7 @@ export async function addRemoteImages(
           imageUrls: input.urls,
           prints: input.prints,
           refCount: input.count,
+          source: inferSourceFromUrl(input.urls[0]) ?? undefined,
         });
       }
     });
@@ -732,28 +737,46 @@ export async function changeCardArtwork(
         // If this is a cardback selection (hasBuiltInBleed specified) and the image changes,
         // clear displayBlob to force reprocessing with correct bleed settings
         // Also clear generation parameters to invalidate fast path cache
+        // If this is a cardback selection (hasBuiltInBleed specified) or MPC art selection with explicit bleed setting,
+        // check if we need to invalidate blobs.
+        // Only clear blobs if the existing blobs were generated with a different bleed setting.
         if (hasBuiltInBleed !== undefined && oldImageId !== newImageId) {
-          updates.displayBlob = undefined;
-          updates.displayBlobDarkened = undefined;
-          updates.exportBlob = undefined;
-          updates.exportBlobDarkened = undefined;
-          updates.generatedHasBuiltInBleed = undefined;
-          updates.generatedBleedMode = undefined;
+          // If the cached blobs exist but were generated with a different bleed setting, invalidate them
+          if (newImage.generatedHasBuiltInBleed !== hasBuiltInBleed) {
+            updates.displayBlob = undefined;
+            updates.displayBlobDarkened = undefined;
+            updates.exportBlob = undefined;
+            updates.exportBlobDarkened = undefined;
+            updates.generatedHasBuiltInBleed = undefined;
+            updates.generatedBleedMode = undefined;
+          }
         }
         await db.images.update(newImageId, updates);
       } else {
         // This case handles a new remote image
         const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
+
+        // For MPC images (bare Drive ID), construct the proper sourceUrl
+        // The imageId is just the Drive ID, but we need the full URL for loading
+        const isMpcImage = extractMpcIdentifierFromImageId(newImageId) !== null;
+        let sourceUrl: string;
+        if (isMpcImage) {
+          sourceUrl = getMpcAutofillImageUrl(newImageId);
+        } else {
+          sourceUrl = newImageId;
+        }
+
         // Use provided newImageUrls if available.
         // If not provided, and we are NOT renaming, fallback to oldImage.imageUrls.
-        // If renaming, we assume it's a different card, so we default to just the newImageId.
-        const imageUrls = newImageUrls || (newName ? [newImageId] : (oldImage?.imageUrls || [newImageId]));
+        // If renaming, we assume it's a different card, so we default to just the sourceUrl.
+        const imageUrls = newImageUrls || (newName ? [sourceUrl] : (oldImage?.imageUrls || [sourceUrl]));
 
         await db.images.add({
           id: newImageId,
-          sourceUrl: newImageId,
+          sourceUrl: sourceUrl,
           imageUrls: imageUrls,
           refCount: cardsToUpdate.length,
+          source: isMpcImage ? 'mpc' : (inferSourceFromUrl(sourceUrl) ?? undefined),
         });
       }
     }
@@ -812,4 +835,24 @@ export async function rebalanceCardOrders(cards?: CardOption[]): Promise<void> {
       await db.cards.bulkPut(rebalancedCards);
     }
   });
+}
+
+/**
+ * Helper to safely increment/decrement image reference counts.
+ * Handles restoring images if they were deleted and are being re-added (undo delete),
+ * and deleting images if their refCount drops to 0.
+ */
+export async function modifyImageRefCount(imageId: string, delta: number, restoreData?: Image) {
+  const image = await db.images.get(imageId);
+  if (image) {
+    const newRefCount = (image.refCount || 0) + delta;
+    if (newRefCount <= 0) {
+      await db.images.delete(imageId);
+    } else {
+      await db.images.update(imageId, { refCount: newRefCount });
+    }
+  } else if (delta > 0 && restoreData) {
+    // Image was deleted, restore it
+    await db.images.add({ ...restoreData, refCount: delta });
+  }
 }

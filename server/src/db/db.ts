@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'proxxied-cards.db');
 
 // Current schema version - increment when adding migrations
-const CURRENT_DB_VERSION = 1;
+const CURRENT_DB_VERSION = 2;
 
 // Migration definitions - each entry upgrades from (version-1) to (version)
 // Add new migrations to the end of this array
@@ -55,7 +55,23 @@ interface Migration {
 // declarative schema. However, it adds dependencies and build complexity.
 // For simple schemas like this one, manual migrations are often simpler.
 // =====================================================================
-const migrations: Migration[] = [];
+const migrations: Migration[] = [
+  {
+    version: 2,
+    description: 'Add scryfall_cache table for API response caching',
+    up: [
+      `CREATE TABLE IF NOT EXISTS scryfall_cache (
+        endpoint TEXT NOT NULL,
+        query_hash TEXT NOT NULL,
+        response TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (endpoint, query_hash)
+      );`,
+      'CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);',
+    ],
+  },
+];
 
 let db: Database.Database | null = null;
 
@@ -197,4 +213,15 @@ export function closeDatabase(): void {
     db = null;
     console.log('[DB] Database connection closed.');
   }
+}
+
+/**
+ * Clear all cached cards from the database.
+ * Useful for forcing fresh fetches from Scryfall.
+ */
+export function clearCardsCache(): number {
+  const database = getDatabase();
+  const result = database.prepare('DELETE FROM cards').run();
+  console.log(`[DB] Cleared ${result.changes} cached cards`);
+  return result.changes;
 }

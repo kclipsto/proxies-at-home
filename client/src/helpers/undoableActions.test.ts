@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
     undoableReorderCards,
     undoableReorderMultipleCards,
+    undoableDeleteCard,
+    undoableAddCards,
+    undoableDuplicateCard,
 } from "./undoableActions";
+import { db } from "@/db";
+import { addCards } from "./dbUtils";
+import type { CardOption } from "@/types";
 
 // Mock the database
 vi.mock("@/db", () => ({
@@ -35,6 +41,7 @@ vi.mock("@/db", () => ({
             delete: vi.fn(),
             add: vi.fn(),
             update: vi.fn(),
+            bulkGet: vi.fn().mockResolvedValue([]),
             filter: vi.fn(() => ({
                 keys: vi.fn().mockResolvedValue([]),
             })),
@@ -57,6 +64,7 @@ vi.mock("./dbUtils", () => ({
     changeCardArtwork: vi.fn(),
     rebalanceCardOrders: vi.fn(),
     createLinkedBackCard: vi.fn().mockResolvedValue("back-uuid"),
+    createLinkedBackCardsBulk: vi.fn().mockResolvedValue(["back-uuid"]),
     addRemoteImage: vi.fn(),
 }));
 
@@ -145,6 +153,63 @@ describe("undoableActions", () => {
             const pushedAction = mockPushAction.mock.calls[0][0];
             expect(typeof pushedAction.undo).toBe("function");
             expect(typeof pushedAction.redo).toBe("function");
+        });
+    });
+    describe("undoableDeleteCard", () => {
+        it("should push an undo action for deleting a card", async () => {
+            vi.mocked(db.cards.get).mockResolvedValueOnce({
+                uuid: "card-1",
+                name: "Delete Me",
+                imageId: "img-1",
+            } as unknown as CardOption);
+
+            await undoableDeleteCard("card-1");
+            expect(mockPushAction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: "DELETE_CARD",
+                    description: expect.stringContaining('Delete "'),
+                })
+            );
+        });
+    });
+
+    describe("undoableAddCards", () => {
+        it("should push an undo action for adding cards", async () => {
+            const cardsToAdd = [{ name: "New Card", lang: "en", isUserUpload: false }];
+            vi.mocked(addCards).mockResolvedValue([{ uuid: "new-uuid", name: "New Card", imageId: "img-1" } as unknown as CardOption]);
+
+            await undoableAddCards(cardsToAdd);
+
+            expect(mockPushAction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: "ADD_CARDS",
+                    description: expect.stringContaining('Add "'),
+                })
+            );
+        });
+    });
+
+    describe("undoableDuplicateCard", () => {
+        it("should push an undo action for duplicating a card", async () => {
+            // Mock finding the new card
+            const original = { uuid: "old-uuid", name: "Old Card" };
+            const newCard = { uuid: "new-uuid", name: "Old Card" };
+
+            // First call returns original
+            // Second call returns original + new
+            vi.mocked(db.cards.get).mockResolvedValueOnce(original as unknown as CardOption);
+            vi.mocked(db.cards.toArray)
+                .mockResolvedValueOnce([original] as unknown as CardOption[])
+                .mockResolvedValueOnce([original, newCard] as unknown as CardOption[]);
+
+            await undoableDuplicateCard("old-uuid");
+
+            expect(mockPushAction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: "DUPLICATE_CARD",
+                    description: expect.stringContaining('Duplicate "'),
+                })
+            );
         });
     });
 });

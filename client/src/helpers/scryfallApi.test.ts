@@ -200,7 +200,7 @@ describe('scryfallApi', () => {
             const result = await fetchCardWithPrints('Sol Ring', true, true);
 
             expect(result?.name).toBe('Sol Ring');
-            expect(mockGet).toHaveBeenCalledWith('/cards/named', expect.anything());
+            expect(mockGet).toHaveBeenCalledWith('/named', expect.anything());
         });
 
         it('should return card with prints if search and print fetch succeed', async () => {

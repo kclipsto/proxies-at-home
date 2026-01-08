@@ -1,4 +1,5 @@
 import { getDatabase } from './db.js';
+import { debugLog } from '../utils/debug.js';
 import type { ScryfallApiCard } from '../utils/getCardImagesPaged.js';
 
 /**
@@ -30,7 +31,10 @@ export function lookupCardBySetNumber(
 
 /**
  * Look up a card by name (case-insensitive).
- * Returns the card in ScryfallApiCard format, or null if not found.
+ * Returns the best matching card based on scoring:
+ * - Exact name match scores highest
+ * - DFC front face match scores next
+ * - Most recent release wins as tiebreaker
  */
 export function lookupCardByName(
     name: string,
@@ -38,26 +42,72 @@ export function lookupCardByName(
 ): ScryfallApiCard | null {
     try {
         const db = getDatabase();
-        // Try exact match first (faster)
-        const exactStmt = db.prepare(`
-      SELECT * FROM cards 
-      WHERE name = ? COLLATE NOCASE AND lang = ?
-      LIMIT 1
-    `);
-        let row = exactStmt.get(name, lang.toLowerCase()) as CardRow | undefined;
+        const queryLower = name.toLowerCase();
 
-        // If not found, try matching individual face names for DFCs
+        // Get all exact name matches
+        const exactStmt = db.prepare(`
+            SELECT * FROM cards 
+            WHERE name = ? COLLATE NOCASE AND lang = ?
+        `);
+        let rows = exactStmt.all(name, lang.toLowerCase()) as CardRow[];
+
+        // If no exact matches, try DFC front face matching
         // e.g., "Bala Ged Recovery" should match "Bala Ged Recovery // Bala Ged Sanctuary"
-        if (!row) {
+        if (rows.length === 0) {
             const likeStmt = db.prepare(`
-        SELECT * FROM cards 
-        WHERE name LIKE ? COLLATE NOCASE AND lang = ?
-        LIMIT 1
-      `);
-            row = likeStmt.get(`${name} //%`, lang.toLowerCase()) as CardRow | undefined;
+                SELECT * FROM cards 
+                WHERE name LIKE ? COLLATE NOCASE AND lang = ?
+            `);
+            rows = likeStmt.all(`${name} //%`, lang.toLowerCase()) as CardRow[];
         }
 
-        return row ? rowToScryfallCard(row) : null;
+        if (rows.length === 0) {
+            debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): Not found`);
+            return null;
+        }
+
+        // Score each card to pick the best match
+        const scored = rows.map(row => {
+            const card = rowToScryfallCard(row);
+            const setCode = (row.set_code || '').toLowerCase();
+            let score = 0;
+
+            // Exact name match (highest priority)
+            if (card.name?.toLowerCase() === queryLower) {
+                score += 100;
+            }
+            // DFC: query matches front face
+            else if (card.name?.toLowerCase().startsWith(queryLower + ' // ')) {
+                score += 90;
+            }
+
+            // Deprioritize art_series cards (often have wrong metadata)
+            if (card.layout === 'art_series') {
+                score -= 50;
+            }
+
+            // Use collector number as final tiebreaker (lower = earlier in set = more likely main card)
+            const collectorNum = parseInt(row.collector_number || '999', 10);
+            if (!isNaN(collectorNum)) {
+                score += (1000 - Math.min(collectorNum, 999)) / 10000; // Small tiebreaker
+            }
+
+            debugLog(`[DB Cache] Scoring "${card.name}" (${setCode}:${row.collector_number}): ${score.toFixed(2)}`);
+            return { card, score, setCode };
+        });
+
+        // Sort by score descending
+        scored.sort((a, b) => b.score - a.score);
+
+        // Log all candidates with their scores
+        debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): ${rows.length} candidates found`);
+        for (const { card, score, setCode } of scored) {
+            debugLog(`  [${score >= scored[0].score ? '→' : ' '}] ${score.toFixed(4)} - "${card.name}" (${setCode}:${card.collector_number}) layout=${card.layout || 'normal'}`);
+        }
+
+        const result = scored[0].card;
+        debugLog(`[DB Cache] Selected: "${result.name}" (${scored[0].setCode}:${result.collector_number}) with score ${scored[0].score.toFixed(4)}`);
+        return result;
     } catch {
         // Database might not be initialized yet, return null
         return null;

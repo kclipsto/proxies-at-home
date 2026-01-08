@@ -1,10 +1,14 @@
 import Dexie, { type Table } from 'dexie';
 import type { CardOption, PrintInfo } from '@/types';
 
+// Image source types for explicit tracking
+export type ImageSource = 'mpc' | 'scryfall' | 'custom' | 'cardback';
+
 // Define a type for the image data to be stored
 export interface Image {
   id: string; // hash for custom, URL for scryfall
   refCount: number;
+  source?: ImageSource; // Explicit source tracking (lazy-migrated from ID parsing)
   originalBlob?: Blob;
 
   // Normal (non-darkened) versions
@@ -222,6 +226,18 @@ class ProxxiedDexie extends Dexie {
     }).upgrade(tx => {
       // Clear all cached metadata to force re-enrichment with correct DFC handling
       return tx.table('cardMetadataCache').clear();
+    });
+    // Version 11: Add source field for explicit image source tracking
+    // No schema change needed (source is optional), but version bump ensures clean upgrade
+    this.version(11).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
     });
   }
 }

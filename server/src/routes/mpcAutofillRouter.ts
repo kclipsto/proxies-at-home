@@ -232,13 +232,36 @@ mpcAutofillRouter.post("/batch-search", async (req: Request<unknown, unknown, Mp
     }
 
     try {
-        debugLog(`[MPC Autofill] Batch searching for ${queries.length} queries, type: ${cardType}`);
+        const finalResults: Record<string, MpcCard[]> = {};
+        const uncachedQueries: string[] = [];
 
-        // Step 1: Search for card identifiers
+        // Check server cache first for each query (batch always uses fuzzy=true)
+        for (const q of queries) {
+            const cacheKey = `${q.toLowerCase().trim()}:fuzzy`;
+            const cached = getCachedMpcSearch(cacheKey, cardType);
+            if (cached) {
+                finalResults[q] = cached;
+            } else {
+                uncachedQueries.push(q);
+            }
+        }
+
+        const cacheHits = queries.length - uncachedQueries.length;
+        if (cacheHits > 0) {
+            debugLog(`[MPC Autofill] Batch: ${cacheHits} cache hits, ${uncachedQueries.length} misses`);
+        }
+
+        if (uncachedQueries.length === 0) {
+            return res.json({ results: finalResults });
+        }
+
+        debugLog(`[MPC Autofill] Batch fetching ${uncachedQueries.length} uncached queries, type: ${cardType}`);
+
+        // Step 1: Search for card identifiers (only uncached queries)
         const searchResponse = await axios.post<EditorSearchResponse>(
             `${MPC_AUTOFILL_BASE}/2/editorSearch/`,
             {
-                queries: queries.map(q => ({ query: q.toLowerCase(), cardType })),
+                queries: uncachedQueries.map(q => ({ query: q.toLowerCase(), cardType })),
                 searchSettings: getSearchSettings(true), // Always fuzzy for batch imports
             },
             {
@@ -256,7 +279,7 @@ mpcAutofillRouter.post("/batch-search", async (req: Request<unknown, unknown, Mp
             Object.entries(results).map(([k, v]) => [k.toLowerCase(), v])
         );
 
-        queries.forEach(q => {
+        uncachedQueries.forEach(q => {
             const qLower = q.toLowerCase();
             const ids: string[] = [];
 
@@ -275,19 +298,24 @@ mpcAutofillRouter.post("/batch-search", async (req: Request<unknown, unknown, Mp
         debugLog(`[MPC Autofill] Found ${allIdentifiers.size} unique identifiers across ${Object.keys(queryToIds).length} matched queries`);
 
         if (allIdentifiers.size === 0) {
-            return res.json({ results: {} });
+            return res.json({ results: finalResults });
         }
 
         // Step 2: Fetch full card data
         const cardMap = await fetchCardsData(Array.from(allIdentifiers));
 
-        // Step 3: Construct response mapping query -> cards
-        const finalResults: Record<string, MpcCard[]> = {};
-
+        // Step 3: Construct response mapping query -> cards and cache results
         Object.entries(queryToIds).forEach(([query, ids]) => {
-            finalResults[query] = ids
+            const cards = ids
                 .map(id => cardMap[id])
                 .filter((c): c is MpcCard => c !== undefined);
+            finalResults[query] = cards;
+
+            // Cache the results for this query
+            if (cards.length > 0) {
+                const cacheKey = `${query.toLowerCase().trim()}:fuzzy`;
+                cacheMpcSearch(cacheKey, cardType, cards);
+            }
         });
 
         return res.json({ results: finalResults });

@@ -5,7 +5,10 @@ import React from 'react';
 // Mock settings store
 vi.mock('@/store', () => ({
     useSettingsStore: vi.fn((selector) => {
-        const state = { preferredArtSource: 'scryfall' };
+        const state = {
+            preferredArtSource: 'scryfall',
+            favoriteMpcSources: [],
+        };
         return selector(state);
     }),
 }));
@@ -30,15 +33,21 @@ vi.mock('./CardbackLibrary', () => ({
     CardbackLibrary: () => <div data-testid="cardback-library">CardbackLibrary</div>,
 }));
 
-vi.mock('./ScryfallArtContent', () => ({
-    ScryfallArtContent: ({ onSelectArtwork }: { onSelectArtwork: (url: string) => void }) => (
-        <div data-testid="scryfall-art-content" onClick={() => onSelectArtwork('test-url')}>ScryfallArtContent</div>
-    ),
-}));
-
-vi.mock('../MpcArt', () => ({
-    MpcArtContent: () => <div data-testid="mpc-art-content">MpcArtContent</div>,
-}));
+// Mock the CardArtContent component from common
+vi.mock('../common', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual as object,
+        CardArtContent: ({ artSource, onSelectCard }: { artSource: string; onSelectCard: (name: string, url?: string) => void }) => (
+            <div
+                data-testid={artSource === 'scryfall' ? 'scryfall-art-content' : 'mpc-art-content'}
+                onClick={() => onSelectCard('Test Card', 'test-url')}
+            >
+                {artSource === 'scryfall' ? 'CardArtContent-Scryfall' : 'CardArtContent-MPC'}
+            </div>
+        ),
+    };
+});
 
 vi.mock('@/helpers/cardbackLibrary', () => ({
     isCardbackId: (id: string) => id?.startsWith('cardback-'),
@@ -66,16 +75,15 @@ describe('ArtworkTabContent', () => {
             name: 'Test Card',
             imageUrls: ['https://example.com/image.jpg'],
             id: 'test-id',
+            selectedArtId: undefined,
             processedDisplayUrl: null,
         },
         zoomLevel: 100,
-        isGettingMore: false,
         onOpenSearch: vi.fn(),
         onSelectCardback: vi.fn(),
         onSetAsDefaultCardback: vi.fn(),
         onSelectArtwork: vi.fn(),
         onSelectMpcArt: vi.fn(),
-        onGetMorePrints: vi.fn(),
         onClose: vi.fn(),
         onRequestDelete: vi.fn(),
         onExecuteDelete: vi.fn(),
@@ -132,16 +140,8 @@ describe('ArtworkTabContent', () => {
             expect(screen.getByTestId('scryfall-art-content')).toBeDefined();
         });
 
-        it('should render Get All Prints button for scryfall', () => {
-            render(<ArtworkTabContent {...defaultProps} />);
-            expect(screen.getByText('Get All Prints')).toBeDefined();
-        });
-
-        it('should call onGetMorePrints when button clicked', () => {
-            render(<ArtworkTabContent {...defaultProps} />);
-            fireEvent.click(screen.getByText('Get All Prints'));
-            expect(defaultProps.onGetMorePrints).toHaveBeenCalled();
-        });
+        // Note: Get All Prints button is now hidden for Scryfall (prints auto-load)
+        // The button only shows for MPC as "Get All Art"
     });
 
     describe('mpc art content', () => {
@@ -150,10 +150,7 @@ describe('ArtworkTabContent', () => {
             expect(screen.getByTestId('mpc-art-content')).toBeDefined();
         });
 
-        it('should render Get All Art button for mpc', () => {
-            render(<ArtworkTabContent {...defaultProps} artSource="mpc" />);
-            expect(screen.getByText('Get All Art')).toBeDefined();
-        });
+        // Note: Get All Art button was removed - MPC search is automatic via useMpcSearch hook
     });
 
     describe('cardback library', () => {
@@ -189,16 +186,6 @@ describe('ArtworkTabContent', () => {
         });
     });
 
-    describe('loading state', () => {
-        it('should show Loading... when isGettingMore is true', () => {
-            render(<ArtworkTabContent {...defaultProps} isGettingMore={true} />);
-            expect(screen.getByText('Loading...')).toBeDefined();
-        });
-
-        it('should disable button when isGettingMore is true', () => {
-            render(<ArtworkTabContent {...defaultProps} isGettingMore={true} />);
-            const button = screen.getByText('Loading...');
-            expect(button.hasAttribute('disabled')).toBe(true);
-        });
-    });
+    // Note: Loading state tests removed - isGettingMore prop was removed
+    // CardArtContent now handles loading state internally via useScryfallPrints and useMpcSearch
 });

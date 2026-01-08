@@ -30,3 +30,8 @@ export type { ResponsiveModalProps } from './ResponsiveModal';
 // Layout Components
 export { CardGrid } from './CardGrid';
 export { FloatingZoomPanel } from './FloatingZoomPanel';
+export { CardArtContent } from './CardArtContent';
+export type { CardArtContentProps } from './CardArtContent';
+export { CardArtFilterBar } from './CardArtFilterBar';
+export type { CardArtFilterBarProps } from './CardArtFilterBar';
+

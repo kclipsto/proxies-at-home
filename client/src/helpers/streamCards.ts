@@ -7,6 +7,7 @@ import { findBestMpcMatches, parseMpcCardLogic } from "./mpcImportIntegration";
 import { API_BASE } from "../constants";
 import { db } from "../db";
 import { getMpcAutofillImageUrl } from "./mpcAutofillApi";
+
 import type { CardOption, ScryfallCard } from "../../../shared/types";
 
 export interface CardInfo {
@@ -33,8 +34,14 @@ export interface StreamCardsResult {
     totalCardsAdded: number;
 }
 
+// Normalize DFC names: "A // B" -> "A" (front face only)
+// This ensures client-side keys match server responses which return just the front face name
+function normalizeDfcName(name: string): string {
+    return name.includes(' // ') ? name.split(' // ')[0].trim() : name;
+}
+
 const cardKey = (info: CardInfo) =>
-    `${info.name.toLowerCase()}|${info.set?.toLowerCase() ?? ""}|${info.number ?? ""}`;
+    `${normalizeDfcName(info.name).toLowerCase()}|${info.set?.toLowerCase() ?? ""}|${info.number ?? ""}`;
 
 export async function streamCards(options: StreamCardsOptions): Promise<StreamCardsResult> {
     const { cardInfos, language, importType, signal, onProgress, onFirstCard, onComplete } = options;
@@ -76,25 +83,17 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
         const imageUrl = getMpcAutofillImageUrl(info.mpcIdentifier!);
         const imageId = await addRemoteImage([imageUrl], quantity);
 
-        const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
-        for (let q = 0; q < quantity; q++) {
-            cardsToAdd.push({
+        const cardsToAdd = createCardOptions(
+            {
                 name: info.name,
-                set: undefined,
-                number: undefined,
                 lang: language,
-                isUserUpload: false,
                 imageId,
                 hasBuiltInBleed: true,
                 needsEnrichment: true,
-                colors: [],
-                cmc: 0,
-                type_line: "Card",
-                rarity: "common",
-                mana_cost: "",
                 category: info.category,
-            });
-        }
+            },
+            quantity
+        );
 
         const added = await undoableAddCards(cardsToAdd, { startOrder });
         cardsAdded += added.length;
@@ -109,10 +108,16 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
 
     // --- MPC Autofill Integration ---
     const preferredArtSource = useSettingsStore.getState().preferredArtSource;
+    console.log('[streamCards] Preferred art source:', preferredArtSource);
     if (preferredArtSource === 'mpc') {
-        console.log("[streamCards] MPC source preferred. Checking MPC Autofill...");
+        console.log('[streamCards] MPC mode enabled, searching for', uniqueInfos.length, 'cards');
+        // Debug log removed
+
         // Chunk cards for batch processing
         const CHUNK_SIZE = 50;
+
+        // When MPC is preferred, search ALL cards in MPC first (not just those without set/number)
+        // Cards not found in MPC will fallback to Scryfall
         const mpcInfos = [...uniqueInfos];
         const failingInfos: CardInfo[] = [];
 
@@ -142,26 +147,17 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
 
                 const { name: cardName, hasBuiltInBleed, needsEnrichment } = parseMpcCardLogic(match.mpcCard);
 
-                const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
-                for (let q = 0; q < quantity; q++) {
-                    cardsToAdd.push({
+                const cardsToAdd = createCardOptions(
+                    {
                         name: cardName,
-                        set: undefined,
-                        number: undefined,
                         lang: language,
-                        isUserUpload: false,
                         imageId,
                         hasBuiltInBleed,
                         needsEnrichment,
-                        // Fill generic defaults for metadata not from Scryfall
-                        colors: [],
-                        cmc: 0,
-                        type_line: "Card",
-                        rarity: "common",
-                        mana_cost: "",
                         category: entry.info.category,
-                    });
-                }
+                    },
+                    quantity
+                );
 
                 const startOrder = entry.startOrder;
                 const added = await undoableAddCards(cardsToAdd, { startOrder });
@@ -182,7 +178,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
         }
 
         // Fallback to Scryfall for cards not found in MPC
-        uniqueInfos = failingInfos;
+        uniqueInfos = [...failingInfos];
     }
 
     if (uniqueInfos.length === 0) {
@@ -254,6 +250,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
             } else if (ev.event === "card-found") {
                 pendingOperations++;
                 const card = JSON.parse(ev.data) as ScryfallCard;
+
                 if (!card?.name) {
                     pendingOperations--;
                     checkComplete();
@@ -333,4 +330,28 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
 
     await completionPromise;
     return { addedCardUuids, totalCardsAdded: cardsAdded };
+}
+
+function createCardOptions(
+    base: Partial<Omit<CardOption, "uuid" | "order"> & { imageId?: string }>,
+    quantity: number
+): (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] {
+    const defaults = {
+        set: undefined,
+        number: undefined,
+        isUserUpload: false,
+        colors: [],
+        cmc: 0,
+        type_line: "Card",
+        rarity: "common",
+        mana_cost: "",
+    };
+
+    // Type assertion needed due to strict Omit/Partial overlap
+    const card = {
+        ...defaults,
+        ...base,
+    } as Omit<CardOption, "uuid" | "order"> & { imageId?: string };
+
+    return Array.from({ length: quantity }, () => ({ ...card }));
 }

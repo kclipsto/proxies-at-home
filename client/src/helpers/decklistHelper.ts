@@ -1,5 +1,6 @@
 import type { CardOption } from "../../../shared/types";
 import { extractMpcIdentifierFromImageId } from "./mpcAutofillApi";
+import { inferImageSource } from "./imageSourceUtils";
 
 type DecklistEntry = {
   name: string;
@@ -25,7 +26,9 @@ export function groupCardsForDecklist(cards: CardOption[]): DecklistEntry[] {
     const set = c.set;
     const number = c.number;
     const isUpload = !!c.isUserUpload;
-    const mpcId = extractMpcIdentifierFromImageId(c.imageId);
+    // Only extract MPC ID if the source is actually 'mpc' (prevents false positives)
+    const source = inferImageSource(c.imageId);
+    const mpcId = source === 'mpc' ? extractMpcIdentifierFromImageId(c.imageId) : null;
 
     // Check if this card matches the previous entry (for adjacent grouping)
     // Note: MPC identifier is NOT used for grouping - each unique MPC image stays separate

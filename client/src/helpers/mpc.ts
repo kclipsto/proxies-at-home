@@ -38,9 +38,11 @@ export function inferCardNameFromFilename(filename: string): string {
   return cleaned;
 }
 
-export function getMpcImageUrl(frontId?: string | null): string | null {
+export function getMpcImageUrl(frontId?: string | null, size: "small" | "large" | "full" = "full"): string | null {
   if (!frontId) return null;
-  return `${API_BASE}/api/cards/images/mpc?id=${encodeURIComponent(frontId)}`;
+  // Omit size param when "full" to maintain cache compatibility with legacy URLs
+  const sizeParam = size === "full" ? "" : `&size=${size}`;
+  return `${API_BASE}/api/cards/images/mpc?id=${encodeURIComponent(frontId)}${sizeParam}`;
 }
 
 export function extractDriveId(

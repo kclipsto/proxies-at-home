@@ -78,7 +78,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
         await processCardFetch(infos);
     };
 
-    const handleAddCard = async (cardName: string, mpcImageUrl?: string) => {
+    const handleAddCard = async (cardName: string, mpcImageUrl?: string, specificPrint?: { set: string; number: string }) => {
         // If MPC image URL is provided, add the card directly without Scryfall lookup
         if (mpcImageUrl) {
             onUploadComplete?.();
@@ -106,7 +106,13 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
         }
 
         // Standard Scryfall-based card addition
-        await processCardFetch([{ name: cardName, quantity: 1 }]);
+        // Include specific print details if available (set/number) so backend can match exactly
+        await processCardFetch([{
+            name: cardName,
+            quantity: 1,
+            set: specificPrint?.set,
+            number: specificPrint?.number
+        }]);
     };
 
     // --- Clear Logic ---

@@ -1,11 +1,9 @@
 import { useState } from "react";
 import { Button, Checkbox } from "flowbite-react";
 import { Search, Filter, Image, Settings } from "lucide-react";
-import { ToggleButtonGroup, CardGrid, ArtSourceToggle, FloatingZoomPanel } from "../common";
+import { ToggleButtonGroup, CardGrid, ArtSourceToggle, FloatingZoomPanel, CardArtContent } from "../common";
 
 import { CardbackLibrary } from "./CardbackLibrary";
-import { ScryfallArtContent } from "./ScryfallArtContent";
-import { MpcArtContent } from "../MpcArt";
 import type { CardOption } from "../../../../shared/types";
 import { isCardbackId, type CardbackOption } from "@/helpers/cardbackLibrary";
 import type { MpcAutofillCard } from "@/helpers/mpcAutofillApi";
@@ -43,16 +41,16 @@ export interface ArtworkTabContentProps {
         name?: string;
         imageUrls: string[] | undefined;
         id: string | undefined;
+        // Single ID for sorting and highlighting - replaces selectedId + initialScryfallId
+        selectedArtId: string | undefined;
         processedDisplayUrl: string | null;
     };
     zoomLevel: number;
-    isGettingMore: boolean;
     onOpenSearch: () => void;
     onSelectCardback: (id: string, name: string) => void;
     onSetAsDefaultCardback: (id: string, name: string) => void;
     onSelectArtwork: (url: string) => void;
     onSelectMpcArt: (card: MpcAutofillCard) => void;
-    onGetMorePrints: () => void;
     onClose: () => void;
     onRequestDelete: (cardbackId: string, cardbackName: string) => void;
     onExecuteDelete: (cardbackId: string) => Promise<void>;
@@ -65,13 +63,12 @@ export interface ArtworkTabContentProps {
     activeTab?: 'artwork' | 'settings';
     setActiveTab?: (tab: 'artwork' | 'settings') => void;
     setSelectedFace?: (face: 'front' | 'back') => void;
-    /** Zoom level callback for controlled zoom */
     setZoomLevel?: (level: number) => void;
 }
 
 /**
  * The Artwork tab content - search, cardback toggle, apply-to-all, and image grids.
- * Renders ScryfallArtContent, MpcArtContent, or CardbackLibrary based on state.
+ * Renders CardArtContent or CardbackLibrary based on state.
  */
 export function ArtworkTabContent({
     modalCard,
@@ -87,16 +84,14 @@ export function ArtworkTabContent({
     cardbackOptions,
     setCardbackOptions,
     defaultCardbackId,
-    filteredImageUrls,
+    filteredImageUrls: _filteredImageUrls,
     displayData,
     zoomLevel,
-    isGettingMore,
     onOpenSearch,
     onSelectCardback,
     onSetAsDefaultCardback,
     onSelectArtwork,
     onSelectMpcArt,
-    onGetMorePrints,
     onClose,
     onRequestDelete,
     onExecuteDelete,
@@ -164,12 +159,8 @@ export function ArtworkTabContent({
                     </Button>
                 )}
 
-                {/* Desktop & Portrait: Original Search & Cardback Buttons (Hidden on Landscape) */}
+                {/* Desktop & Portrait: Cardback Button (Search button moved to footer) */}
                 <div className="flex gap-2 max-lg:landscape:hidden">
-                    <Button color="blue" className="flex-1" onClick={onOpenSearch}>
-                        <Search className="mr-2 h-4 w-4" />
-                        Search for a different card...
-                    </Button>
                     {showCardbackButton && (
                         <Button color="light" onClick={() => setShowCardbackLibrary(true)} title="Use a cardback from the library instead">
                             <CardbackIcon />
@@ -210,14 +201,19 @@ export function ArtworkTabContent({
                 }
 
                 {
-                    showArtworkGrid && artSource === 'scryfall' && (
-                        <div className="flex-1 overflow-y-auto overflow-x-hidden pt-0 p-6">
-                            <ScryfallArtContent
-                                imageUrls={filteredImageUrls ?? displayData.imageUrls ?? []}
-                                selectedId={displayData.id}
+                    showArtworkGrid && (
+                        <div className={artSource === 'scryfall' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
+                            <CardArtContent
+                                artSource="scryfall"
+                                mode="prints"
+                                query={displayData.name || modalCard.name || ''}
+                                cardSize={zoomLevel}
+                                selectedArtId={displayData.selectedArtId}
                                 processedDisplayUrl={displayData.processedDisplayUrl}
-                                onSelectArtwork={onSelectArtwork}
-                                zoomLevel={zoomLevel}
+                                selectedFace={selectedFace}
+                                onSelectCard={(_, url) => onSelectArtwork(url || '')}
+                                containerClassStyle="flex-1 h-full"
+                                isActive={artSource === 'scryfall'}
                             />
                         </div>
                     )
@@ -227,16 +223,23 @@ export function ArtworkTabContent({
                 {
                     showArtworkGrid && (
                         <div className={artSource === 'mpc' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
-                            <MpcArtContent
-                                cardName={displayData.name || modalCard.name || ''}
-                                onSelectCard={onSelectMpcArt}
-                                onSwitchToScryfall={() => { setArtSource('scryfall'); onGetMorePrints(); }}
+                            <CardArtContent
+                                artSource="mpc"
+                                query={displayData.name || modalCard.name || ''}
+                                cardSize={zoomLevel}
+                                selectedArtId={displayData.selectedArtId}
+                                onSelectCard={(_name, url) => {
+                                    // For MPC, we need to use onSelectMpcArt callback
+                                    // but CardArtContent calls onSelectCard with name and url
+                                    onSelectArtwork(url || '');
+                                }}
+                                onSelectMpcCard={onSelectMpcArt}
+                                onSwitchSource={() => setArtSource('scryfall')}
                                 autoSearch={true}
                                 filtersCollapsed={mpcFiltersCollapsed}
-                                onFiltersCollapsedChange={onMpcFiltersCollapsedChange}
                                 onFilterCountChange={setActiveFilterCount}
                                 containerClassStyle="flex-1 h-full"
-                                cardSize={zoomLevel}
+                                isActive={artSource === 'mpc'}
                             />
                         </div>
                     )
@@ -299,12 +302,8 @@ export function ArtworkTabContent({
                                 </button>
                             )}
 
-                            <Button className="flex-1" color="blue" onClick={onGetMorePrints} disabled={isGettingMore}>
-                                {isGettingMore ? "Loading..." : artSource === 'scryfall' ? "Get All Prints" : "Get All Art"}
-                            </Button>
-
-                            {/* Mobile Landscape Only: Search Button (Relocated) */}
-                            <Button className="flex-1 hidden max-lg:landscape:flex" color="blue" onClick={onOpenSearch}>
+                            {/* Search Button - shows for all sources */}
+                            <Button className="flex-1" color="blue" onClick={onOpenSearch}>
                                 <Search className="w-4 h-4 mr-2" />
                                 Search for a different card...
                             </Button>
