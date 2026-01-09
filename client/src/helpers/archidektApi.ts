@@ -112,6 +112,8 @@ export interface ParsedArchidektCard {
     quantity: number;
     scryfallId: string;
     category: string;
+    /** True if this card is from the "tokens" category */
+    isToken?: boolean;
 }
 
 /**
@@ -151,6 +153,9 @@ export function extractCardsFromDeck(deck: ArchidektDeck): ParsedArchidektCard[]
             primaryCategory = "Mainboard";
         }
 
+        // Check if this card is in the tokens category
+        const isToken = validCategories.some(c => c.toLowerCase() === 'tokens');
+
         cards.push({
             name: deckCard.card.oracleCard.name.replace(/\s*★\s*$/, "").trim(),
             set: deckCard.card.edition.editioncode.toLowerCase(),
@@ -158,6 +163,7 @@ export function extractCardsFromDeck(deck: ArchidektDeck): ParsedArchidektCard[]
             quantity: deckCard.quantity,
             scryfallId: deckCard.card.uid,
             category: primaryCategory,
+            isToken,
         });
     }
 

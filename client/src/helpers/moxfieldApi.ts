@@ -132,6 +132,8 @@ export interface ParsedMoxfieldCard {
     quantity: number;
     scryfallId: string;
     category: string;
+    /** True if this card is a token (type_line contains 'Token') */
+    isToken?: boolean;
 }
 
 /**
@@ -175,6 +177,9 @@ export function extractCardsFromDeck(deck: MoxfieldDeck): ParsedMoxfieldCard[] {
 
     for (const board of boards) {
         for (const deckCard of Object.values(board.data)) {
+            // Detect tokens from type_line (e.g., "Token Creature — Human Soldier")
+            const isToken = deckCard.card.type_line?.toLowerCase().includes('token');
+
             cards.push({
                 name: deckCard.card.name,
                 set: deckCard.card.set.toLowerCase(),
@@ -182,6 +187,7 @@ export function extractCardsFromDeck(deck: MoxfieldDeck): ParsedMoxfieldCard[] {
                 quantity: deckCard.quantity,
                 scryfallId: deckCard.card.scryfall_id,
                 category: normalizeCategory(deckCard.boardType) || board.category,
+                isToken,
             });
         }
     }

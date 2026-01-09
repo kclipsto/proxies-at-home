@@ -91,6 +91,59 @@ describe('useMpcSearch', () => {
         });
     });
 
+    describe('token collision dual-search', () => {
+        it('should search both CARD and TOKEN for collision names like treasure', async () => {
+            const mockCardResults = [{ id: '1', name: 'Treasure Nabber', dpi: 1200, sourceName: 'Source A' }];
+            const mockTokenResults = [{ id: '2', name: 'Treasure', dpi: 1200, sourceName: 'Source B' }];
+
+            (searchMpcAutofill as ReturnType<typeof vi.fn>)
+                .mockResolvedValueOnce(mockCardResults)
+                .mockResolvedValueOnce(mockTokenResults);
+
+            const { result } = renderHook(() => useMpcSearch('treasure'));
+
+            await vi.waitFor(() => {
+                expect(result.current.hasSearched).toBe(true);
+            }, { timeout: 1000 });
+
+            // Should have called searchMpcAutofill twice - once for CARD, once for TOKEN
+            expect(searchMpcAutofill).toHaveBeenCalledWith('treasure', 'CARD', true);
+            expect(searchMpcAutofill).toHaveBeenCalledWith('treasure', 'TOKEN', true);
+        });
+
+        it('should merge token and card results for collision names', async () => {
+            const mockCardResults = [{ id: '1', name: 'Treasure Nabber', dpi: 1200, sourceName: 'Source A' }];
+            const mockTokenResults = [{ id: '2', name: 'Treasure Token', dpi: 1200, sourceName: 'Source B' }];
+
+            (searchMpcAutofill as ReturnType<typeof vi.fn>)
+                .mockResolvedValueOnce(mockCardResults)
+                .mockResolvedValueOnce(mockTokenResults);
+
+            const { result } = renderHook(() => useMpcSearch('blood'));
+
+            await vi.waitFor(() => {
+                expect(result.current.cards.length).toBe(2);
+            }, { timeout: 1000 });
+
+            // Should have both results
+            expect(result.current.cards.length).toBe(2);
+        });
+
+        it('should not do dual-search for non-collision names', async () => {
+            (searchMpcAutofill as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+            renderHook(() => useMpcSearch('Sol Ring'));
+
+            await vi.waitFor(() => {
+                expect(searchMpcAutofill).toHaveBeenCalled();
+            }, { timeout: 1000 });
+
+            // Should only call once with CARD type
+            expect(searchMpcAutofill).toHaveBeenCalledTimes(1);
+            expect(searchMpcAutofill).toHaveBeenCalledWith('Sol Ring', 'CARD', true);
+        });
+    });
+
     describe('filtering', () => {
         const mockCards = [
             { id: '1', name: 'Card A', dpi: 1200, sourceName: 'Source A', tags: ['Tag1'] },

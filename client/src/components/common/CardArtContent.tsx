@@ -52,6 +52,8 @@ export interface CardArtContentProps {
     containerClassStyle?: string;
     /** Whether this source is currently active/visible (for sort-on-toggle) */
     isActive?: boolean;
+    /** Card type_line for auto-detecting token cards in MPC search */
+    cardTypeLine?: string;
 }
 
 /**
@@ -74,6 +76,7 @@ export function CardArtContent({
     onSelectMpcCard,
     containerClassStyle,
     isActive,
+    cardTypeLine,
 }: CardArtContentProps) {
     // Helper to strip query params for URL comparison (Scryfall URLs have timestamps)
     const stripQuery = useCallback((url?: string) => url?.split('?')[0], []);
@@ -102,7 +105,8 @@ export function CardArtContent({
         artSource === 'mpc' ? query : '',
         {
             autoSearch,
-            // Note: sorting is now handled in CardArtContent via mpcSortKey, not here
+            // Pass card type_line for auto-detection of token cards
+            cardData: cardTypeLine ? { type_line: cardTypeLine } : undefined,
         }
     );
 
@@ -554,9 +558,14 @@ export function CardArtContent({
                 ) : (
                     <div className="px-6 pt-6 flex flex-col items-center justify-center w-full flex-1 text-gray-400 dark:text-gray-500">
                         <img src={logoSvg} alt="Proxxied Logo" className="w-24 h-24 mb-4 opacity-50" />
-                        <p className="text-sm font-medium text-center mb-4">
+                        <p className="text-sm font-medium text-center mb-2">
                             {hasSearched && query.trim() ? noResultsMessage : emptyMessage}
                         </p>
+                        {hasSearched && query.trim() && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-4">
+                                💡 Tip: Use <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">t:name</code> to search for tokens (e.g., <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">t:treasure</code>)
+                            </p>
+                        )}
                         {onSwitchSource && hasSearched && query.trim() && artSource === 'mpc' && (
                             <Button color="blue" onClick={onSwitchSource}>
                                 Switch to Scryfall

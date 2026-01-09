@@ -9,6 +9,7 @@ type DecklistEntry = {
   isUpload: boolean;
   count: number;
   mpcIdentifier?: string;
+  isToken?: boolean;  // Token cards (type_line contains "Token" or set starts with "t")
 };
 
 /**
@@ -26,6 +27,8 @@ export function groupCardsForDecklist(cards: CardOption[]): DecklistEntry[] {
     const set = c.set;
     const number = c.number;
     const isUpload = !!c.isUserUpload;
+    // Detect token cards by type_line or set code
+    const isToken = c.type_line?.toLowerCase().includes('token') || c.set?.toLowerCase().startsWith('t');
     // Only extract MPC ID if the source is actually 'mpc' (prevents false positives)
     const source = inferImageSource(c.imageId);
     const mpcId = source === 'mpc' ? extractMpcIdentifierFromImageId(c.imageId) : null;
@@ -51,6 +54,7 @@ export function groupCardsForDecklist(cards: CardOption[]): DecklistEntry[] {
         isUpload,
         count: 1,
         mpcIdentifier: mpcId ?? undefined,
+        isToken,
       });
     }
   }
@@ -118,7 +122,23 @@ export function buildDecklist(
   }
 
   const style = opts?.style ?? "plain";
-  const lines = groups.map((g) => formatDecklistLine(g, style));
+
+  // Separate tokens from regular cards
+  const regularCards = groups.filter(g => !g.isToken);
+  const tokenCards = groups.filter(g => g.isToken);
+
+  const lines = regularCards.map((g) => formatDecklistLine(g, style));
+
+  // Add tokens section if there are any
+  if (tokenCards.length > 0) {
+    lines.push(""); // Blank line separator
+    lines.push("// Tokens");
+    tokenCards.forEach((g) => {
+      // Prefix token lines with t: for reimport compatibility
+      lines.push(`${g.count}x t:${g.name}`);
+    });
+  }
+
   return lines.join("\n");
 }
 

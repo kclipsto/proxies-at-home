@@ -177,7 +177,7 @@ function cachePathFromUrl(originalUrl: string) {
 
 // -------------------- API: batch enrich cards --------------------
 interface EnrichRequestBody {
-  cards: Array<{ name: string; set?: string; number?: string }>;
+  cards: Array<{ name: string; set?: string; number?: string; isToken?: boolean }>;
 }
 
 interface EnrichedCard {
@@ -264,7 +264,7 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
 
     // Step 2: Map results back to original cards
     const results: (EnrichedCard | null)[] = [];
-    const notFoundCards: Array<{ index: number; card: { name: string; set?: string; number?: string } }> = [];
+    const notFoundCards: Array<{ index: number; card: { name: string; set?: string; number?: string; isToken?: boolean } }> = [];
 
     // Helper to normalize names for loose matching (remove punctuation, lowercase)
     const normalizeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
@@ -320,6 +320,7 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
                 name: card.name,
                 set: card.set,
                 number: card.number,
+                isToken: card.isToken,
               });
               if (data) {
                 return extractEnrichedCard(card, data);

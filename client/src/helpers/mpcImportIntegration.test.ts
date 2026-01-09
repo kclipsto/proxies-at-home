@@ -86,8 +86,8 @@ describe("mpcImportIntegration", () => {
             const result = await findBestMpcMatches(infos);
 
             expect(result).toHaveLength(2);
-            // Should have deduplicated the search query
-            expect(mockBatchSearchMpcAutofill).toHaveBeenCalledWith(["Lightning Bolt"]);
+            // Should have deduplicated the search query and use CARD type for non-tokens
+            expect(mockBatchSearchMpcAutofill).toHaveBeenCalledWith(["Lightning Bolt"], "CARD");
         });
 
         it("should pick card with highest DPI when multiple matches", async () => {

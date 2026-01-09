@@ -214,6 +214,7 @@ export function ArtworkTabContent({
                                 onSelectCard={(_, url) => onSelectArtwork(url || '')}
                                 containerClassStyle="flex-1 h-full"
                                 isActive={artSource === 'scryfall'}
+                                cardTypeLine={modalCard.type_line}
                             />
                         </div>
                     )
@@ -240,6 +241,7 @@ export function ArtworkTabContent({
                                 onFilterCountChange={setActiveFilterCount}
                                 containerClassStyle="flex-1 h-full"
                                 isActive={artSource === 'mpc'}
+                                cardTypeLine={modalCard.type_line}
                             />
                         </div>
                     )

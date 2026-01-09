@@ -178,6 +178,158 @@ describe('CardInfoHelper', () => {
         number: '7',
       });
     });
+
+    it('should parse t: prefix for token cards', () => {
+      const input = 't:treasure';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'treasure',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse t:token prefix for token cards', () => {
+      const input = 't:token human soldier';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'human soldier',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse T: prefix case-insensitively', () => {
+      const input = 'T:Cat';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'Cat',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse token with Nx quantity prefix', () => {
+      const input = '4x t:treasure';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'treasure',
+        quantity: 4,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse token with space-separated quantity', () => {
+      const input = '2 t:human soldier';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'human soldier',
+        quantity: 2,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse token with quantity and t:token format', () => {
+      const input = '3x t:token goblin';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'goblin',
+        quantity: 3,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse token with large quantity', () => {
+      const input = '10x t:treasure';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'treasure',
+        quantity: 10,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse token with quantity and set code', () => {
+      const input = '2x t:treasure (cmm)';
+      const result = extractCardInfo(input);
+      expect(result.isToken).toBe(true);
+      expect(result.quantity).toBe(2);
+      expect(result.name).toBe('treasure');
+    });
+
+    // Multi-word token name tests
+    it('should parse quoted token name with double quotes', () => {
+      const input = 't:"human soldier"';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'human soldier',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse quoted token name with single quotes', () => {
+      const input = "t:'necron warrior'";
+      expect(extractCardInfo(input)).toEqual({
+        name: 'necron warrior',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse underscore token name', () => {
+      const input = 't:human_soldier';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'human soldier',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse underscore token name with multiple underscores', () => {
+      const input = 't:phyrexian_germ_token';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'phyrexian germ token',
+        quantity: 1,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse quoted token with quantity', () => {
+      const input = '3x t:"human soldier"';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'human soldier',
+        quantity: 3,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
+
+    it('should parse underscore token with quantity', () => {
+      const input = '4x t:phyrexian_germ';
+      expect(extractCardInfo(input)).toEqual({
+        name: 'phyrexian germ',
+        quantity: 4,
+        set: undefined,
+        number: undefined,
+        isToken: true,
+      });
+    });
   });
 
   describe('parseDeckToInfos', () => {

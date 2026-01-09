@@ -154,6 +154,7 @@ export type CardInfo = {
   language?: string | undefined;
   category?: string | undefined; // Archidekt deck category
   mpcIdentifier?: string | undefined; // MPC Autofill identifier for exact art matching
+  isToken?: boolean | undefined; // True if this is explicitly a token card (e.g., from t: prefix)
 };
 
 /**

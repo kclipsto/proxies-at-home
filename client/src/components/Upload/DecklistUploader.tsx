@@ -38,9 +38,15 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     // Live query to check if there are any cards that need token fetching
     // Checks for:
     // 1. Cards with explicit needed tokens (needs_token === true)
+    // 2. Cards that need token lookup (token_parts undefined, not a back card, not a token)
     const hasTokensToFetch = useLiveQuery(async () => {
         const count = await db.cards.filter(c =>
-            (c.needs_token === true)
+            // Cards that have known tokens to fetch
+            (c.needs_token === true) ||
+            // Cards that need token lookup (MPC imports typically have undefined token_parts)
+            (c.token_parts === undefined &&
+                !c.linkedFrontId && // Skip back cards
+                !c.type_line?.toLowerCase().includes('token')) // Skip tokens
         ).count();
         return count > 0;
     }, [], false);
@@ -163,10 +169,21 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
 
     /**
      * Find tokens that are needed but not yet in the collection
+     * @param skipExisting If true, skip tokens that already exist in the collection (for auto-import)
      */
-    const computeMissingTokens = async (): Promise<CardInfo[]> => {
+    const computeMissingTokens = async (skipExisting: boolean = false): Promise<CardInfo[]> => {
         const cards = await db.cards.toArray();
         if (cards.length === 0) return [];
+
+        // Build a set of existing card names to avoid re-fetching tokens already in collection
+        const existingCardNames = new Set<string>();
+        if (skipExisting) {
+            for (const card of cards) {
+                if (card.name) {
+                    existingCardNames.add(card.name.toLowerCase());
+                }
+            }
+        }
 
         const seenKeys = new Set<string>();
         const tokensToFetch: CardInfo[] = [];
@@ -183,6 +200,9 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             for (const token of card.token_parts) {
                 if (!token.name) continue;
 
+                // Skip if this token is already in the collection (only for auto-import)
+                if (skipExisting && existingCardNames.has(token.name.toLowerCase())) continue;
+
                 const { set, number } = extractTokenPrintFromUri(token.uri);
                 const keyWithPrint = normalizeKey(token.name, set, number);
                 const keyNameOnly = normalizeKey(token.name);
@@ -192,7 +212,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
 
                 seenKeys.add(keyWithPrint);
                 seenKeys.add(keyNameOnly);
-                tokensToFetch.push({ name: token.name, set, number, quantity: 1 });
+                tokensToFetch.push({ name: token.name, set, number, quantity: 1, isToken: true });
             }
         }
 
@@ -276,7 +296,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             }
 
             // Now compute missing tokens with updated data
-            const tokensToFetch = await computeMissingTokens();
+            const tokensToFetch = await computeMissingTokens(silent);
 
             if (tokensToFetch.length === 0) {
                 if (!silent) {
@@ -293,7 +313,6 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                 onComplete: () => {
                     onUploadComplete?.();
                 },
-                artSource: "scryfall", // Force Scryfall for tokens as requested (MPC tokens are often incorrect/missing)
             });
         } catch (err: unknown) {
             if (err instanceof Error && err.name !== "AbortError") {

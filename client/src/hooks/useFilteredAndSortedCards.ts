@@ -58,7 +58,7 @@ const getRarityValue = (c: CardOption) => {
 };
 
 // Extract primary type from type_line (e.g., "Legendary Creature - Human Wizard" -> "Creature")
-const PRIMARY_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
+const PRIMARY_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Token"];
 
 export const getCardTypes = (typeLine: string | undefined): string[] => {
     if (!typeLine) return [];

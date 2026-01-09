@@ -3,6 +3,7 @@ import axios from "axios";
 import crypto from "crypto";
 import { getDatabase } from "../db/db.js";
 import { debugLog } from "../utils/debug.js";
+import { isValidScryfallType, isKnownToken } from "../utils/scryfallCatalog.js";
 
 const router = Router();
 
@@ -173,6 +174,82 @@ router.get("/named", async (req: Request, res: Response) => {
 });
 
 /**
+ * Parse query for token-specific syntax.
+ * Detects if t:<value> should be passed through (valid Scryfall type) or
+ * translated to a token search (unknown type or known token name).
+ * 
+ * Supports multi-word token names via:
+ * - Quotes: t:"human soldier" or t:'human soldier'
+ * - Underscores: t:human_soldier
+ * - Full phrase check: t:human soldier (if "human soldier" is a known token)
+ */
+function parseTypePrefix(query: string): { query: string; isToken: boolean } {
+    // Check for t: prefix with various formats
+
+    // Format 1: t:"quoted name" or t:'quoted name'
+    const quotedMatch = query.match(/^t:["']([^"']+)["'](.*)$/i);
+    if (quotedMatch) {
+        const tokenName = quotedMatch[1].trim();
+        const rest = quotedMatch[2]?.trim() || '';
+        // Quoted = explicit token search
+        return { query: rest ? `${tokenName} ${rest}` : tokenName, isToken: true };
+    }
+
+    // Format 2: t:underscore_name (convert underscores to spaces)
+    const underscoreMatch = query.match(/^t:([a-z0-9]+(?:_[a-z0-9]+)+)(.*)$/i);
+    if (underscoreMatch) {
+        const tokenName = underscoreMatch[1].replace(/_/g, ' ').trim();
+        const rest = underscoreMatch[2]?.trim() || '';
+        // Underscore format = explicit token search
+        return { query: rest ? `${tokenName} ${rest}` : tokenName, isToken: true };
+    }
+
+    // Format 3: t:word or t:word word... (standard format)
+    const tPrefixMatch = query.match(/^t:(.+)$/i);
+    if (tPrefixMatch) {
+        const fullValue = tPrefixMatch[1].trim();
+
+        // Check for explicit "t:token <name>" syntax
+        if (fullValue.toLowerCase().startsWith('token ')) {
+            const tokenName = fullValue.slice(6).trim();
+            return { query: tokenName, isToken: true };
+        }
+
+        // Check if the FULL phrase is a known token (e.g., "human soldier")
+        if (isKnownToken(fullValue)) {
+            // Known token - use include:extras to show both tokens and regular cards
+            return { query: `${fullValue} include:extras`, isToken: false };
+        }
+
+        // Check first word only
+        const firstWord = fullValue.split(/\s+/)[0].toLowerCase();
+        const restOfQuery = fullValue.slice(firstWord.length).trim();
+
+        // If first word is a valid Scryfall type, pass through unchanged
+        if (isValidScryfallType(firstWord)) {
+            // Ambiguous case: check if full phrase is also a known token
+            if (restOfQuery && isKnownToken(fullValue)) {
+                // Both a type filter AND a token - use include:extras
+                return { query: `${query} include:extras`, isToken: false };
+            }
+            return { query, isToken: false };
+        }
+
+        // Not a valid type - treat as token search
+        return { query: fullValue, isToken: true };
+    }
+
+    // Check if plain query matches a known token name (e.g., "treasure", "blood", "clue")
+    // Add include:extras so BOTH tokens AND regular cards are returned
+    const trimmed = query.trim();
+    if (isKnownToken(trimmed)) {
+        return { query: `${trimmed} include:extras`, isToken: false };
+    }
+
+    return { query, isToken: false };
+}
+
+/**
  * GET /api/scryfall/search
  * Proxies Scryfall /cards/search
  */
@@ -184,7 +261,16 @@ router.get("/search", async (req: Request, res: Response) => {
 
     // Pre-process query to support [set], (set), {set} syntax
     // Converts "cardname [set]" -> "cardname set:set"
-    const processedQ = q.replace(/(?:\[|\(|\{)([a-zA-Z0-9]{3,})(?:\]|\)|\})/g, " set:$1 ");
+    let processedQ = q.replace(/(?:\[|\(|\{)([a-zA-Z0-9]{3,})(?:\]|\)|\})/g, " set:$1 ");
+
+    // Parse for token-specific syntax (t:<name>, t:token <name>, or known token names)
+    const { query: parsedQuery, isToken } = parseTypePrefix(processedQ);
+    if (isToken) {
+        processedQ = `${parsedQuery} type:token`;
+        debugLog(`[ScryfallProxy] Token search detected, query: ${processedQ}`);
+    } else {
+        processedQ = parsedQuery;
+    }
 
     const params: Record<string, string> = { q: processedQ };
     if (req.query.unique) params.unique = req.query.unique as string;

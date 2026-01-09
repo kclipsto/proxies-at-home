@@ -9,9 +9,13 @@ import { mpcAutofillRouter } from "./routes/mpcAutofillRouter.js";
 import { scryfallRouter } from "./routes/scryfallRouter.js";
 import { initDatabase } from "./db/db.js";
 import { startImportScheduler } from "./services/importScheduler.js";
+import { initCatalogs } from "./utils/scryfallCatalog.js";
 
 // Initialize database (creates tables if needed)
 initDatabase();
+
+// Initialize Scryfall type catalogs (for t: prefix detection)
+initCatalogs();
 
 // Start import scheduler (triggers cold-start import if needed)
 startImportScheduler();

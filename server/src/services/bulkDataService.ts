@@ -5,6 +5,7 @@ import StreamJsonParser from 'stream-json';
 import StreamArray from 'stream-json/streamers/StreamArray.js';
 import { getDatabase } from '../db/db.js';
 import { batchInsertCards, getCardCount } from '../db/proxxiedCardLookup.js';
+import { parseTypeLine, insertCardType, insertTokenName } from '../utils/scryfallCatalog.js';
 import type { ScryfallApiCard } from '../utils/getCardImagesPaged.js';
 
 // Use default-cards bulk data for broad coverage on set+number lookups.
@@ -103,6 +104,19 @@ export async function downloadAndImportBulkData(): Promise<{
         const card = convertBulkCard(value);
         batch.push(card);
         cardsProcessed++;
+
+        // Parse and index types for fast lookups
+        const types = parseTypeLine(value.type_line || '');
+        const isToken = types.includes('token');
+
+        for (const type of types) {
+            insertCardType(value.id, type, isToken);
+        }
+
+        // Register token names for t: prefix detection
+        if (isToken) {
+            insertTokenName(value.name);
+        }
 
         // Insert in batches for better performance
         if (batch.length >= BATCH_SIZE) {

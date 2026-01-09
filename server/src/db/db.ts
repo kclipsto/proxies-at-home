@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'proxxied-cards.db');
 
 // Current schema version - increment when adding migrations
-const CURRENT_DB_VERSION = 3;
+const CURRENT_DB_VERSION = 4;
 
 // Migration definitions - each entry upgrades from (version-1) to (version)
 // Add new migrations to the end of this array
@@ -76,6 +76,25 @@ const migrations: Migration[] = [
     description: 'Add all_parts column for token data',
     up: [
       'ALTER TABLE cards ADD COLUMN all_parts TEXT;',
+    ],
+  },
+  {
+    version: 4,
+    description: 'Add card_types and token_names tables for type indexing',
+    up: [
+      // Table to map card IDs to their individual types (parsed from type_line)
+      `CREATE TABLE IF NOT EXISTS card_types (
+        card_id TEXT NOT NULL,
+        type TEXT NOT NULL COLLATE NOCASE,
+        is_token INTEGER DEFAULT 0,
+        PRIMARY KEY (card_id, type)
+      );`,
+      'CREATE INDEX IF NOT EXISTS idx_card_types_type ON card_types(type);',
+      'CREATE INDEX IF NOT EXISTS idx_card_types_is_token ON card_types(is_token);',
+      // Table to store unique token names for fast lookup
+      `CREATE TABLE IF NOT EXISTS token_names (
+        name TEXT PRIMARY KEY COLLATE NOCASE
+      );`,
     ],
   },
 ];

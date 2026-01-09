@@ -29,35 +29,66 @@ export async function findBestMpcMatches(
         return name.includes(' // ') ? name.split(' // ')[0].trim() : name;
     };
 
-    // Build a map from normalized name back to original CardInfos
-    const nameToInfos = new Map<string, CardInfo[]>();
-    for (const info of infos) {
+    // Separate tokens from regular cards (MPC uses different cardType for each)
+    const tokenInfos = infos.filter(info => info.isToken);
+    const cardInfos = infos.filter(info => !info.isToken);
+
+    // Build maps from normalized name back to original CardInfos
+    const nameToTokenInfos = new Map<string, CardInfo[]>();
+    const nameToCardInfos = new Map<string, CardInfo[]>();
+
+    for (const info of tokenInfos) {
         const normalized = normalizeDfcName(info.name);
-        if (!nameToInfos.has(normalized)) {
-            nameToInfos.set(normalized, []);
+        if (!nameToTokenInfos.has(normalized)) {
+            nameToTokenInfos.set(normalized, []);
         }
-        nameToInfos.get(normalized)!.push(info);
+        nameToTokenInfos.get(normalized)!.push(info);
     }
 
-    const uniqueNames = Array.from(nameToInfos.keys());
+    for (const info of cardInfos) {
+        const normalized = normalizeDfcName(info.name);
+        if (!nameToCardInfos.has(normalized)) {
+            nameToCardInfos.set(normalized, []);
+        }
+        nameToCardInfos.get(normalized)!.push(info);
+    }
+
+    const uniqueTokenNames = Array.from(nameToTokenInfos.keys());
+    const uniqueCardNames = Array.from(nameToCardInfos.keys());
+
     const settings = useSettingsStore.getState();
     const favSources = new Set(settings.favoriteMpcSources);
     const favTags = new Set(settings.favoriteMpcTags);
 
-    // Batch search (uses fuzzy by default)
-    const searchResults = await batchSearchMpcAutofill(uniqueNames);
+    // Batch search - separate searches for tokens and cards
+    const [tokenResults, cardResults] = await Promise.all([
+        uniqueTokenNames.length > 0
+            ? batchSearchMpcAutofill(uniqueTokenNames, 'TOKEN')
+            : {} as Record<string, MpcAutofillCard[]>,
+        uniqueCardNames.length > 0
+            ? batchSearchMpcAutofill(uniqueCardNames, 'CARD')
+            : {} as Record<string, MpcAutofillCard[]>,
+    ]);
 
     debugLog('[MPC Match] Filters:', {
         favoriteSources: Array.from(favSources),
         favoriteTags: Array.from(favTags),
     });
-    debugLog('[MPC Match] Searching for:', uniqueNames);
+    if (uniqueTokenNames.length > 0) {
+        debugLog('[MPC Match] Searching for tokens:', uniqueTokenNames);
+    }
+    if (uniqueCardNames.length > 0) {
+        debugLog('[MPC Match] Searching for cards:', uniqueCardNames);
+    }
 
     const matches: MpcMatchResult[] = [];
 
+    // Process all infos and look up in appropriate result set
     for (const info of infos) {
         const normalizedName = normalizeDfcName(info.name);
-        const results = searchResults[normalizedName];
+        const results = info.isToken
+            ? tokenResults[normalizedName]
+            : cardResults[normalizedName];
 
         if (results && results.length > 0) {
             // Pass the query name to enable exact match detection

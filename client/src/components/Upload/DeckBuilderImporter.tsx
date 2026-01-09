@@ -84,6 +84,7 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
                     number: c.number,
                     quantity: c.quantity,
                     category: normalizeCategory(c.category),
+                    isToken: c.isToken,
                 }));
             } else if (source === "moxfield") {
                 const deckId = extractMoxfieldDeckId(deckUrl);
@@ -104,6 +105,7 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
                     number: c.number,
                     quantity: c.quantity,
                     category: normalizeCategory(c.category),
+                    isToken: c.isToken,
                 }));
             } else {
                 setError("Invalid URL. Please paste an Archidekt or Moxfield deck link.");

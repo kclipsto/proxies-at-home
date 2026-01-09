@@ -17,6 +17,8 @@ export interface CardInfo {
     quantity?: number;
     category?: string;
     mpcIdentifier?: string;
+    /** True if this card is a token (detected from deck builder category or type_line) */
+    isToken?: boolean;
 }
 
 export interface StreamCardsOptions {
