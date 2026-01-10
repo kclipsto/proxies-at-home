@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button, Textarea } from "flowbite-react";
-import { ExternalLink } from "lucide-react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { Button, Modal, ModalBody, ModalHeader, Textarea } from "flowbite-react";
+import { ExternalLink, Sparkles } from "lucide-react";
 import { parseDeckToInfos } from "@/helpers/cardInfoHelper";
 import { streamCards, type CardInfo } from "@/helpers/streamCards";
 import { addRemoteImage } from "@/helpers/dbUtils";
@@ -21,6 +22,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     const [deckText, setDeckText] = useState("");
     const fetchController = useRef<AbortController | null>(null);
     const enrichmentController = useRef<AbortController | null>(null);
+    const tokenFetchController = useRef<AbortController | null>(null);
 
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
 
@@ -30,7 +32,24 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     const clearAllCardsAndImages = useCardsStore((state) => state.clearAllCardsAndImages);
 
     const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+    const [showNoTokensModal, setShowNoTokensModal] = useState(false);
     const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
+
+    // Live query to check if there are any cards that need token fetching
+    // Checks for:
+    // 1. Cards with explicit needed tokens (needs_token === true)
+    // 2. Cards that need token lookup (token_parts undefined, not a back card, not a token)
+    const hasTokensToFetch = useLiveQuery(async () => {
+        const count = await db.cards.filter(c =>
+            // Cards that have known tokens to fetch
+            (c.needs_token === true) ||
+            // Cards that need token lookup (MPC imports typically have undefined token_parts)
+            (c.token_parts === undefined &&
+                !c.linkedFrontId && // Skip back cards
+                !c.type_line?.toLowerCase().includes('token')) // Skip tokens
+        ).count();
+        return count > 0;
+    }, [], false);
 
     // --- Fetch Logic ---
 
@@ -47,8 +66,6 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             return;
         }
 
-        console.log("[DecklistUploader] Processing fetch for:", infos.map(i => i.name).join(", "));
-
         try {
             // No loading modal - processing toast will show via useImageProcessing
             await streamCards({
@@ -60,6 +77,11 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                 onComplete: () => {
                     setDeckText("");
                     onUploadComplete?.();
+
+                    // Check for auto-import tokens setting
+                    if (useSettingsStore.getState().autoImportTokens) {
+                        handleAddTokens(true);
+                    }
                 },
             });
         } catch (err: unknown) {
@@ -117,6 +139,190 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
         }], 'scryfall');
     };
 
+    // --- Token Import Logic ---
+
+    /**
+     * Normalize a card key for deduplication
+     */
+    const normalizeKey = (name: string, set?: string, number?: string) =>
+        `${name.toLowerCase()}| ${(set || "").toLowerCase()}| ${number || ""} `;
+
+    /**
+     * Extract set/number from a Scryfall token URI
+     * e.g., "https://api.scryfall.com/cards/t2xm/4" -> { set: "t2xm", number: "4" }
+     */
+    const extractTokenPrintFromUri = (uri?: string): { set?: string; number?: string } => {
+        if (!uri) return {};
+        try {
+            const u = new URL(uri);
+            const parts = u.pathname.split("/").filter(Boolean);
+            // Look for "cards" segment and extract set/number
+            const cardsIdx = parts.findIndex((p) => p === "cards");
+            if (cardsIdx >= 0 && parts[cardsIdx + 1] && parts[cardsIdx + 2]) {
+                return { set: parts[cardsIdx + 1], number: parts[cardsIdx + 2] };
+            }
+        } catch {
+            // Ignore parsing errors
+        }
+        return {};
+    };
+
+    /**
+     * Find tokens that are needed but not yet in the collection
+     * @param skipExisting If true, skip tokens that already exist in the collection (for auto-import)
+     */
+    const computeMissingTokens = async (skipExisting: boolean = false): Promise<CardInfo[]> => {
+        const cards = await db.cards.toArray();
+        if (cards.length === 0) return [];
+
+        // Build a set of existing card names to avoid re-fetching tokens already in collection
+        const existingCardNames = new Set<string>();
+        if (skipExisting) {
+            for (const card of cards) {
+                if (card.name) {
+                    existingCardNames.add(card.name.toLowerCase());
+                }
+            }
+        }
+
+        const seenKeys = new Set<string>();
+        const tokensToFetch: CardInfo[] = [];
+
+        for (const card of cards) {
+            // Skip token cards themselves to avoid chaining into their token_parts
+            const setCode = card.set?.toLowerCase() || "";
+            if (setCode.startsWith("t")) continue;
+            if (card.type_line?.toLowerCase().includes("token")) continue;
+
+            // Skip cards without token_parts
+            if (!card.token_parts || card.token_parts.length === 0) continue;
+
+            for (const token of card.token_parts) {
+                if (!token.name) continue;
+
+                // Skip if this token is already in the collection (only for auto-import)
+                if (skipExisting && existingCardNames.has(token.name.toLowerCase())) continue;
+
+                const { set, number } = extractTokenPrintFromUri(token.uri);
+                const keyWithPrint = normalizeKey(token.name, set, number);
+                const keyNameOnly = normalizeKey(token.name);
+
+                // Skip if already queued for fetch in this batch
+                if (seenKeys.has(keyWithPrint) || seenKeys.has(keyNameOnly)) continue;
+
+                seenKeys.add(keyWithPrint);
+                seenKeys.add(keyNameOnly);
+                tokensToFetch.push({ name: token.name, set, number, quantity: 1, isToken: true });
+            }
+        }
+
+        return tokensToFetch;
+    };
+
+    const handleAddTokens = async (silent: boolean = false) => {
+        // Prevent overlapping token fetches
+        if (tokenFetchController.current) {
+            tokenFetchController.current.abort();
+        }
+        tokenFetchController.current = new AbortController();
+
+        try {
+            const cards = await db.cards.toArray();
+
+            // Find cards that don't have token_parts yet (likely MPC imports)
+            // These need to be looked up on Scryfall first
+            const cardsNeedingTokenLookup = cards.filter(c =>
+                c.token_parts === undefined &&
+                !c.linkedFrontId && // Skip back cards
+                !c.type_line?.toLowerCase().includes('token') // Skip tokens
+            );
+
+            // If we have cards without token_parts, fetch their token data from server
+            if (cardsNeedingTokenLookup.length > 0) {
+                const API_BASE = import.meta.env.VITE_API_BASE || '';
+                const CHUNK_SIZE = 100;
+
+                // Process in chunks to respect server limit
+                for (let i = 0; i < cardsNeedingTokenLookup.length; i += CHUNK_SIZE) {
+                    // Check abort signal between chunks
+                    if (tokenFetchController.current?.signal.aborted) break;
+
+                    const chunk = cardsNeedingTokenLookup.slice(i, i + CHUNK_SIZE);
+
+                    try {
+                        const response = await fetch(`${API_BASE}/api/cards/images/tokens`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                cards: chunk.map(c => ({
+                                    name: c.name,
+                                    set: c.set,
+                                    number: c.number,
+                                })),
+                            }),
+                            signal: tokenFetchController.current.signal,
+                        });
+
+                        if (response.ok) {
+                            const tokenData = await response.json() as Array<{
+                                name: string;
+                                token_parts?: Array<{ id?: string; name: string; type_line?: string; uri?: string }>;
+                            }>;
+
+                            // Update cards in DB with token_parts
+                            await db.transaction('rw', db.cards, async () => {
+                                for (const data of tokenData) {
+                                    // Update if we got a response (even empty array means "checked, none found")
+                                    if (data.token_parts !== undefined) {
+                                        // Find matching card(s) and update
+                                        const matchingCards = chunk.filter(c =>
+                                            c.name.toLowerCase() === data.name.toLowerCase()
+                                        );
+                                        for (const card of matchingCards) {
+                                            await db.cards.update(card.uuid, {
+                                                token_parts: data.token_parts,
+                                                needs_token: data.token_parts!.length > 0,
+                                            });
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        console.error("Token fetch chunk failed", e);
+                        // Continue to next chunk even if one fails
+                    }
+                }
+            }
+
+            // Now compute missing tokens with updated data
+            const tokensToFetch = await computeMissingTokens(silent);
+
+            if (tokensToFetch.length === 0) {
+                if (!silent) {
+                    setShowNoTokensModal(true);
+                }
+                return;
+            }
+
+            await streamCards({
+                cardInfos: tokensToFetch,
+                language: globalLanguage,
+                importType: "scryfall",
+                signal: tokenFetchController.current.signal,
+                onComplete: () => {
+                    onUploadComplete?.();
+                },
+            });
+        } catch (err: unknown) {
+            if (err instanceof Error && err.name !== "AbortError") {
+                alert(err.message || "Something went wrong while fetching tokens.");
+            }
+        } finally {
+            tokenFetchController.current = null;
+        }
+    };
+
     // --- Clear Logic ---
 
     const handleClear = async () => {
@@ -139,6 +345,10 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
         if (enrichmentController.current) {
             enrichmentController.current.abort();
             enrichmentController.current = null;
+        }
+        if (tokenFetchController.current) {
+            tokenFetchController.current.abort();
+            tokenFetchController.current = null;
         }
 
         try {
@@ -210,19 +420,24 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                 >
                     Clear Cards
                 </Button>
-            </div>
-
-            <div className="flex gap-2">
                 <Button
                     color="indigo"
                     size="lg"
                     onClick={() => setIsAdvancedSearchOpen(true)}
-                    className="flex-1"
                 >
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     Advanced Search
+                </Button>
+                <Button
+                    color="purple"
+                    size="lg"
+                    onClick={() => handleAddTokens()}
+                    disabled={!hasTokensToFetch}
+                >
+                    <Sparkles className="w-5 h-5 mr-2" />
+                    Add Associated Tokens
                 </Button>
             </div>
 
@@ -237,37 +452,59 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                 />
             )}
 
-            {
-                showClearConfirmModal && createPortal(
-                    <div className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center">
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
-                            <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
-                                Confirm Clear Cards
-                            </div>
-                            <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                                Are you sure you want to clear all cards? This action cannot be
-                                undone.
-                            </div>
-                            <div className="flex justify-center gap-4">
-                                <Button
-                                    color="failure"
-                                    className="bg-red-600 hover:bg-red-700 text-white"
-                                    onClick={confirmClear}
-                                >
-                                    Yes, I'm sure
-                                </Button>
-                                <Button
-                                    color="gray"
-                                    onClick={() => setShowClearConfirmModal(false)}
-                                >
-                                    No, cancel
-                                </Button>
-                            </div>
+            {/* No Tokens Found Modal */}
+            <Modal
+                show={showNoTokensModal}
+                onClose={() => setShowNoTokensModal(false)}
+                size="md"
+                dismissible
+            >
+                <ModalHeader>No Tokens Found</ModalHeader>
+                <ModalBody>
+                    <p className="text-base text-gray-500 dark:text-gray-400">
+                        No new tokens were found. Either your cards don&apos;t have associated tokens, or all tokens are already in your collection.
+                    </p>
+                    <div className="flex justify-end mt-4">
+                        <Button
+                            color="gray"
+                            onClick={() => setShowNoTokensModal(false)}
+                        >
+                            OK
+                        </Button>
+                    </div>
+                </ModalBody>
+            </Modal>
+
+            {/* Clear Confirm Modal */}
+            {showClearConfirmModal && createPortal(
+                <div className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-md w-96 text-center">
+                        <div className="mb-4 text-lg font-semibold text-gray-800 dark:text-white">
+                            Confirm Clear Cards
                         </div>
-                    </div>,
-                    document.body
-                )
-            }
+                        <div className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                            Are you sure you want to clear all cards? This action cannot be
+                            undone.
+                        </div>
+                        <div className="flex justify-center gap-4">
+                            <Button
+                                color="failure"
+                                className="bg-red-600 hover:bg-red-700 text-white"
+                                onClick={confirmClear}
+                            >
+                                Yes, I'm sure
+                            </Button>
+                            <Button
+                                color="gray"
+                                onClick={() => setShowClearConfirmModal(false)}
+                            >
+                                No, cancel
+                            </Button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 }

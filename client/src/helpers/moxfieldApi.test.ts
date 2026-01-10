@@ -19,7 +19,8 @@ function createDeckCard(
     quantity = 1,
     cn = "1",
     set = "ABC",
-    boardType = "mainboard"
+    boardType = "mainboard",
+    type_line = "Creature"
 ): MoxfieldDeckCard {
     return {
         quantity,
@@ -35,7 +36,7 @@ function createDeckCard(
             name,
             cn,
             layout: "normal",
-            type_line: "Creature",
+            type_line,
         },
     };
 }
@@ -204,6 +205,42 @@ describe("moxfieldApi", () => {
             const cards = extractCardsFromDeck(deck);
 
             expect(cards[0].scryfallId).toBe("scryfall-Test Card");
+        });
+
+        it("should detect token cards from type_line", () => {
+            const deck = createMockDeck({
+                mainboard: {
+                    "token1": createDeckCard("Treasure", 1, "1", "ABC", "mainboard", "Token Artifact — Treasure"),
+                },
+            });
+
+            const cards = extractCardsFromDeck(deck);
+
+            expect(cards[0].isToken).toBe(true);
+        });
+
+        it("should not mark regular cards as tokens", () => {
+            const deck = createMockDeck({
+                mainboard: {
+                    "card1": createDeckCard("Sol Ring", 1, "1", "ABC", "mainboard", "Artifact"),
+                },
+            });
+
+            const cards = extractCardsFromDeck(deck);
+
+            expect(cards[0].isToken).toBe(false);
+        });
+
+        it("should detect tokens with Token in type_line (case insensitive)", () => {
+            const deck = createMockDeck({
+                mainboard: {
+                    "token1": createDeckCard("Human Soldier", 1, "1", "ABC", "mainboard", "TOKEN CREATURE — Human Soldier"),
+                },
+            });
+
+            const cards = extractCardsFromDeck(deck);
+
+            expect(cards[0].isToken).toBe(true);
         });
 
         it("should handle empty deck", () => {

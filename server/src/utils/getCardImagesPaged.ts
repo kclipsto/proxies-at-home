@@ -78,6 +78,14 @@ export interface ScryfallApiCard {
   set?: string;
   collector_number?: string;
   lang?: string;
+  // Related cards/tokens from Scryfall
+  all_parts?: Array<{
+    id?: string;
+    component?: string;  // "token", "combo_piece", "meld_part", etc.
+    name?: string;
+    type_line?: string;
+    uri?: string;
+  }>;
 }
 
 interface ScryfallResponse {
@@ -216,8 +224,50 @@ export async function batchFetchCards(
 
   // Step 2: Fetch missing cards from Scryfall
   debugLog(`[batchFetchCards] ${results.size} from cache, ${cardsToFetch.length} to fetch from Scryfall`);
-  if (cardsToFetch.length > 0) {
-    const batches = chunkArray(cardsToFetch, 75);
+
+  // Split tokens from regular cards - tokens need individual search with type:token filter
+  // because the /cards/collection API doesn't support type filters
+  const tokenCards = cardsToFetch.filter(ci => ci.isToken);
+  const regularCards = cardsToFetch.filter(ci => !ci.isToken);
+
+  // Fetch tokens individually with type:token filter
+  if (tokenCards.length > 0) {
+    debugLog(`[batchFetchCards] Fetching ${tokenCards.length} tokens with type:token filter`);
+    for (const ci of tokenCards) {
+      try {
+        await delayScryfallRequest();
+        const q = `!"${ci.name}" type:token include:extras`;
+        debugLog(`[batchFetchCards] Token query: ${q}`);
+        const response = await AX.get<ScryfallResponse>('https://api.scryfall.com/cards/search', {
+          params: { q, unique: 'prints' }
+        });
+
+        if (response.data?.data?.[0]) {
+          const card = response.data.data[0];
+          if (!card.name) continue;
+          debugLog(`[batchFetchCards] Token found: "${card.name}" (${card.set}:${card.collector_number})`);
+
+          const key = card.name.toLowerCase();
+          results.set(key, card);
+
+          // Also store by original query name if different
+          const queryKey = ci.name.toLowerCase();
+          if (queryKey !== key) {
+            results.set(queryKey, card);
+          }
+
+          insertOrUpdateCard(card);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        debugLog(`[batchFetchCards] Token search failed for "${ci.name}": ${msg}`);
+      }
+    }
+  }
+
+  // Fetch regular cards via collection API (for speed)
+  if (regularCards.length > 0) {
+    const batches = chunkArray(regularCards, 75);
 
     for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
       const batch = batches[batchIdx];
@@ -418,7 +468,10 @@ export async function getCardsWithImagesForCardInfo(
   language = "en",
   fallbackToEnglish = true
 ): Promise<ScryfallApiCard[]> {
-  const { name, set, number } = cardInfo || {};
+  const { name, set, number, isToken } = cardInfo || {};
+
+  // Add type:token filter for explicit token searches
+  const typeFilter = isToken ? " type:token" : "";
 
   const executeStrategy = (queryTemplate: (lang: string) => string) => {
     return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
@@ -428,7 +481,7 @@ export async function getCardsWithImagesForCardInfo(
   // This takes priority regardless of unique parameter
   if (set && number) {
     const results = await executeStrategy((lang) =>
-      `set:${set} number:${escapeColon(number)} name:"${name}" include:extras unique:prints lang:${lang}`
+      `set:${set} number:${escapeColon(number)} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
     );
     if (results.length) return results;
     // If no results with exact match, fall through to broader search
@@ -437,7 +490,7 @@ export async function getCardsWithImagesForCardInfo(
   // 2) Set + name - when user specifies set but not number
   if (set && !number) {
     const results = await executeStrategy((lang) =>
-      `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
+      `set:${set} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
     );
     if (results.length) return results;
     // If no results with set filter, fall through to name-only
@@ -445,7 +498,7 @@ export async function getCardsWithImagesForCardInfo(
 
   // 3) Name-only search - get all arts/prints based on unique parameter
   const results = await executeStrategy((lang) =>
-    `!"${name}" include:extras unique:${unique} lang:${lang}`
+    `!"${name}"${typeFilter} include:extras unique:${unique} lang:${lang}`
   );
 
   // Score and sort results to prioritize best matches
@@ -499,8 +552,11 @@ export async function getCardDataForCardInfo(
   language = "en",
   fallbackToEnglish = true
 ): Promise<ScryfallApiCard | null> {
-  const { name, set, number } = cardInfo || {};
+  const { name, set, number, isToken } = cardInfo || {};
   if (!name) return null;
+
+  // Add type:token filter for explicit token searches
+  const tokenFilter = isToken ? " type:token" : "";
 
   const executeStrategy = (queryTemplate: (lang: string) => string) => {
     return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
@@ -533,7 +589,7 @@ export async function getCardDataForCardInfo(
   // DO NOT use include:extras here - it matches Art Series cards with cmc:0, type:"Card // Card"
   // We use unique:art to get different art options, and order:released to prefer newer cards
   const exactCards = await executeStrategy((lang) =>
-    `!"${name}" unique:art order:released lang:${lang}`
+    `!"${name}" unique:art order:released lang:${lang}${tokenFilter}`
   );
   const realExactCards = exactCards.filter(isRealCard);
   if (realExactCards.length) return realExactCards[0];
@@ -542,7 +598,7 @@ export async function getCardDataForCardInfo(
   // Uses name: operator which does partial/fuzzy matching
   // DO NOT use include:extras - it matches Art Series cards
   const fuzzyCards = await executeStrategy((lang) =>
-    `name:"${name}" unique:art order:released lang:${lang}`
+    `name:"${name}" unique:art order:released lang:${lang}${tokenFilter}`
   );
   const realFuzzyCards = fuzzyCards.filter(isRealCard);
   return realFuzzyCards[0] || null;

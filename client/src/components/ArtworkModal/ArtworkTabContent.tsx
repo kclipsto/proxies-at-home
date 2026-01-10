@@ -159,15 +159,7 @@ export function ArtworkTabContent({
                     </Button>
                 )}
 
-                {/* Desktop & Portrait: Cardback Button (Search button moved to footer) */}
-                <div className="flex gap-2 max-lg:landscape:hidden">
-                    {showCardbackButton && (
-                        <Button color="light" onClick={() => setShowCardbackLibrary(true)} title="Use a cardback from the library instead">
-                            <CardbackIcon />
-                            Use Cardback
-                        </Button>
-                    )}
-                </div>
+
                 <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                         checked={applyToAll}
@@ -214,6 +206,7 @@ export function ArtworkTabContent({
                                 onSelectCard={(_, url) => onSelectArtwork(url || '')}
                                 containerClassStyle="flex-1 h-full"
                                 isActive={artSource === 'scryfall'}
+                                cardTypeLine={modalCard.type_line}
                             />
                         </div>
                     )
@@ -240,6 +233,7 @@ export function ArtworkTabContent({
                                 onFilterCountChange={setActiveFilterCount}
                                 containerClassStyle="flex-1 h-full"
                                 isActive={artSource === 'mpc'}
+                                cardTypeLine={modalCard.type_line}
                             />
                         </div>
                     )
@@ -257,60 +251,60 @@ export function ArtworkTabContent({
                 )}
             </main>
 
-            {/* Footer - always visible, but toggle is hidden on mobile landscape (uses header sidebar) */}
-            {
-                !showCardbackLibraryGrid && (
-                    <footer className="flex-none p-4 bg-white dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 flex flex-col gap-2">
-                        {/* Source toggle - mobile portrait only (desktop has inline toggle, landscape has sidebar toggle) */}
-                        <div className="lg:hidden max-lg:landscape:hidden">
+            {/* Footer - always visible, but toggle and filter are hidden when in cardback library mode */}
+            <footer className="flex-none p-4 bg-white dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600 flex flex-col gap-2">
+                {/* Source toggle - mobile portrait only (desktop has inline toggle, landscape has sidebar toggle) */}
+                {!showCardbackLibraryGrid && (
+                    <div className="lg:hidden max-lg:landscape:hidden">
+                        <ArtSourceToggle
+                            value={artSource}
+                            onChange={setArtSource}
+                            className="w-full"
+                        />
+                    </div>
+                )}
+
+                {/* Second row: Controls (filter + action button) */}
+                <div className="flex gap-2 items-center">
+                    {/* Desktop Only: Toggle inline (Landscape uses sidebar) - hidden for cardback library */}
+                    {!showCardbackLibraryGrid && (
+                        <div className="hidden lg:block">
                             <ArtSourceToggle
                                 value={artSource}
                                 onChange={setArtSource}
-                                className="w-full"
+                                vertical={false}
                             />
                         </div>
+                    )}
 
-                        {/* Second row: Controls (filter + action button) */}
-                        <div className="flex gap-2 items-center">
-                            {/* Desktop Only: Toggle inline (Landscape uses sidebar) */}
-                            <div className="hidden lg:block">
-                                <ArtSourceToggle
-                                    value={artSource}
-                                    onChange={setArtSource}
-                                    vertical={false}
-                                />
+                    {/* Filter button - only for MPC, hidden for cardback library */}
+                    {!showCardbackLibraryGrid && artSource === 'mpc' && (
+                        <button
+                            onClick={() => onMpcFiltersCollapsedChange?.(!mpcFiltersCollapsed)}
+                            className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed
+                                ? 'text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                : 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                                }`}
+                            title={mpcFiltersCollapsed ? 'Show Filters' : 'Hide Filters'}
+                        >
+                            <div className="relative">
+                                <Filter className="w-5 h-5" strokeWidth={2.5} />
+                                {activeFilterCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-800">
+                                        {activeFilterCount}
+                                    </span>
+                                )}
                             </div>
+                        </button>
+                    )}
 
-                            {/* Filter button - only for MPC */}
-                            {artSource === 'mpc' && (
-                                <button
-                                    onClick={() => onMpcFiltersCollapsedChange?.(!mpcFiltersCollapsed)}
-                                    className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed
-                                        ? 'text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                        : 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/30'
-                                        }`}
-                                    title={mpcFiltersCollapsed ? 'Show Filters' : 'Hide Filters'}
-                                >
-                                    <div className="relative">
-                                        <Filter className="w-5 h-5" strokeWidth={2.5} />
-                                        {activeFilterCount > 0 && (
-                                            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-800">
-                                                {activeFilterCount}
-                                            </span>
-                                        )}
-                                    </div>
-                                </button>
-                            )}
-
-                            {/* Search Button - shows for all sources */}
-                            <Button className="flex-1" color="blue" onClick={onOpenSearch}>
-                                <Search className="w-4 h-4 mr-2" />
-                                Search for a different card...
-                            </Button>
-                        </div>
-                    </footer>
-                )
-            }
+                    {/* Search Button - shows for all sources including cardback library */}
+                    <Button className="flex-1" color="blue" onClick={onOpenSearch}>
+                        <Search className="w-4 h-4 mr-2" />
+                        Search for a different card...
+                    </Button>
+                </div>
+            </footer>
         </div >
     );
 }

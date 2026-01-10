@@ -239,6 +239,66 @@ class ProxxiedDexie extends Dexie {
       effectCache: '&key, cachedAt',
       mpcSearchCache: '&[query+cardType], cachedAt',
     });
+    // Version 12: Add needs_token index for efficient querying of cards requiring tokens
+    this.version(12).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+    });
+    // Version 13: Clean up self-referential tokens (e.g. Treasure needing Treasure)
+    // This fixes the infinite loop button state for existing cards
+    this.version(13).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+    }).upgrade(async tx => {
+      // Iterate only cards that flagged as needing tokens
+      // We use the index for performance since we just added it in v12, but we query it via filtering to avoid key errors
+      await tx.table('cards').filter(c => c.needs_token).modify(card => {
+        if (card.token_parts && card.token_parts.length > 0) {
+          // Filter out parts that have the same name as the card (case-insensitive)
+          const validParts = card.token_parts.filter((p: { name?: string }) =>
+            !p.name || p.name.toLowerCase() !== card.name.toLowerCase()
+          );
+
+          if (validParts.length !== card.token_parts.length) {
+            card.token_parts = validParts;
+            card.needs_token = validParts.length > 0;
+          }
+        }
+      });
+    });
+    // Version 14: Strict cleanup - Tokens should NOT have token_parts
+    // This removes spurious links (e.g. Treasure -> Smaug)
+    this.version(14).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+    }).upgrade(async tx => {
+      await tx.table('cards').filter(c => c.needs_token).modify(card => {
+        // If card itself is a token, clear dependencies
+        if (card.type_line && card.type_line.toLowerCase().includes('token')) {
+          card.token_parts = [];
+          card.needs_token = false;
+        }
+      });
+    });
+
   }
 }
 

@@ -222,6 +222,40 @@ describe("archidektApi", () => {
             const solRing = cards.find((c) => c.name === "Sol Ring");
             expect(solRing?.scryfallId).toBe("scryfall-uuid-1");
         });
+
+        it("should detect token cards from tokens category", () => {
+            const deckWithToken: ArchidektDeck = {
+                id: 123456,
+                name: "Test Deck",
+                description: "",
+                featured: "",
+                categories: [{ name: "Tokens", includedInDeck: true, includedInPrice: false, isPremier: false }],
+                cards: [
+                    {
+                        quantity: 1,
+                        categories: ["Tokens"],
+                        card: {
+                            id: 1,
+                            uid: "token-uuid",
+                            artist: "",
+                            collectorNumber: "1",
+                            edition: { editioncode: "T2X", editionname: "Tokens" },
+                            oracleCard: { id: 1, name: "Treasure", cmc: 0, colorIdentity: [], colors: [], layout: "token", types: ["Token", "Artifact"] },
+                        },
+                    },
+                ],
+            };
+
+            const cards = extractCardsFromDeck(deckWithToken);
+            expect(cards[0].isToken).toBe(true);
+        });
+
+        it("should not mark regular cards as tokens", () => {
+            const cards = extractCardsFromDeck(mockDeck);
+            const solRing = cards.find((c) => c.name === "Sol Ring");
+            // Sol Ring is in Commander category, not Tokens
+            expect(solRing?.isToken).toBe(false);
+        });
     });
 
     describe("getDeckSummary", () => {

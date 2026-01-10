@@ -108,7 +108,7 @@ export function FilterSortSection() {
             if (primaryType.length > 0) types.add(primaryType[0]);
             if (card.linkedFrontId || card.linkedBackId) hasDfc = true;
         }
-        const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Dual Faced"];
+        const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Token", "Dual Faced"];
         const sortedTypes = Array.from(types).sort((a, b) => typeOrder.indexOf(a) - typeOrder.indexOf(b));
         if (hasDfc) sortedTypes.push("Dual Faced");
         return sortedTypes;

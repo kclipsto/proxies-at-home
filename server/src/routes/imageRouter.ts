@@ -5,6 +5,7 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { getCardDataForCardInfo, batchFetchCards } from "../utils/getCardImagesPaged.js";
+import { extractTokenParts } from "../utils/tokenUtils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -176,7 +177,7 @@ function cachePathFromUrl(originalUrl: string) {
 
 // -------------------- API: batch enrich cards --------------------
 interface EnrichRequestBody {
-  cards: Array<{ name: string; set?: string; number?: string }>;
+  cards: Array<{ name: string; set?: string; number?: string; isToken?: boolean }>;
 }
 
 interface EnrichedCard {
@@ -263,7 +264,7 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
 
     // Step 2: Map results back to original cards
     const results: (EnrichedCard | null)[] = [];
-    const notFoundCards: Array<{ index: number; card: { name: string; set?: string; number?: string } }> = [];
+    const notFoundCards: Array<{ index: number; card: { name: string; set?: string; number?: string; isToken?: boolean } }> = [];
 
     // Helper to normalize names for loose matching (remove punctuation, lowercase)
     const normalizeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
@@ -319,6 +320,7 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
                 name: card.name,
                 set: card.set,
                 number: card.number,
+                isToken: card.isToken,
               });
               if (data) {
                 return extractEnrichedCard(card, data);
@@ -343,6 +345,81 @@ imageRouter.post("/enrich", async (req: Request<unknown, unknown, EnrichRequestB
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[Enrich] Error:", msg);
     return res.status(500).json({ error: "Failed to enrich cards." });
+  }
+});
+
+// -------------------- API: fetch token parts for cards --------------------
+interface TokensRequestBody {
+  cards: Array<{ name: string; set?: string; number?: string }>;
+}
+
+interface TokenPart {
+  id?: string;
+  name: string;
+  type_line?: string;
+  uri?: string;
+}
+
+interface CardTokenResponse {
+  name: string;
+  token_parts?: TokenPart[];
+}
+
+imageRouter.post("/tokens", async (req: Request<unknown, unknown, TokensRequestBody>, res: Response) => {
+  const cards = Array.isArray(req.body.cards) ? req.body.cards : [];
+
+  if (cards.length === 0) {
+    return res.json([]);
+  }
+
+  if (cards.length > 100) {
+    return res.status(400).json({ error: "Maximum 100 cards per batch" });
+  }
+
+  try {
+    // Use Collection API for fast batch lookup
+    const cardInfos = cards.map(c => ({
+      name: c.name,
+      set: c.set,
+      number: c.number,
+    }));
+
+    const batchResults = await batchFetchCards(cardInfos, "en");
+
+    // Map results back with token_parts
+    const results: CardTokenResponse[] = [];
+
+    for (const card of cards) {
+      // Try to find in batch results
+      let found: import("../utils/getCardImagesPaged.js").ScryfallApiCard | undefined;
+
+      // Try set+number first
+      if (card.set && card.number) {
+        const setNumKey = `${card.set.toLowerCase()}:${card.number}`;
+        found = batchResults.get(setNumKey);
+      }
+
+      // Fall back to name lookup
+      if (!found) {
+        found = batchResults.get(card.name.toLowerCase());
+      }
+
+      if (found) {
+        const tokenParts = extractTokenParts(found);
+        results.push({
+          name: found.name || card.name,
+          token_parts: tokenParts, // Return [] if empty
+        });
+      } else {
+        results.push({ name: card.name });
+      }
+    }
+
+    return res.json(results);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[Tokens] Error:", msg);
+    return res.status(500).json({ error: "Failed to fetch token data." });
   }
 });
 

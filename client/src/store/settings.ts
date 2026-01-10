@@ -137,6 +137,9 @@ type Store = {
   // MPC Autofill favorite sort (single value, for singleSelectMode)
   favoriteMpcSort: 'name' | 'dpi' | 'source' | null;
   setFavoriteMpcSort: (sort: 'name' | 'dpi' | 'source' | null) => void;
+  // Auto-import tokens
+  autoImportTokens: boolean;
+  setAutoImportTokens: (enabled: boolean) => void;
   // MPC Autofill fuzzy search toggle (default: true)
   mpcFuzzySearch: boolean;
   setMpcFuzzySearch: (enabled: boolean) => void;
@@ -220,6 +223,7 @@ const defaultPageSettings = {
   favoriteMpcTags: [] as string[],
   favoriteMpcDpi: null as number | null,
   favoriteMpcSort: null as 'name' | 'dpi' | 'source' | null,
+  autoImportTokens: false,
   mpcFuzzySearch: true, // Default to fuzzy search enabled
   // Preferred art source
   preferredArtSource: 'scryfall' as 'scryfall' | 'mpc',
@@ -555,6 +559,9 @@ export const useSettingsStore = create<Store>()(
       // MPC favorite sort (single value for singleSelectMode)
       favoriteMpcSort: null,
       setFavoriteMpcSort: (sort) => set({ favoriteMpcSort: sort }),
+      // Auto-import tokens
+      autoImportTokens: false,
+      setAutoImportTokens: (enabled) => set({ autoImportTokens: enabled }),
       // MPC fuzzy search toggle
       mpcFuzzySearch: true,
       setMpcFuzzySearch: (enabled) => set({ mpcFuzzySearch: enabled }),
@@ -601,6 +608,7 @@ export const useSettingsStore = create<Store>()(
           filterColors: currentState.filterColors,
           filterFeatures: currentState.filterFeatures,
           filterMatchType: currentState.filterMatchType,
+          autoImportTokens: currentState.autoImportTokens,
         };
 
         // Reset to defaults

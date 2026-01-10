@@ -125,11 +125,11 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
       INSERT OR REPLACE INTO cards (
         id, oracle_id, name, set_code, collector_number, lang,
         colors, mana_cost, cmc, type_line, rarity, layout,
-        image_uris, card_faces
+        image_uris, card_faces, all_parts
       ) VALUES (
         @id, @oracle_id, @name, @set_code, @collector_number, @lang,
         @colors, @mana_cost, @cmc, @type_line, @rarity, @layout,
-        @image_uris, @card_faces
+        @image_uris, @card_faces, @all_parts
       )
     `);
 
@@ -148,6 +148,7 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
             layout: card.layout || null,
             image_uris: card.image_uris ? JSON.stringify(card.image_uris) : null,
             card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
+            all_parts: card.all_parts ? JSON.stringify(card.all_parts) : null,
         };
         stmt.run(cardData);
     } catch (error) {
@@ -166,11 +167,11 @@ export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; 
     INSERT OR REPLACE INTO cards (
       id, oracle_id, name, set_code, collector_number, lang,
       colors, mana_cost, cmc, type_line, rarity, layout,
-      image_uris, card_faces
+      image_uris, card_faces, all_parts
     ) VALUES (
       @id, @oracle_id, @name, @set_code, @collector_number, @lang,
       @colors, @mana_cost, @cmc, @type_line, @rarity, @layout,
-      @image_uris, @card_faces
+      @image_uris, @card_faces, @all_parts
     )
   `);
 
@@ -199,6 +200,7 @@ export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; 
                 layout: card.layout || null,
                 image_uris: card.image_uris ? JSON.stringify(card.image_uris) : null,
                 card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
+                all_parts: card.all_parts ? JSON.stringify(card.all_parts) : null,
             });
 
             if (exists) {
@@ -268,6 +270,7 @@ interface CardRow {
     layout: string | null;
     image_uris: string | null;
     card_faces: string | null;
+    all_parts: string | null;
 }
 
 interface CardWithId extends ScryfallApiCard {
@@ -292,5 +295,6 @@ function rowToScryfallCard(row: CardRow): ScryfallApiCard {
         layout: row.layout || undefined,
         image_uris: row.image_uris ? JSON.parse(row.image_uris) : undefined,
         card_faces: row.card_faces ? JSON.parse(row.card_faces) : undefined,
+        all_parts: row.all_parts ? JSON.parse(row.all_parts) : undefined,
     };
 }

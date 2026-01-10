@@ -38,5 +38,31 @@ describe('cardUtils', () => {
             const result = normalizeCardInfos(undefined, ['Card 1'], '');
             expect(result).toEqual([{ name: 'Card 1', language: 'en' }]);
         });
+
+        it('should preserve isToken flag for token cards', () => {
+            const queries = [
+                { name: 'Treasure', isToken: true },
+                { name: 'Sol Ring', isToken: false },
+                { name: 'Lightning Bolt' }, // no isToken field
+            ];
+            const result = normalizeCardInfos(queries, undefined, 'en');
+            expect(result[0].isToken).toBe(true);
+            expect(result[1].isToken).toBe(false);
+            expect(result[2].isToken).toBeUndefined();
+        });
+
+        it('should preserve isToken with set and number', () => {
+            const queries = [
+                { name: 'Human Soldier', set: 'T2XM', number: '1', isToken: true },
+            ];
+            const result = normalizeCardInfos(queries, undefined, 'en');
+            expect(result[0]).toEqual({
+                name: 'Human Soldier',
+                set: 'T2XM',
+                number: '1',
+                language: 'en',
+                isToken: true,
+            });
+        });
     });
 });

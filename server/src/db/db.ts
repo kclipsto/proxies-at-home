@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'proxxied-cards.db');
 
 // Current schema version - increment when adding migrations
-const CURRENT_DB_VERSION = 2;
+const CURRENT_DB_VERSION = 4;
 
 // Migration definitions - each entry upgrades from (version-1) to (version)
 // Add new migrations to the end of this array
@@ -69,6 +69,32 @@ const migrations: Migration[] = [
         PRIMARY KEY (endpoint, query_hash)
       );`,
       'CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);',
+    ],
+  },
+  {
+    version: 3,
+    description: 'Add all_parts column for token data',
+    up: [
+      'ALTER TABLE cards ADD COLUMN all_parts TEXT;',
+    ],
+  },
+  {
+    version: 4,
+    description: 'Add card_types and token_names tables for type indexing',
+    up: [
+      // Table to map card IDs to their individual types (parsed from type_line)
+      `CREATE TABLE IF NOT EXISTS card_types (
+        card_id TEXT NOT NULL,
+        type TEXT NOT NULL COLLATE NOCASE,
+        is_token INTEGER DEFAULT 0,
+        PRIMARY KEY (card_id, type)
+      );`,
+      'CREATE INDEX IF NOT EXISTS idx_card_types_type ON card_types(type);',
+      'CREATE INDEX IF NOT EXISTS idx_card_types_is_token ON card_types(is_token);',
+      // Table to store unique token names for fast lookup
+      `CREATE TABLE IF NOT EXISTS token_names (
+        name TEXT PRIMARY KEY COLLATE NOCASE
+      );`,
     ],
   },
 ];
@@ -159,6 +185,7 @@ export function initDatabase(): Database.Database {
       -- Image data
       image_uris TEXT,                  -- JSON: { "png": "https://...", ... }
       card_faces TEXT,                  -- JSON array for DFCs
+      all_parts TEXT,                   -- JSON array for related cards/tokens
       
       -- Sync tracking
       updated_at TEXT                   -- ISO timestamp for incremental updates
@@ -176,6 +203,15 @@ export function initDatabase(): Database.Database {
       cached_at INTEGER NOT NULL,
       PRIMARY KEY (query, card_type)
     );
+
+    CREATE TABLE IF NOT EXISTS scryfall_cache (
+      endpoint TEXT NOT NULL,
+      query_hash TEXT NOT NULL,
+      response TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      PRIMARY KEY (endpoint, query_hash)
+    );
   `);
 
   // Create indexes (IF NOT EXISTS for idempotency)
@@ -185,6 +221,7 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_cards_set_number_lang ON cards(set_code, collector_number, lang);
     CREATE INDEX IF NOT EXISTS idx_cards_name_lang ON cards(name COLLATE NOCASE, lang);
     CREATE INDEX IF NOT EXISTS idx_mpc_cache_time ON mpc_search_cache(cached_at);
+    CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);
   `);
 
   // Run any pending migrations

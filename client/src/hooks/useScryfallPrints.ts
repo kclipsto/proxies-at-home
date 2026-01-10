@@ -124,13 +124,17 @@ export function useScryfallPrints(
                     setHasSearched(true);
                 } else {
                     console.error('[ScryfallPrints] Error fetching prints:', response.status);
+                    // Cache empty result and mark as searched so UI shows "no results" message
+                    globalPrintsCache[cacheKey] = [];
                     setPrints([]);
+                    setHasSearched(true);
                 }
 
             } catch (err) {
                 if (err instanceof Error && err.name !== 'AbortError') {
                     if (cacheKey) globalPrintsCache[cacheKey] = [];
                     setPrints([]);
+                    setHasSearched(true);
                 }
             } finally {
                 setIsLoading(false);

@@ -146,6 +146,53 @@ describe('DecklistHelper', () => {
       expect(decklist).toContain('2x Sol Ring (CMM) 432');
       expect(decklist).toContain('1x Counterspell (A25)');
     });
+
+    it('should group token cards separately', () => {
+      const cardsWithToken: CardOption[] = [
+        { uuid: '1', name: 'Sol Ring', order: 1, isUserUpload: false },
+        { uuid: '2', name: 'Lightning Bolt', order: 2, isUserUpload: false },
+        { uuid: '3', name: 'Treasure', order: 3, isUserUpload: false, type_line: 'Token Artifact — Treasure' },
+      ];
+
+      const decklist = buildDecklist(cardsWithToken);
+
+      // Tokens should be in a separate section
+      expect(decklist).toContain('// Tokens');
+    });
+
+    it('should prefix token lines with t:', () => {
+      const cardsWithToken: CardOption[] = [
+        { uuid: '1', name: 'Sol Ring', order: 1, isUserUpload: false },
+        { uuid: '2', name: 'Treasure', order: 2, isUserUpload: false, type_line: 'Token Artifact — Treasure' },
+      ];
+
+      const decklist = buildDecklist(cardsWithToken);
+
+      // Token should have t: prefix
+      expect(decklist).toContain('1x t:Treasure');
+    });
+
+    it('should detect tokens from type_line containing Token', () => {
+      const cardsWithTokens: CardOption[] = [
+        { uuid: '1', name: 'Blood', order: 1, isUserUpload: false, type_line: 'Token Artifact — Blood' },
+        { uuid: '2', name: 'Clue', order: 2, isUserUpload: false, type_line: 'Token Artifact — Clue' },
+      ];
+
+      const decklist = buildDecklist(cardsWithTokens);
+
+      expect(decklist).toContain('1x t:Blood');
+      expect(decklist).toContain('1x t:Clue');
+    });
+
+    it('should detect tokens from set codes starting with t', () => {
+      const cardsWithTokens: CardOption[] = [
+        { uuid: '1', name: 'Human Soldier', order: 1, isUserUpload: false, set: 't2x2' },
+      ];
+
+      const decklist = buildDecklist(cardsWithTokens);
+
+      expect(decklist).toContain('1x t:Human Soldier');
+    });
   });
 
   describe('downloadDecklist', () => {

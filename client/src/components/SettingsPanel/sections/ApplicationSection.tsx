@@ -105,6 +105,20 @@ export function ApplicationSection() {
                 </Label>
             </div>
 
+            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 -ml-2">
+                <Checkbox
+                    id="auto-import-tokens"
+                    checked={useSettingsStore((state) => state.autoImportTokens)}
+                    onChange={(e) => useSettingsStore.getState().setAutoImportTokens(e.target.checked)}
+                />
+                <Label htmlFor="auto-import-tokens" className="flex-1 cursor-pointer">
+                    Auto-Import Associated Tokens
+                </Label>
+                <AutoTooltip content="Automatically fetch associated tokens after importing cards">
+                    <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 cursor-pointer" />
+                </AutoTooltip>
+            </div>
+
             <Button
                 fullSized
                 onClick={resetSettings}

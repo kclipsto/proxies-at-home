@@ -11,6 +11,7 @@ export function hasIncompleteTagSyntax(query: string): boolean {
 export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
   let s = input.trim();
   let mpcIdentifier: string | undefined;
+  let isToken: boolean | undefined;
 
   // Extract [mpc:xxx] notation first
   const mpcMatch = s.match(/\[mpc:([^\]]+)\]/);
@@ -19,7 +20,42 @@ export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
     s = s.replace(/\[mpc:[^\]]+\]/, '').trim();
   }
 
-  s = s.replace(/^\s*\d+\s*x?\s+/i, "");
+  // Extract quantity BEFORE t: prefix detection
+  // Supports: "4x t:treasure", "2 t:human soldier", etc.
+  const qtyMatch = s.match(/^\s*(\d+)\s*x?\s+(.+)$/i);
+  if (qtyMatch) {
+    quantity = parseInt(qtyMatch[1], 10);
+    s = qtyMatch[2].trim();
+  }
+
+  // Detect t: prefix for explicit token cards
+  // Supports multiple formats:
+  // - t:treasure
+  // - t:token human soldier  
+  // - t:"human soldier" or t:'human soldier' (quoted)
+  // - t:human_soldier (underscores)
+
+  // Format 1: Quoted names - t:"name" or t:'name'
+  const quotedTokenMatch = s.match(/^t:["']([^"']+)["']$/i);
+  if (quotedTokenMatch) {
+    isToken = true;
+    s = quotedTokenMatch[1].trim();
+  }
+  // Format 2: Underscore names - t:human_soldier
+  else if (/^t:[a-z0-9]+_[a-z0-9_]+$/i.test(s)) {
+    isToken = true;
+    s = s.slice(2).replace(/_/g, ' ').trim();
+  }
+  // Format 3: t:token name or t:name
+  else {
+    const tokenPrefixMatch = s.match(/^t:(?:token\s+)?(.+)$/i);
+    if (tokenPrefixMatch) {
+      isToken = true;
+      s = tokenPrefixMatch[1].trim();
+    }
+  }
+
+
 
   const caretTail = /\s*\^[^^]*\^\s*$/;
   const bracketTail = /\s*\[[^\]]*]\s*$/;
@@ -125,7 +161,7 @@ export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
     }
   }
 
-  return { name: s, quantity, set: setCode, number, mpcIdentifier };
+  return { name: s, quantity, set: setCode, number, mpcIdentifier, isToken };
 }
 
 export function parseDeckToInfos(deckText: string): CardInfo[] {

@@ -67,9 +67,24 @@ export async function undoableDeleteCardsBatch(uuids: string[]): Promise<void> {
     const validCards = cards.filter((c): c is NonNullable<typeof c> => c != null);
     if (validCards.length === 0) return;
 
-    // Capture image data for each card
-    const cardImageData: Map<string, { card: typeof validCards[0]; imageData?: Image }> = new Map();
+    const allCardsToDelete = new Map<string, CardOption>();
+    const idsToDelete = new Set(uuids);
+
     for (const card of validCards) {
+        allCardsToDelete.set(card.uuid, card);
+        // Cascade: If front has back, delete back too
+        if (card.linkedBackId && !idsToDelete.has(card.linkedBackId)) {
+            const backCard = await db.cards.get(card.linkedBackId);
+            if (backCard) {
+                allCardsToDelete.set(backCard.uuid, backCard);
+                idsToDelete.add(backCard.uuid);
+            }
+        }
+    }
+
+    // Capture image data for UNDO (restoration)
+    const cardImageData: Map<string, { card: CardOption; imageData?: Image }> = new Map();
+    for (const card of allCardsToDelete.values()) {
         let imageData: Image | undefined;
         if (card.imageId) {
             imageData = await db.images.get(card.imageId);
@@ -77,10 +92,55 @@ export async function undoableDeleteCardsBatch(uuids: string[]): Promise<void> {
         cardImageData.set(card.uuid, { card, imageData });
     }
 
-    // Perform all deletions
-    for (const uuid of uuids) {
-        await deleteCard(uuid);
-    }
+    // Perform bulk deletion
+    await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+        // 1. Clear links from cards that refer to these (e.g. if deleting a back, update the front)
+        const backCards = Array.from(allCardsToDelete.values()).filter(c => c.linkedFrontId);
+        for (const back of backCards) {
+            if (back.linkedFrontId && !idsToDelete.has(back.linkedFrontId)) {
+                await db.cards.update(back.linkedFrontId, { linkedBackId: undefined });
+            }
+        }
+
+        // 2. Calculate image ref decrements
+        const imageRefDecrements = new Map<string, number>();
+        for (const card of allCardsToDelete.values()) {
+            if (card.imageId && !isCardbackId(card.imageId)) {
+                imageRefDecrements.set(card.imageId, (imageRefDecrements.get(card.imageId) || 0) + 1);
+            }
+        }
+
+        // 3. Delete cards
+        await db.cards.bulkDelete(Array.from(idsToDelete));
+
+        // 4. Update image refs
+        if (imageRefDecrements.size > 0) {
+            const imageIds = Array.from(imageRefDecrements.keys());
+            const images = await db.images.bulkGet(imageIds);
+            const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+            const imagesToDelete: string[] = [];
+
+            for (let i = 0; i < imageIds.length; i++) {
+                const image = images[i];
+                if (image) {
+                    const decrement = imageRefDecrements.get(imageIds[i]) || 0;
+                    const newRefCount = image.refCount - decrement;
+                    if (newRefCount > 0) {
+                        imageUpdates.push({ key: imageIds[i], changes: { refCount: newRefCount } });
+                    } else {
+                        imagesToDelete.push(imageIds[i]);
+                    }
+                }
+            }
+
+            if (imageUpdates.length > 0) {
+                await db.images.bulkUpdate(imageUpdates);
+            }
+            if (imagesToDelete.length > 0) {
+                await db.images.bulkDelete(imagesToDelete);
+            }
+        }
+    });
 
     // Build description
     const description = validCards.length === 1
@@ -93,18 +153,91 @@ export async function undoableDeleteCardsBatch(uuids: string[]): Promise<void> {
         description,
         undo: async () => {
             // Restore all cards
-            for (const [, { card, imageData }] of cardImageData) {
-                await db.cards.add(card);
-                if (card.imageId && imageData) {
-                    await modifyImageRefCount(card.imageId, 1, imageData);
+            const cardsToRestore = Array.from(cardImageData.values()).map(x => x.card);
+
+            // We need to restore image refs
+            const imageRefIncrements = new Map<string, { count: number, data?: Image }>();
+
+            for (const { card, imageData } of cardImageData.values()) {
+                if (card.imageId && !isCardbackId(card.imageId)) {
+                    const entry = imageRefIncrements.get(card.imageId) || { count: 0, data: imageData };
+                    entry.count++;
+                    imageRefIncrements.set(card.imageId, entry);
                 }
             }
+
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+                await db.cards.bulkAdd(cardsToRestore);
+
+                // Restore images (add back if deleted, increment if exists)
+                const imageIds = Array.from(imageRefIncrements.keys());
+                const existingImages = await db.images.bulkGet(imageIds);
+
+                const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+                const imagesToAdd: Image[] = [];
+
+                for (let i = 0; i < imageIds.length; i++) {
+                    const id = imageIds[i];
+                    const existing = existingImages[i];
+                    const { count, data } = imageRefIncrements.get(id)!;
+
+                    if (existing) {
+                        imageUpdates.push({ key: id, changes: { refCount: existing.refCount + count } });
+                    } else if (data) {
+                        // Restore deleted image
+                        imagesToAdd.push({ ...data, refCount: count });
+                    }
+                }
+
+                if (imageUpdates.length > 0) await db.images.bulkUpdate(imageUpdates);
+                if (imagesToAdd.length > 0) await db.images.bulkAdd(imagesToAdd);
+            });
         },
         redo: async () => {
-            // Re-delete all cards
-            for (const uuid of uuids) {
-                await deleteCard(uuid);
-            }
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+                // Re-calculate image ref decrements from the captured 'cardImageData' to be robust
+                const imageRefDecrements = new Map<string, number>();
+                for (const { card } of cardImageData.values()) {
+                    if (card.imageId && !isCardbackId(card.imageId)) {
+                        imageRefDecrements.set(card.imageId, (imageRefDecrements.get(card.imageId) || 0) + 1);
+                    }
+                }
+
+                // Clear back links
+                const backCards = Array.from(allCardsToDelete.values()).filter(c => c.linkedFrontId);
+                for (const back of backCards) {
+                    // Check if front is still there and not in our delete list (it shouldn't be in delete list if it wasn't before)
+                    const front = await db.cards.get(back.linkedFrontId!);
+                    if (front && !idsToDelete.has(front.uuid)) {
+                        await db.cards.update(front.uuid, { linkedBackId: undefined });
+                    }
+                }
+
+                await db.cards.bulkDelete(Array.from(idsToDelete));
+
+                // Update images
+                if (imageRefDecrements.size > 0) {
+                    const imageIds = Array.from(imageRefDecrements.keys());
+                    const images = await db.images.bulkGet(imageIds);
+                    const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+                    const imagesToDelete: string[] = [];
+
+                    for (let i = 0; i < imageIds.length; i++) {
+                        const image = images[i];
+                        if (image) {
+                            const decrement = imageRefDecrements.get(imageIds[i]) || 0;
+                            const newRefCount = image.refCount - decrement;
+                            if (newRefCount > 0) {
+                                imageUpdates.push({ key: imageIds[i], changes: { refCount: newRefCount } });
+                            } else {
+                                imagesToDelete.push(imageIds[i]);
+                            }
+                        }
+                    }
+                    if (imageUpdates.length > 0) await db.images.bulkUpdate(imageUpdates);
+                    if (imagesToDelete.length > 0) await db.images.bulkDelete(imagesToDelete);
+                }
+            });
         },
     });
 }
@@ -158,57 +291,164 @@ export async function undoableDuplicateCard(uuid: string): Promise<string | unde
 export async function undoableDuplicateCardsBatch(uuids: string[]): Promise<string[]> {
     if (uuids.length === 0) return [];
 
-    // Get all cards before duplication
-    const cardsBefore = await db.cards.toArray();
-    const uuidsBefore = new Set(cardsBefore.map((c) => c.uuid));
+    let newUuidsResult: string[] = [];
 
-    // Get original card names for description
-    const originalCards = await db.cards.bulkGet(uuids);
-    const validOriginals = originalCards.filter((c): c is NonNullable<typeof c> => c != null);
-    if (validOriginals.length === 0) return [];
+    await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+        const validUuids = new Set(uuids);
+        const allCards = await db.cards.orderBy("order").toArray();
 
-    // Perform all duplications
-    for (const uuid of uuids) {
-        await duplicateCard(uuid);
-    }
+        // Filter to find the cards we want to duplicate, keeping the order from allCards
+        const cardsToDuplicate = allCards.filter(c => validUuids.has(c.uuid));
 
-    // Find all new card UUIDs
-    const cardsAfter = await db.cards.toArray();
-    const newCards = cardsAfter.filter((c) => !uuidsBefore.has(c.uuid));
-    const newUuids = newCards.map((c) => c.uuid);
+        if (cardsToDuplicate.length === 0) return;
 
-    if (newUuids.length === 0) {
-        console.warn("[undoableDuplicateCardsBatch] No new cards found after duplication");
-        return [];
-    }
+        const imageRefIncrements = new Map<string, number>();
+        const insertions: Map<string, CardOption[]> = new Map();
 
-    // Build description
-    const description = validOriginals.length === 1
-        ? `Duplicate "${validOriginals[0].name}"`
-        : `Duplicate ${validOriginals.length} cards`;
+        // Prepare new cards
+        for (const original of cardsToDuplicate) {
+            const newFrontUuid = crypto.randomUUID();
+            let newBackUuid: string | undefined;
+            let newBackCard: CardOption | undefined;
 
-    // Capture uuids for undo/redo closures
-    const originalUuids = [...uuids];
+            // Handle linked back
+            if (original.linkedBackId) {
+                const backCard = await db.cards.get(original.linkedBackId);
+                if (backCard) {
+                    newBackUuid = crypto.randomUUID();
+                    newBackCard = {
+                        ...backCard,
+                        uuid: newBackUuid,
+                        order: 0, // placeholder
+                        linkedFrontId: newFrontUuid,
+                        linkedBackId: undefined,
+                    };
 
-    // Record the batch action for undo
+                    if (backCard.imageId && !isCardbackId(backCard.imageId)) {
+                        imageRefIncrements.set(backCard.imageId, (imageRefIncrements.get(backCard.imageId) || 0) + 1);
+                    }
+                }
+            }
+
+            const newFrontCard: CardOption = {
+                ...original,
+                uuid: newFrontUuid,
+                order: 0, // placeholder
+                linkedBackId: newBackUuid,
+                linkedFrontId: undefined,
+            };
+
+            if (original.imageId && !isCardbackId(original.imageId)) {
+                imageRefIncrements.set(original.imageId, (imageRefIncrements.get(original.imageId) || 0) + 1);
+            }
+
+            const list = insertions.get(original.uuid) || [];
+            list.push(newFrontCard);
+            if (newBackCard) list.push(newBackCard);
+            insertions.set(original.uuid, list);
+        }
+
+        // Reconstruct list and assign orders
+        const combinedList: CardOption[] = [];
+        const newUuidsGenerated: string[] = [];
+
+        for (const card of allCards) {
+            combinedList.push(card);
+            const toInsert = insertions.get(card.uuid);
+            if (toInsert) {
+                combinedList.push(...toInsert);
+                toInsert.forEach(c => newUuidsGenerated.push(c.uuid));
+            }
+        }
+
+        newUuidsResult = newUuidsGenerated;
+
+        // Assign integer orders
+        const allUpdates: CardOption[] = combinedList.map((c, i) => ({
+            ...c,
+            order: (i + 1) * 10
+        }));
+
+        // Bulk put (updates existing, adds new)
+        await db.cards.bulkPut(allUpdates);
+
+        // Update image refs
+        if (imageRefIncrements.size > 0) {
+            const imageIds = Array.from(imageRefIncrements.keys());
+            const images = await db.images.bulkGet(imageIds);
+            const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+
+            for (let i = 0; i < imageIds.length; i++) {
+                const image = images[i];
+                if (image) {
+                    const increment = imageRefIncrements.get(imageIds[i]) || 0;
+                    imageUpdates.push({ key: imageIds[i], changes: { refCount: image.refCount + increment } });
+                }
+            }
+
+            if (imageUpdates.length > 0) {
+                await db.images.bulkUpdate(imageUpdates);
+            }
+        }
+    });
+
+    if (newUuidsResult.length === 0) return [];
+
+    const originalCount = uuids.length;
+    const description = originalCount === 1
+        ? "Duplicate 1 card"
+        : `Duplicate ${originalCount} cards`;
+    const uuidsOfNewCards = [...newUuidsResult];
+    const sourceUuids = [...uuids];
+
     useUndoRedoStore.getState().pushAction({
         type: "DUPLICATE_CARDS_BATCH",
         description,
         undo: async () => {
-            // Delete all duplicated cards
-            for (const newUuid of newUuids) {
-                await deleteCard(newUuid);
-            }
+            await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+                const cardsToDelete = await db.cards.bulkGet(uuidsOfNewCards);
+                const validCards = cardsToDelete.filter((c): c is CardOption => !!c);
+
+                const imageRefDecrements = new Map<string, number>();
+                for (const card of validCards) {
+                    if (card.imageId && !isCardbackId(card.imageId)) {
+                        imageRefDecrements.set(card.imageId, (imageRefDecrements.get(card.imageId) || 0) + 1);
+                    }
+                }
+
+                await db.cards.bulkDelete(uuidsOfNewCards);
+
+                if (imageRefDecrements.size > 0) {
+                    const imageIds = Array.from(imageRefDecrements.keys());
+                    const images = await db.images.bulkGet(imageIds);
+                    const imageUpdates = [];
+                    const imagesToDelete = [];
+
+                    for (let i = 0; i < imageIds.length; i++) {
+                        const img = images[i];
+                        if (img) {
+                            const dec = imageRefDecrements.get(imageIds[i]) || 0;
+                            const newRef = img.refCount - dec;
+                            if (newRef > 0) imageUpdates.push({ key: imageIds[i], changes: { refCount: newRef } });
+                            else imagesToDelete.push(imageIds[i]);
+                        }
+                    }
+                    if (imageUpdates.length > 0) await db.images.bulkUpdate(imageUpdates);
+                    if (imagesToDelete.length > 0) await db.images.bulkDelete(imagesToDelete);
+                }
+
+                await rebalanceCardOrders();
+            });
+
+            await rebalanceCardOrders();
         },
         redo: async () => {
-            // Re-duplicate all original cards
-            for (const uuid of originalUuids) {
-                await duplicateCard(uuid);
-            }
+            // Re-run the bulk duplicate
+            await undoableDuplicateCardsBatch(sourceUuids);
         },
     });
 
-    return newUuids;
+    return newUuidsResult;
 }
 
 /**

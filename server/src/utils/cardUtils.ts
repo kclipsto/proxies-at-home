@@ -18,6 +18,7 @@ export function normalizeCardInfos(
             set: q.set,
             number: q.number,
             language: (q.language || defaultLanguage || "en").toLowerCase(),
+            isToken: q.isToken, // Preserve token flag for type:token search filter
         }));
     }
     if (Array.isArray(cardNames)) {
