@@ -266,24 +266,64 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                 const setOnlyKey = card.set ? cardKey({ name: card.name, set: card.set }) : null;
                 const nameOnlyKey = cardKey({ name: card.name });
 
-                const entry = quantityByKey.get(exactKey)
+                let entry = quantityByKey.get(exactKey)
                     || (setOnlyKey && quantityByKey.get(setOnlyKey))
                     || quantityByKey.get(nameOnlyKey);
-
-                const quantity = entry?.quantity ?? 1;
-                const imageId = await addRemoteImage(card.imageUrls ?? [], quantity, card.prints);
 
                 // DFC handling: check for back face
                 const hasDfcBack = card.card_faces && card.card_faces.length > 1;
                 let backImageId: string | undefined;
                 let backFaceName: string | undefined;
+                let frontImageUrl: string | undefined;
+                let isBackFaceImport = false;
+
+                // If lookup failed and this is a DFC, try looking up by back face name
+                // (user may have imported the back face name which doesn't match front face)
+                if (!entry && hasDfcBack) {
+                    const backFaceName = card.card_faces![1].name;
+                    if (backFaceName) {
+                        const backFaceKey = cardKey({ name: backFaceName });
+                        entry = quantityByKey.get(backFaceKey);
+                        if (entry) {
+                            // User imported the back face name
+                            isBackFaceImport = true;
+                        }
+                    }
+                }
+
+                // Also detect back-face import if entry was found via front face key
+                // but original query matches back face
+                if (entry && !isBackFaceImport && hasDfcBack) {
+                    const originalQueryName = entry.info.name?.toLowerCase().trim() ?? '';
+                    const backName = card.card_faces![1].name?.toLowerCase().trim();
+                    if (backName && backName === originalQueryName) {
+                        isBackFaceImport = true;
+                    }
+                }
+
+                const quantity = entry?.quantity ?? 1;
 
                 if (hasDfcBack) {
+                    const frontFace = card.card_faces![0];
                     const backFace = card.card_faces![1];
                     backFaceName = backFace.name;
+                    frontImageUrl = frontFace.imageUrl;
+
+                    // Always get back face image for the linked back card
                     if (backFace.imageUrl) {
                         backImageId = await addRemoteImage([backFace.imageUrl], quantity);
                     }
+                }
+
+                // For back-face imports: use front face art for the main card
+                // For front-face imports: use imageUrls[0] (already the front face)
+                let mainImageId: string | undefined;
+                if (isBackFaceImport && frontImageUrl) {
+                    // User imported back face name - fetch front face art for the card
+                    mainImageId = await addRemoteImage([frontImageUrl], quantity, card.prints);
+                } else {
+                    // Normal case - use the first image (front face)
+                    mainImageId = await addRemoteImage(card.imageUrls ?? [], quantity, card.prints);
                 }
 
                 const category = entry?.info.category;
@@ -295,7 +335,9 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                         number: card.number,
                         lang: card.lang,
                         isUserUpload: false,
-                        imageId,
+                        imageId: mainImageId,
+                        // If user imported back face name, flip the card to show back face
+                        isFlipped: isBackFaceImport || undefined,
                         colors: card.colors,
                         cmc: card.cmc,
                         type_line: card.type_line,

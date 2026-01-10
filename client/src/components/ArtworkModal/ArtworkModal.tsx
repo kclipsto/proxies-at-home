@@ -294,9 +294,12 @@ export function ArtworkModal() {
                 await db.cards.update(targetCard.uuid, { needsEnrichment: true });
             }
 
-            // Sync store
-            const updated = await db.cards.get(targetCard.uuid);
-            if (updated) useArtworkModalStore.getState().updateCard(updated);
+            // Sync store only if we updated the front card (not the linkedBackCard)
+            // When selectedFace === 'back', targetCard is linkedBackCard, not modalCard
+            if (selectedFace === 'front' || !linkedBackCard) {
+                const updated = await db.cards.get(targetCard.uuid);
+                if (updated) useArtworkModalStore.getState().updateCard(updated);
+            }
         }
 
         // Auto-flip card to show the face that was just edited
@@ -312,7 +315,7 @@ export function ArtworkModal() {
         });
         // Auto-dismiss after 2 seconds
         setTimeout(() => useToastStore.getState().removeToast(toastId), 2000);
-    }, [activeCard, modalCard, selectedFace, applyToAll]);
+    }, [activeCard, modalCard, selectedFace, applyToAll, linkedBackCard]);
 
     async function handleSelectArtwork(newImageUrl: string) {
         if (!activeCard) return;
@@ -768,7 +771,7 @@ export function ArtworkModal() {
                         <div className="hidden lg:block max-lg:portrait:block">
                             {/* Flex container for TabBar and Close Button (Mobile Portrait) */}
                             <div className="flex items-start justify-between">
-                                <div className="flex-1 overflow-x-auto">
+                                <div className="flex-1 overflow-hidden">
                                     <TabBar
                                         tabs={[
                                             { id: 'front' as const, label: tabLabels.front },

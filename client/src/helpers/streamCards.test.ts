@@ -183,4 +183,145 @@ describe('streamCards', () => {
             expect.anything()
         );
     });
+
+    describe('DFC back-face imports', () => {
+        it('should use front face art when importing back face name', async () => {
+            const options: any = {
+                cardInfos: [{ name: 'Insectile Aberration' }], // Back face of Delver of Secrets
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-1', name: 'Delver of Secrets' }]);
+            // Order: back face art is fetched first, then front face art for back-face imports
+            (addRemoteImage as any).mockResolvedValueOnce('back-img-id').mockResolvedValueOnce('front-img-id');
+
+            // Simulate SSE flow with a DFC response
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Delver of Secrets', // Server returns canonical front face name
+                        imageUrls: ['http://back-img'], // Server prioritizes requested face
+                        set: 'ISD',
+                        number: '51',
+                        lang: 'en',
+                        card_faces: [
+                            { name: 'Delver of Secrets', imageUrl: 'http://front-img' },
+                            { name: 'Insectile Aberration', imageUrl: 'http://back-img' }
+                        ]
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // First call: back face art for linked back card
+            expect(addRemoteImage).toHaveBeenNthCalledWith(1, ['http://back-img'], 1);
+            // Second call: front face art for the main card (since back face name was imported)
+            expect(addRemoteImage).toHaveBeenNthCalledWith(2, ['http://front-img'], 1, undefined);
+            // Should have passed isFlipped: true
+            expect(undoableAddCards).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        name: 'Delver of Secrets',
+                        imageId: 'front-img-id',
+                        isFlipped: true
+                    })
+                ]),
+                expect.anything()
+            );
+        });
+
+        it('should use normal image when importing front face name', async () => {
+            const options: any = {
+                cardInfos: [{ name: 'Delver of Secrets' }], // Front face
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-1', name: 'Delver of Secrets' }]);
+            // Order: back face art is fetched first, then main image
+            (addRemoteImage as any).mockResolvedValueOnce('back-img-id').mockResolvedValueOnce('front-img-id');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Delver of Secrets',
+                        imageUrls: ['http://front-img'],
+                        set: 'ISD',
+                        number: '51',
+                        lang: 'en',
+                        card_faces: [
+                            { name: 'Delver of Secrets', imageUrl: 'http://front-img' },
+                            { name: 'Insectile Aberration', imageUrl: 'http://back-img' }
+                        ]
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should NOT have isFlipped for front face imports
+            expect(undoableAddCards).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        name: 'Delver of Secrets',
+                        isFlipped: undefined
+                    })
+                ]),
+                expect.anything()
+            );
+        });
+
+        it('should create linked back card with back face art', async () => {
+            const options: any = {
+                cardInfos: [{ name: 'Delver of Secrets' }],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            const createLinkedBackCardsBulk = await import('./dbUtils').then(m => m.createLinkedBackCardsBulk);
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-front', name: 'Delver of Secrets' }]);
+            // Order: back face art is fetched first, then main image
+            (addRemoteImage as any).mockResolvedValueOnce('back-img-id').mockResolvedValueOnce('front-img-id');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Delver of Secrets',
+                        imageUrls: ['http://front-img'],
+                        set: 'ISD',
+                        number: '51',
+                        lang: 'en',
+                        card_faces: [
+                            { name: 'Delver of Secrets', imageUrl: 'http://front-img' },
+                            { name: 'Insectile Aberration', imageUrl: 'http://back-img' }
+                        ]
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should create linked back cards
+            expect(createLinkedBackCardsBulk).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        frontUuid: 'uuid-front',
+                        backImageId: 'back-img-id',
+                        backName: 'Insectile Aberration'
+                    })
+                ])
+            );
+        });
+    });
 });

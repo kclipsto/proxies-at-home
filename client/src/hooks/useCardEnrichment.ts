@@ -233,10 +233,13 @@ export function useCardEnrichment() {
                         }
                     });
 
-                    // Perform MPC searches
+                    // Perform DFC art lookups (respecting preferred source)
                     await Promise.all(batch.map(async (card) => {
                         const data = responseMap.get(card.uuid);
                         if (!data) return;
+
+                        // Skip DFC art processing for user uploads - preserve their custom art
+                        if (card.isUserUpload) return;
 
                         if (data.card_faces && data.card_faces.length >= 2 && data.layout && ['transform', 'modal_dfc', 'mdfc', 'double_faced_token', 'flip', 'adventure'].includes(data.layout)) {
                             const front = data.card_faces[0];
@@ -254,50 +257,67 @@ export function useCardEnrichment() {
                             // We need to fetch the FRONT face art.
                             const isBackFaceImport = card.name.trim().toLowerCase() === back.name.trim().toLowerCase();
 
-                            // Process Back Art
+                            // Get preferred art source
+                            const settings = useSettingsStore.getState();
+                            const preferredSource = settings.preferredArtSource;
+
+                            // Process Back Art (for front-face imports that need back art)
                             if (needsBackArt) {
                                 try {
+                                    if (preferredSource === 'mpc') {
+                                        // MPC art fetching
+                                        const mpcResults = await searchMpcAutofill(back.name);
+                                        if (mpcResults && mpcResults.length > 0) {
+                                            const favSources = new Set(settings.favoriteMpcSources || []);
+                                            const favTags = new Set(settings.favoriteMpcTags || []);
+                                            const bestBack = pickBestMpcCard(mpcResults, favSources, favTags);
 
-                                    const mpcResults = await searchMpcAutofill(back.name);
-                                    if (mpcResults && mpcResults.length > 0) {
-                                        const settings = useSettingsStore.getState();
-                                        const favSources = new Set(settings.favoriteMpcSources || []);
-                                        const favTags = new Set(settings.favoriteMpcTags || []);
-                                        const bestBack = pickBestMpcCard(mpcResults, favSources, favTags);
-
-                                        if (bestBack) {
-                                            const backUrl = getMpcAutofillImageUrl(bestBack.identifier);
-                                            // this creates its own transaction on images table, safe to parallelize
-                                            const imgId = await addRemoteImage([backUrl], 1);
-
+                                            if (bestBack) {
+                                                const backUrl = getMpcAutofillImageUrl(bestBack.identifier);
+                                                const imgId = await addRemoteImage([backUrl], 1);
+                                                if (imgId) backArtMap.set(card.uuid, imgId);
+                                            }
+                                        }
+                                    } else {
+                                        // Scryfall art: use image URL from enriched data's card_faces
+                                        const backImageUrl = back.image_uris?.large || back.image_uris?.png || back.image_uris?.normal;
+                                        if (backImageUrl) {
+                                            const imgId = await addRemoteImage([backImageUrl], 1);
                                             if (imgId) backArtMap.set(card.uuid, imgId);
                                         }
                                     }
                                 } catch (e) {
-                                    console.warn(`[Enrichment] Failed MPC search for ${back.name}`, e);
+                                    console.warn(`[Enrichment] Failed to fetch back art for ${back.name}`, e);
                                 }
                             }
 
-                            // Process Front Art (Fixing back-face import)
+                            // Process Front Art (for back-face imports that need front art)
                             if (isBackFaceImport) {
                                 try {
+                                    if (preferredSource === 'mpc') {
+                                        // MPC art fetching
+                                        const mpcResults = await searchMpcAutofill(front.name);
+                                        if (mpcResults && mpcResults.length > 0) {
+                                            const favSources = new Set(settings.favoriteMpcSources || []);
+                                            const favTags = new Set(settings.favoriteMpcTags || []);
+                                            const bestFront = pickBestMpcCard(mpcResults, favSources, favTags);
 
-                                    const mpcResults = await searchMpcAutofill(front.name);
-                                    if (mpcResults && mpcResults.length > 0) {
-                                        const settings = useSettingsStore.getState();
-                                        const favSources = new Set(settings.favoriteMpcSources || []);
-                                        const favTags = new Set(settings.favoriteMpcTags || []);
-                                        const bestFront = pickBestMpcCard(mpcResults, favSources, favTags);
-
-                                        if (bestFront) {
-                                            const frontUrl = getMpcAutofillImageUrl(bestFront.identifier);
-                                            const imgId = await addRemoteImage([frontUrl], 1);
-
+                                            if (bestFront) {
+                                                const frontUrl = getMpcAutofillImageUrl(bestFront.identifier);
+                                                const imgId = await addRemoteImage([frontUrl], 1);
+                                                if (imgId) frontArtMap.set(card.uuid, imgId);
+                                            }
+                                        }
+                                    } else {
+                                        // Scryfall art: use image URL from enriched data's card_faces
+                                        const frontImageUrl = front.image_uris?.large || front.image_uris?.png || front.image_uris?.normal;
+                                        if (frontImageUrl) {
+                                            const imgId = await addRemoteImage([frontImageUrl], 1);
                                             if (imgId) frontArtMap.set(card.uuid, imgId);
                                         }
                                     }
                                 } catch (e) {
-                                    console.warn(`[Enrichment] Failed to fix front art for ${front.name}`, e);
+                                    console.warn(`[Enrichment] Failed to fetch front art for ${front.name}`, e);
                                 }
                             }
                         }
@@ -331,8 +351,8 @@ export function useCardEnrichment() {
                                     enrichmentNextRetryAt: undefined,
                                 };
 
-                                // DFC Handling
-                                if (data.card_faces && data.card_faces.length >= 2 && data.layout && ['transform', 'modal_dfc', 'mdfc', 'double_faced_token', 'flip', 'adventure'].includes(data.layout)) {
+                                // DFC Handling - skip for user uploads (they want standalone custom cards)
+                                if (!card.isUserUpload && data.card_faces && data.card_faces.length >= 2 && data.layout && ['transform', 'modal_dfc', 'mdfc', 'double_faced_token', 'flip', 'adventure'].includes(data.layout)) {
                                     // 1. Update Front Face (Name, Type, Stats)
                                     const front = data.card_faces[0];
                                     updates.name = front.name;
@@ -340,14 +360,13 @@ export function useCardEnrichment() {
                                     updates.mana_cost = front.mana_cost || data.mana_cost;
                                     updates.colors = front.colors || data.colors;
 
-
                                     // 2. Handle Back Face
                                     const back = data.card_faces[1];
                                     const existingBack = card.linkedBackId ? backCardMap.get(card.linkedBackId) : null;
                                     const newBackArtId = backArtMap.get(card.uuid);
                                     const newFrontArtId = frontArtMap.get(card.uuid);
 
-                                    // Apply Front Art Fix if needed
+                                    // Apply Front Art Fix if needed (for back-face imports)
                                     if (newFrontArtId) {
                                         updates.imageId = newFrontArtId;
                                         updates.usesDefaultCardback = false;
