@@ -108,12 +108,11 @@ export function useMpcSearch(
         // For these, search BOTH CARD and TOKEN and merge results
         const isCollision = TOKEN_TYPE_COLLISIONS.has(searchQuery.toLowerCase()) && effectiveCardType === 'CARD';
 
-        // Skip if same search params and we have results
+        // Skip if same search params (use ref to avoid dependency on cards state)
         if (lastSearchParams.current?.name === searchQuery &&
             lastSearchParams.current?.fuzzy === mpcFuzzySearch &&
             lastSearchParams.current?.cardType === effectiveCardType &&
-            lastSearchParams.current?.isCollision === isCollision &&
-            cards.length > 0) return;
+            lastSearchParams.current?.isCollision === isCollision) return;
 
         lastSearchParams.current = { name: searchQuery, fuzzy: mpcFuzzySearch, cardType: effectiveCardType, isCollision };
         lastSearchedName.current = query;
@@ -139,18 +138,18 @@ export function useMpcSearch(
         } finally {
             setIsLoading(false);
         }
-    }, [query, cards.length, mpcFuzzySearch, cardData, overrideCardType]);
+    }, [query, mpcFuzzySearch, cardData, overrideCardType]);
 
     // Auto-search effect
     useEffect(() => {
-        // When query is empty, only reset if autoSearch is enabled
-        // This preserves results when switching modes (autoSearch becomes false)
+        // When query is empty, only reset if autoSearch is enabled AND we haven't already reset
         if (!query || !query.trim()) {
-            if (autoSearch) {
+            if (autoSearch && lastSearchedName.current !== "") {
                 setHasSearched(false);
                 setIsLoading(false);
                 setCards([]);
                 lastSearchedName.current = "";
+                lastSearchParams.current = null;
             }
             return;
         }

@@ -33,6 +33,9 @@ vi.mock('@/db', () => ({
                 last: vi.fn().mockResolvedValue({ order: 100 }), // initialMaxOrder
             })),
         },
+        cardbacks: {
+            toArray: vi.fn().mockResolvedValue([]), // Default to empty cardbacks
+        },
     },
 }));
 

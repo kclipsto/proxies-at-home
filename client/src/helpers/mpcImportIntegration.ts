@@ -59,6 +59,7 @@ export async function findBestMpcMatches(
     const settings = useSettingsStore.getState();
     const favSources = new Set(settings.favoriteMpcSources);
     const favTags = new Set(settings.favoriteMpcTags);
+    const minDpi = settings.favoriteMpcDpi ?? 0; // 0 means no DPI filter
 
     // Batch search - separate searches for tokens and cards
     const [tokenResults, cardResults] = await Promise.all([
@@ -73,6 +74,7 @@ export async function findBestMpcMatches(
     debugLog('[MPC Match] Filters:', {
         favoriteSources: Array.from(favSources),
         favoriteTags: Array.from(favTags),
+        minDpi,
     });
     if (uniqueTokenNames.length > 0) {
         debugLog('[MPC Match] Searching for tokens:', uniqueTokenNames);
@@ -91,8 +93,8 @@ export async function findBestMpcMatches(
             : cardResults[normalizedName];
 
         if (results && results.length > 0) {
-            // Pass the query name to enable exact match detection
-            const best = pickBestMpcCard(results, favSources, favTags, info.name);
+            // Pass the query name and minDpi to enable exact match detection and DPI filtering
+            const best = pickBestMpcCard(results, favSources, favTags, info.name, minDpi);
             if (best) {
                 matches.push({
                     info,
@@ -142,7 +144,8 @@ function scoreMpcCard(
     card: MpcAutofillCard,
     favSources: Set<string>,
     favTags: Set<string>,
-    queryName?: string
+    queryName?: string,
+    favDpi: number = 0
 ): number {
     let score = 0;
 
@@ -157,6 +160,9 @@ function scoreMpcCard(
     // Favorite source bonus
     if (favSources.has(card.sourceName)) score += 10;
 
+    // Favorite DPI bonus (card meets or exceeds favorite DPI)
+    if (favDpi > 0 && (card.dpi || 0) >= favDpi) score += 8;
+
     // Favorite tag bonus
     if (card.tags?.some(t => favTags.has(t))) score += 5;
 
@@ -167,27 +173,73 @@ function scoreMpcCard(
 }
 
 /**
- * Pick the best MPC card using scoring.
+ * Pick the best MPC card using scoring with progressive filter relaxation.
  * Priority: exact name match > favorite source > favorite tag > DPI
+ * 
+ * Progressive relaxation:
+ * 1. Try with all filters (sources, tags, minDpi)
+ * 2. If no match, remove minDpi filter
+ * 3. If still no match, remove tags filter
+ * 4. If still no match, remove sources filter
+ * 5. Return best match from whatever passes, or any card if no filters match
  */
 export function pickBestMpcCard(
     cards: MpcAutofillCard[],
     favSources: Set<string>,
     favTags: Set<string>,
-    queryName?: string
+    queryName?: string,
+    minDpi: number = 0
 ): MpcAutofillCard | null {
     if (cards.length === 0) return null;
 
-    // Score and sort by score descending
-    const scored = cards.map(c => ({
+    // Filter by exact name first (this is always required if queryName is provided)
+    let candidates = cards;
+    if (queryName) {
+        const exactMatches = cards.filter(c => {
+            const cardBaseName = parseMpcCardName(c.name);
+            return isExactNameMatch(cardBaseName, queryName);
+        });
+        if (exactMatches.length > 0) {
+            candidates = exactMatches;
+        }
+    }
+
+    // Filter to prefer cards matching ANY preference (OR logic)
+    // If no cards match any preference, use all candidates
+    const hasSourceFilter = favSources.size > 0;
+    const hasTagFilter = favTags.size > 0;
+    const hasDpiFilter = minDpi > 0;
+
+    let filtered = candidates;
+
+    // Try to find cards matching at least one preference
+    if (hasSourceFilter || hasTagFilter || hasDpiFilter) {
+        const matchesAnyPreference = candidates.filter(c => {
+            const passesSource = hasSourceFilter && favSources.has(c.sourceName);
+            const passesTag = hasTagFilter && c.tags?.some(t => favTags.has(t));
+            const passesDpi = hasDpiFilter && (c.dpi || 0) >= minDpi;
+            // Card passes if it matches ANY preference
+            return passesSource || passesTag || passesDpi;
+        });
+
+        if (matchesAnyPreference.length > 0) {
+            filtered = matchesAnyPreference;
+            debugLog(`[MPC Match] Cards matching at least one preference: ${filtered.length} from ${candidates.length}`);
+        } else {
+            debugLog(`[MPC Match] No cards match any preferences, using all ${candidates.length} candidates`);
+        }
+    }
+
+    // Score and sort remaining candidates
+    const scored = filtered.map(c => ({
         card: c,
-        score: scoreMpcCard(c, favSources, favTags, queryName)
+        score: scoreMpcCard(c, favSources, favTags, queryName, minDpi)
     }));
     scored.sort((a, b) => b.score - a.score);
 
     // Log top 5 candidates with their scores
     const top5 = scored.slice(0, 5);
-    debugLog(`[MPC Match] Query: "${queryName}" - Total candidates: ${cards.length}`);
+    debugLog(`[MPC Match] Query: "${queryName}" - Total candidates: ${cards.length}, After filters: ${filtered.length}`);
     if (top5.length > 0) {
         debugLog('[MPC Match] Top candidates:', top5.map(s => ({
             name: s.card.name,
@@ -199,7 +251,7 @@ export function pickBestMpcCard(
         })));
     }
 
-    return scored[0].card;
+    return scored.length > 0 ? scored[0].card : null;
 }
 
 /**

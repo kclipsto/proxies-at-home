@@ -1,7 +1,7 @@
 import { changeCardArtwork, createLinkedBackCard } from "@/helpers/dbUtils";
 import { parseImageIdFromUrl } from "@/helpers/imageHelper";
 import { getMpcAutofillImageUrl, type MpcAutofillCard } from "@/helpers/mpcAutofillApi";
-import { getImageSourceSync, isMpcSource } from "@/helpers/imageSourceUtils";
+import { getImageSourceSync, isMpcSource, isCustomSource } from "@/helpers/imageSourceUtils";
 import { parseMpcCardLogic } from "@/helpers/mpcImportIntegration";
 import { getFaceNamesFromPrints, computeTabLabels, getCurrentCardFace, filterPrintsByFace } from "@/helpers/dfcHelpers";
 import { undoableChangeCardback } from "@/helpers/undoableActions";
@@ -17,7 +17,7 @@ import {
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useArtworkModalStore } from "@/store/artworkModal";
 import type { ScryfallCard, CardOption } from "../../../../shared/types";
-import { ArrowLeft, X, Image, Settings, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, X, Image, Settings, ChevronLeft, ChevronRight, Pencil, Check } from "lucide-react";
 import { fetchCardWithPrints, fetchCardBySetAndNumber } from "@/helpers/scryfallApi";
 import { db } from "@/db";
 import { AdvancedSearch } from "./AdvancedSearch";
@@ -42,6 +42,10 @@ export function ArtworkModal() {
     const [dontShowAgain, setDontShowAgain] = useState(false);
     const [artSource, setArtSource] = useState<'scryfall' | 'mpc'>('scryfall');
     const [mpcFiltersCollapsed, setMpcFiltersCollapsed] = useState(true);
+
+    // Card name editing state (for custom uploads)
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editedName, setEditedName] = useState('');
 
     // User's art selection - includes cardUuid to detect stale selections
     // When selection is for a different card, it's ignored and we fall back to cardImageId
@@ -88,7 +92,15 @@ export function ArtworkModal() {
         } else if (modalCard?.imageId) {
             // Use explicit source tracking with fallback to inference
             const detectedSource = getImageSourceSync(modalCard.imageId);
-            newSource = isMpcSource(detectedSource) ? 'mpc' : 'scryfall';
+            // For MPC source, use MPC. For custom uploads, respect user preference. For Scryfall, use Scryfall.
+            if (isMpcSource(detectedSource)) {
+                newSource = 'mpc';
+            } else if (isCustomSource(detectedSource)) {
+                // Custom uploads should respect user's preferred art source
+                newSource = useSettingsStore.getState().preferredArtSource;
+            } else {
+                newSource = 'scryfall';
+            }
         }
         setArtSource(newSource);
     }
@@ -133,13 +145,48 @@ export function ArtworkModal() {
         // No cleanup needed - caching is global in cardbackLibrary.ts
     }, [selectedFace]);
 
-    // Fetch linked back card if it exists
     const linkedBackCard = useLiveQuery(
         () => (modalCard?.linkedBackId ? db.cards.get(modalCard.linkedBackId) : undefined),
         [modalCard?.linkedBackId]
     );
 
+    // Track which back card we've auto-set MPC source for (prevents bouncing back when user changes source)
+    const autoMpcSetForBackCardId = useRef<string | undefined>(undefined);
+
+    // Update art source when switching to back face (or when linkedBackCard loads) - ONLY ONCE
+    useEffect(() => {
+        // Only auto-set if we're viewing back face with MPC art AND haven't already set for this card
+        if (selectedFace === 'back' && linkedBackCard?.imageId) {
+            if (autoMpcSetForBackCardId.current !== linkedBackCard.imageId) {
+                const detectedSource = getImageSourceSync(linkedBackCard.imageId);
+                if (isMpcSource(detectedSource)) {
+                    setArtSource('mpc');
+                    autoMpcSetForBackCardId.current = linkedBackCard.imageId;
+                }
+            }
+        }
+    }, [selectedFace, linkedBackCard?.imageId]);
+
     const activeCard = selectedFace === 'back' && linkedBackCard ? linkedBackCard : modalCard;
+
+    // Save the edited card name and update the store
+    const handleSaveName = useCallback(async () => {
+        if (!editedName.trim() || !activeCard) return;
+
+        const newName = editedName.trim();
+        await db.cards.update(activeCard.uuid, { name: newName });
+
+        // If we edited the front card (modalCard), update the store so UI refreshes
+        if (activeCard.uuid === modalCard?.uuid) {
+            const updated = await db.cards.get(activeCard.uuid);
+            if (updated) {
+                useArtworkModalStore.getState().updateCard(updated);
+            }
+        }
+        // Note: linkedBackCard updates automatically via useLiveQuery
+
+        setIsEditingName(false);
+    }, [editedName, activeCard, modalCard]);
 
     // Determine which table to query based on imageId prefix
     const imageObject =
@@ -165,11 +212,11 @@ export function ArtworkModal() {
         }
     }, [imageObject?.displayBlob]);
 
-    // SIMPLE: Get the card's image source directly from modalCard.imageId
-    const cardImageId = modalCard?.imageId;
+    // SIMPLE: Get the card's image source directly from activeCard.imageId (works for both front and back)
+    const cardImageId = activeCard?.imageId;
 
-    // Derive selectedArtId: only use if it belongs to current card (avoids stale selections)
-    const selectedArtId = (selectedArtState && selectedArtState.cardUuid === modalCard?.uuid)
+    // Derive selectedArtId: only use if it belongs to current activeCard (avoids stale selections)
+    const selectedArtId = (selectedArtState && selectedArtState.cardUuid === activeCard?.uuid)
         ? selectedArtState.artId
         : null;
 
@@ -192,6 +239,13 @@ export function ArtworkModal() {
     const isDFC = faceNames.length > 1;
     const dfcFrontFaceName = faceNames[0] || null;
     const dfcBackFaceName = faceNames[1] || null;
+
+    // Determine whether to show the "Use Cardback" button (for non-DFC back face with custom art)
+    const isUsingCardbackLibrary = linkedBackCard?.imageId ? isCardbackId(linkedBackCard.imageId) : false;
+    const showCardbackButton = selectedFace === 'back' && !isDFC && linkedBackCard && !isUsingCardbackLibrary && !showCardbackLibrary;
+
+    // Determine if current card is a custom upload (allows name editing)
+    const isCustomUpload = isCustomSource(getImageSourceSync(activeCard?.imageId));
 
     const tabLabels = useMemo(
         () => computeTabLabels(faceNames, modalCard?.name || '', linkedBackCard?.name),
@@ -735,13 +789,62 @@ export function ArtworkModal() {
                                     <ArrowLeft className="size-5" />
                                 </Button>
                             )}
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white hidden lg:block">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white hidden lg:flex items-center gap-2">
                                 {showCardbackLibrary
                                     ? 'Choose Cardback'
-                                    : `Select Artwork for ${displayData.name}${(modalIndex !== null && allCards.length > 1)
-                                        ? ` (${modalIndex + 1}/${allCards.length})`
-                                        : ''
-                                    }`
+                                    : isEditingName ? (
+                                        <>
+                                            <span>Select Artwork for</span>
+                                            <input
+                                                type="text"
+                                                value={editedName}
+                                                onChange={(e) => setEditedName(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        handleSaveName();
+                                                    } else if (e.key === 'Escape') {
+                                                        setIsEditingName(false);
+                                                    }
+                                                }}
+                                                className="px-2 py-1 text-lg font-semibold border rounded bg-white dark:bg-gray-800 dark:border-gray-600"
+                                                autoFocus
+                                            />
+                                            <button
+                                                onClick={handleSaveName}
+                                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                                title="Save name"
+                                            >
+                                                <Check className="w-4 h-4 text-green-600" />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {`Select Artwork for ${displayData.name}`}
+                                            {isCustomUpload && (
+                                                <button
+                                                    onClick={() => {
+                                                        setEditedName(displayData.name || '');
+                                                        setIsEditingName(true);
+                                                    }}
+                                                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                                    title="Edit card name"
+                                                >
+                                                    <Pencil className="w-4 h-4 text-gray-500" />
+                                                </button>
+                                            )}
+                                            {modalIndex !== null && allCards.length > 1 && (
+                                                <span className="h-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 whitespace-nowrap text-xs flex items-center overflow-hidden">
+                                                    <span className="h-full flex items-center px-2 text-gray-900 dark:text-white">
+                                                        {modalIndex + 1}
+                                                    </span>
+                                                    <span className="w-px h-full bg-gray-300 dark:bg-gray-500" />
+                                                    <span className="h-full flex items-center px-2 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-600">
+                                                        {allCards.length}
+                                                    </span>
+                                                </span>
+                                            )}
+                                        </>
+                                    )
                                 }
                             </h3>
                         </div>
@@ -797,9 +900,28 @@ export function ArtworkModal() {
                                 tabs={[
                                     { id: 'artwork' as const, label: 'Artwork', icon: <Image className="w-5 h-5" /> },
                                     { id: 'settings' as const, label: 'Settings', icon: <Settings className="w-5 h-5" /> },
+                                    // Add Cardback tab when conditions are met
+                                    ...(showCardbackButton ? [{
+                                        id: 'cardback' as const,
+                                        label: 'Use Cardback',
+                                        icon: (
+                                            <svg className="h-5 w-4" viewBox="0 0 50 70" fill="none">
+                                                <rect x="0" y="0" width="50" height="70" rx="4" fill="#1a1a1a" />
+                                                <rect x="3" y="3" width="44" height="64" rx="2" fill="#8B6914" />
+                                                <ellipse cx="25" cy="35" rx="17" ry="24" fill="#4A5899" />
+                                                <ellipse cx="25" cy="35" rx="14" ry="20" fill="#C4956A" />
+                                            </svg>
+                                        ),
+                                    }] : []),
                                 ]}
                                 activeTab={activeTab}
-                                onTabChange={setActiveTab}
+                                onTabChange={(tab) => {
+                                    if (tab === 'cardback') {
+                                        setShowCardbackLibrary(true);
+                                    } else {
+                                        setActiveTab(tab as 'artwork' | 'settings');
+                                    }
+                                }}
                                 variant="secondary"
                             />
                         </div>

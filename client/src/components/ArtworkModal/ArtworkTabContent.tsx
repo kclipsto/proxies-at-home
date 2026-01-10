@@ -159,15 +159,7 @@ export function ArtworkTabContent({
                     </Button>
                 )}
 
-                {/* Desktop & Portrait: Cardback Button (Search button moved to footer) */}
-                <div className="flex gap-2 max-lg:landscape:hidden">
-                    {showCardbackButton && (
-                        <Button color="light" onClick={() => setShowCardbackLibrary(true)} title="Use a cardback from the library instead">
-                            <CardbackIcon />
-                            Use Cardback
-                        </Button>
-                    )}
-                </div>
+
                 <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                         checked={applyToAll}

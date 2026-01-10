@@ -203,6 +203,15 @@ export function initDatabase(): Database.Database {
       cached_at INTEGER NOT NULL,
       PRIMARY KEY (query, card_type)
     );
+
+    CREATE TABLE IF NOT EXISTS scryfall_cache (
+      endpoint TEXT NOT NULL,
+      query_hash TEXT NOT NULL,
+      response TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      PRIMARY KEY (endpoint, query_hash)
+    );
   `);
 
   // Create indexes (IF NOT EXISTS for idempotency)
@@ -212,6 +221,7 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_cards_set_number_lang ON cards(set_code, collector_number, lang);
     CREATE INDEX IF NOT EXISTS idx_cards_name_lang ON cards(name COLLATE NOCASE, lang);
     CREATE INDEX IF NOT EXISTS idx_mpc_cache_time ON mpc_search_cache(cached_at);
+    CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);
   `);
 
   // Run any pending migrations

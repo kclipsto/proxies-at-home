@@ -561,11 +561,6 @@ export function CardArtContent({
                         <p className="text-sm font-medium text-center mb-2">
                             {hasSearched && query.trim() ? noResultsMessage : emptyMessage}
                         </p>
-                        {hasSearched && query.trim() && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-4">
-                                💡 Tip: Use <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">t:name</code> to search for tokens (e.g., <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">t:treasure</code>)
-                            </p>
-                        )}
                         {onSwitchSource && hasSearched && query.trim() && artSource === 'mpc' && (
                             <Button color="blue" onClick={onSwitchSource}>
                                 Switch to Scryfall

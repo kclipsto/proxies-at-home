@@ -108,7 +108,57 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
         quantityByKey.delete(cardKey(info));
     }
 
-    let uniqueInfos = cardsWithoutMpcId.map(v => v.info);
+    // --- Handle cards that match custom cardback names ---
+    // If a card name matches a cardback's displayName, use that cardback and auto-flip
+    const allCardbacks = await db.cardbacks.toArray();
+    const cardbackByName = new Map<string, typeof allCardbacks[number]>();
+    for (const cb of allCardbacks) {
+        if (cb.displayName) {
+            cardbackByName.set(cb.displayName.toLowerCase(), cb);
+        }
+    }
+
+    // Check remaining cards for cardback matches
+    const cardbackMatches: { entry: typeof cardsWithoutMpcId[number]; cardback: typeof allCardbacks[number] }[] = [];
+    for (const entry of cardsWithoutMpcId) {
+        const nameLower = entry.info.name.toLowerCase();
+        const matchedCardback = cardbackByName.get(nameLower);
+        if (matchedCardback) {
+            cardbackMatches.push({ entry, cardback: matchedCardback });
+        }
+    }
+
+    // Process cardback matches - create flipped cards using the cardback
+    for (const { entry, cardback } of cardbackMatches) {
+        if (signal.aborted) break;
+
+        const { info, quantity, startOrder } = entry;
+
+        const cardsToAdd = createCardOptions(
+            {
+                name: info.name,
+                lang: language,
+                imageId: cardback.id,  // Use cardback's ID as the imageId
+                isFlipped: true,       // Auto-flip to show the cardback
+                hasBuiltInBleed: cardback.hasBuiltInBleed ?? true,
+                category: info.category,
+            },
+            quantity
+        );
+
+        const added = await undoableAddCards(cardsToAdd, { startOrder });
+        cardsAdded += added.length;
+        addedCardUuids.push(...added.map(c => c.uuid));
+        if (cardsAdded === added.length) onFirstCard?.();
+
+        // Remove from quantityByKey so it's not processed again
+        quantityByKey.delete(cardKey(info));
+    }
+
+    // Rebuild uniqueInfos after removing cardback matches
+    let uniqueInfos = Array.from(quantityByKey.values())
+        .filter(v => !v.info.mpcIdentifier)
+        .map(v => v.info);
 
     // --- MPC Autofill Integration ---
     // Use explicit artSource override if provided, otherwise fall back to settings
