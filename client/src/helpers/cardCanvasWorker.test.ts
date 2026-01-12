@@ -509,6 +509,21 @@ describe("cardCanvasWorker", () => {
             expect((mockGl as unknown as { uniform1f: ReturnType<typeof vi.fn> }).uniform1f).toHaveBeenCalled();
         });
 
+        it("should apply brightness adjustment directly without scaling", async () => {
+            const mockBitmap = { width: 100, height: 100 } as ImageBitmap;
+            const params = { ...DEFAULT_RENDER_PARAMS, brightness: 25 };
+
+            await renderCardWithOverridesWorker(mockBitmap, params);
+
+            const calls = (mockGl as unknown as { uniform1f: ReturnType<typeof vi.fn> }).uniform1f.mock.calls;
+            // Find the call for u_brightness
+            const brightnessCall = calls.find((call: unknown[]) => (call[0] as { name: string }).name === 'u_brightness');
+
+            expect(brightnessCall).toBeDefined();
+            // Should be passed directly as 25, not scaled by 50 (which would be 1250)
+            expect(brightnessCall![1]).toBe(25);
+        });
+
         it("should apply contrast adjustment", async () => {
             const mockBitmap = { width: 100, height: 100 } as ImageBitmap;
             const params = { ...DEFAULT_RENDER_PARAMS, contrast: 1.5 };
