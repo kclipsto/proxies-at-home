@@ -78,6 +78,9 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
   const darkenMode = useSettingsStore((s) => s.darkenMode);
   const cardPositionX = useSettingsStore((s) => s.cardPositionX);
   const cardPositionY = useSettingsStore((s) => s.cardPositionY);
+  const useCustomBackOffset = useSettingsStore((s) => s.useCustomBackOffset);
+  const cardBackPositionX = useSettingsStore((s) => s.cardBackPositionX);
+  const cardBackPositionY = useSettingsStore((s) => s.cardBackPositionY);
   const cardSpacingMm = useSettingsStore((s) => s.cardSpacingMm);
   const bleedEdge = useSettingsStore((s) => s.bleedEdge);
   const bleedEdgeWidth = useSettingsStore((s) => s.bleedEdgeWidth);
@@ -593,13 +596,21 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
     // Fixed grid dimensions based on settings (not actual cards)
     const gridWidthMm = columns * fixedCardWidthMm + (columns - 1) * cardSpacingMm;
     const gridHeightMm = rows * fixedCardHeightMm + (rows - 1) * cardSpacingMm;
-    const gridStartXMm = (pageWidthMm - gridWidthMm) / 2 + cardPositionX;
-    const gridStartYMm = (pageHeightMm - gridHeightMm) / 2 + cardPositionY;
 
     const result: CardWithGlobalLayout[] = [];
     const pages = chunkCards(localCards, pageCapacity);
 
     pages.forEach((page, pageIndex) => {
+      // Per-page offset logic: if ALL cards on this page are flipped and custom back offset is enabled, use back offsets
+      const isPageFullyFlipped = page.length > 0 && page.every(c => flippedCards.has(c.uuid));
+      const useBackOffsets = useCustomBackOffset && isPageFullyFlipped;
+
+      const effectiveCardPositionX = useBackOffsets ? cardBackPositionX : cardPositionX;
+      const effectiveCardPositionY = useBackOffsets ? cardBackPositionY : cardPositionY;
+
+      const gridStartXMm = (pageWidthMm - gridWidthMm) / 2 + effectiveCardPositionX;
+      const gridStartYMm = (pageHeightMm - gridHeightMm) / 2 + effectiveCardPositionY;
+
       const layouts = computeCardLayouts(page, sourceSettings, effectiveBleedWidth);
 
       page.forEach((card, index) => {
@@ -645,26 +656,20 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
     return result;
     // frontCardOverridesKey and backCardOverridesKey are intentional - they detect nested override changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localCards, pageCapacity, pageWidth, pageHeight, pageSizeUnit, columns, rows, cardSpacingMm, cardPositionX, cardPositionY, sourceSettings, effectiveBleedWidth, backCardMap, imageDataById, pageHeightPx, fixedCardWidthMm, fixedCardHeightMm, topPaddingPx, frontCardOverridesKey, backCardOverridesKey]);
+  }, [localCards, pageCapacity, pageWidth, pageHeight, pageSizeUnit, columns, rows, cardSpacingMm, cardPositionX, cardPositionY, useCustomBackOffset, cardBackPositionX, cardBackPositionY, sourceSettings, effectiveBleedWidth, backCardMap, imageDataById, pageHeightPx, fixedCardWidthMm, fixedCardHeightMm, topPaddingPx, frontCardOverridesKey, backCardOverridesKey, flippedCards]);
 
-  // Guide color as number
   const perCardGuideColorNum = parseInt(guideColor.replace('#', ''), 16);
 
-  // Card control layouts for overlay (content coordinates, not screen adjusted)
-  // Scroll offset is applied via CSS transform on the container for perfect sync with PixiJS
   const cardControlLayouts = useMemo((): CardControlLayout[] => {
-    // Only compute for visible cards in viewport (with margin)
     const viewportTop = scrollTop - 100;
     const viewportBottom = scrollTop + containerHeight + 100;
 
     return globalPixiCards
       .map((pixiCard, index) => {
-        // Calculate position in content coordinates (zoomed but NOT scroll-adjusted)
-        const contentX = Math.round(pixiCard.globalX * effectiveZoom); // Scaled X (rounded)
-        const contentY = Math.round(pixiCard.globalY * effectiveZoom); // Scaled Y (rounded)
-        const width = Math.round(pixiCard.width * effectiveZoom); // Scaled Width (rounded)
-        const height = Math.round(pixiCard.height * effectiveZoom); // Scaled Height (rounded)
-        // Viewport culling
+        const contentX = Math.round(pixiCard.globalX * effectiveZoom);
+        const contentY = Math.round(pixiCard.globalY * effectiveZoom);
+        const width = Math.round(pixiCard.width * effectiveZoom);
+        const height = Math.round(pixiCard.height * effectiveZoom);
         const cardBottom = contentY + height;
         if (cardBottom < viewportTop || contentY > viewportBottom) {
           return null;
@@ -674,7 +679,7 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
           card: pixiCard.card,
           globalIndex: index,
           screenX: contentX,
-          screenY: contentY, // Content Y, not screen Y - scroll applied via container transform
+          screenY: contentY,
           width,
           height,
           hasImage: renderedCardUuids.has(pixiCard.card.uuid),

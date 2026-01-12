@@ -20,6 +20,9 @@ export type UndoableSettingKey =
     | "cardSpacingMm"
     | "cardPositionX"
     | "cardPositionY"
+    | "useCustomBackOffset"
+    | "cardBackPositionX"
+    | "cardBackPositionY"
     | "dpi"
     | "cutLineStyle"
     | "perCardGuideStyle"
@@ -60,6 +63,9 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     cardSpacingMm: "card spacing",
     cardPositionX: "card position X",
     cardPositionY: "card position Y",
+    useCustomBackOffset: "separate back offset",
+    cardBackPositionX: "back card position X",
+    cardBackPositionY: "back card position Y",
     dpi: "DPI",
     cutLineStyle: "cut line style",
     perCardGuideStyle: "per-card guide style",

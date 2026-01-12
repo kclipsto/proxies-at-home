@@ -70,6 +70,13 @@ type Store = {
   setCardPositionX: (mm: number) => void;
   cardPositionY: number;
   setCardPositionY: (mm: number) => void;
+  // Back card offset settings
+  useCustomBackOffset: boolean;
+  setUseCustomBackOffset: (value: boolean) => void;
+  cardBackPositionX: number;
+  setCardBackPositionX: (mm: number) => void;
+  cardBackPositionY: number;
+  setCardBackPositionY: (mm: number) => void;
   dpi: number;
   setDpi: (value: number) => void;
   cutLineStyle: 'none' | 'edges' | 'full';
@@ -190,6 +197,9 @@ const defaultPageSettings = {
   cardSpacingMm: 0,
   cardPositionX: 0,
   cardPositionY: 0,
+  useCustomBackOffset: false,
+  cardBackPositionX: 0,
+  cardBackPositionY: 0,
   zoom: 1,
   dpi: 900,
   cutLineStyle: "full" as "full" | "edges" | "none",
@@ -418,6 +428,18 @@ export const useSettingsStore = create<Store>()(
         recordSettingChange("cardPositionY", state.cardPositionY);
         return { cardPositionY: mm };
       }),
+      setUseCustomBackOffset: (value) => set((state) => {
+        recordSettingChange("useCustomBackOffset", state.useCustomBackOffset);
+        return { useCustomBackOffset: value };
+      }),
+      setCardBackPositionX: (mm) => set((state) => {
+        recordSettingChange("cardBackPositionX", state.cardBackPositionX);
+        return { cardBackPositionX: mm };
+      }),
+      setCardBackPositionY: (mm) => set((state) => {
+        recordSettingChange("cardBackPositionY", state.cardBackPositionY);
+        return { cardBackPositionY: mm };
+      }),
       setDpi: (dpi) => set((state) => {
         recordSettingChange("dpi", state.dpi);
         return { dpi };
@@ -596,6 +618,9 @@ export const useSettingsStore = create<Store>()(
           cardSpacingMm: currentState.cardSpacingMm,
           cardPositionX: currentState.cardPositionX,
           cardPositionY: currentState.cardPositionY,
+          useCustomBackOffset: currentState.useCustomBackOffset,
+          cardBackPositionX: currentState.cardBackPositionX,
+          cardBackPositionY: currentState.cardBackPositionY,
           dpi: currentState.dpi,
           cutLineStyle: currentState.cutLineStyle,
           perCardGuideStyle: currentState.perCardGuideStyle,

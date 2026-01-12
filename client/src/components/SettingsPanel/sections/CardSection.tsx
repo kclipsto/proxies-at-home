@@ -1,5 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label } from "flowbite-react";
+import { Label, Checkbox } from "flowbite-react";
 import { NumberInput } from "@/components/common";
 import { useNormalizedInput, usePositionInput } from "@/hooks/useInputHooks";
 import { AutoTooltip } from "@/components/common";
@@ -24,10 +24,16 @@ export function CardSection() {
     const cardSpacingMm = useSettingsStore((state) => state.cardSpacingMm);
     const cardPositionX = useSettingsStore((state) => state.cardPositionX);
     const cardPositionY = useSettingsStore((state) => state.cardPositionY);
+    const useCustomBackOffset = useSettingsStore((state) => state.useCustomBackOffset);
+    const cardBackPositionX = useSettingsStore((state) => state.cardBackPositionX);
+    const cardBackPositionY = useSettingsStore((state) => state.cardBackPositionY);
 
     const setCardSpacingMm = useSettingsStore((state) => state.setCardSpacingMm);
     const setCardPositionX = useSettingsStore((state) => state.setCardPositionX);
     const setCardPositionY = useSettingsStore((state) => state.setCardPositionY);
+    const setUseCustomBackOffset = useSettingsStore((state) => state.setUseCustomBackOffset);
+    const setCardBackPositionX = useSettingsStore((state) => state.setCardBackPositionX);
+    const setCardBackPositionY = useSettingsStore((state) => state.setCardBackPositionY);
 
     const pageWmm = pageUnit === "mm" ? pageWidth : inToMm(pageWidth);
     const pageHmm = pageUnit === "mm" ? pageHeight : inToMm(pageHeight);
@@ -56,6 +62,8 @@ export function CardSection() {
 
     const cardPositionXInput = usePositionInput(cardPositionX, setCardPositionX);
     const cardPositionYInput = usePositionInput(cardPositionY, setCardPositionY);
+    const cardBackPositionXInput = usePositionInput(cardBackPositionX, setCardBackPositionX);
+    const cardBackPositionYInput = usePositionInput(cardBackPositionY, setCardBackPositionY);
 
     return (
         <div className="space-y-4">
@@ -124,6 +132,53 @@ export function CardSection() {
                         />
                     </div>
                 </div>
+            </div>
+
+            <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                    <Checkbox
+                        id="useCustomBackOffset"
+                        checked={useCustomBackOffset}
+                        onChange={(e) => setUseCustomBackOffset(e.target.checked)}
+                    />
+                    <Label htmlFor="useCustomBackOffset" className="cursor-pointer select-none">
+                        Separate Back Offset
+                    </Label>
+                    <AutoTooltip content="Use different offsets for back cards (useful for printer alignment in duplex printing). Applies to Backs-only exports and Duplex mode back pages." />
+                </div>
+
+                {useCustomBackOffset && (
+                    <div className="grid grid-cols-2 gap-3 border-gray-200 dark:border-gray-700">
+                        <div>
+                            <div className="flex items-center justify-between">
+                                <Label>Back Horizontal</Label>
+                            </div>
+                            <NumberInput
+                                ref={cardBackPositionXInput.inputRef}
+                                className="w-full"
+                                step={0.1}
+                                defaultValue={cardBackPositionXInput.defaultValue}
+                                onChange={cardBackPositionXInput.handleChange}
+                                onBlur={cardBackPositionXInput.handleBlur}
+                                placeholder="-0.0"
+                            />
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between">
+                                <Label>Back Vertical</Label>
+                            </div>
+                            <NumberInput
+                                ref={cardBackPositionYInput.inputRef}
+                                className="w-full"
+                                step={0.1}
+                                defaultValue={cardBackPositionYInput.defaultValue}
+                                onChange={cardBackPositionYInput.handleChange}
+                                onBlur={cardBackPositionYInput.handleBlur}
+                                placeholder="-0.0"
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
