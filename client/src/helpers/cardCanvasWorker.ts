@@ -201,7 +201,7 @@ export function updateUniforms(
 
     // Basic adjustments (note: shader expects uBrightness range -50 to +50 converted to /255)
     // Our params use normalized values, so we scale appropriately
-    gl.uniform1f(uniforms.u_brightness, params.brightness * 50); // Scale to -50..+50 range for /255 in shader
+    gl.uniform1f(uniforms.u_brightness, params.brightness); // Already in -100..+100 range
     gl.uniform1f(uniforms.u_contrast, params.contrast);
     gl.uniform1f(uniforms.u_saturation, params.saturation);
     gl.uniform1f(uniforms.u_sharpness, params.sharpness);

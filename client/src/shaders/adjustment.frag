@@ -5,7 +5,7 @@ out vec4 finalColor;
 
 uniform sampler2D uTexture;
 uniform vec2 uResolution;
-uniform float uBrightness;   // -50 to +50
+uniform float uBrightness;   // -100 to +100
 uniform float uContrast;     // 0.5-2.0
 uniform float uSaturation;   // 0-2.0
 uniform float uSharpness;    // 0-1.0

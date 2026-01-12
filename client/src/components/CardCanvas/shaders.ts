@@ -29,7 +29,7 @@ uniform vec2 u_resolution;           // Canvas resolution
 ${DARKEN_UNIFORMS_GLSL}
 
 // Image adjustments
-uniform float u_brightness;          // -50 to +50
+uniform float u_brightness;          // -100 to +100
 uniform float u_contrast;            // 0.5-2.0
 uniform float u_saturation;          // 0-2.0
 uniform float u_sharpness;           // 0-1.0 (future)
