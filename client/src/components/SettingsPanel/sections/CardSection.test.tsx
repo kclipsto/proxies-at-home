@@ -14,6 +14,9 @@ const mockState = vi.hoisted(() => ({
     cardSpacingMm: 0,
     cardPositionX: 0,
     cardPositionY: 0,
+    useCustomBackOffset: false,
+    cardBackPositionX: 0,
+    cardBackPositionY: 0,
     dpi: 600,
 }));
 
@@ -21,6 +24,9 @@ const mockSetters = vi.hoisted(() => ({
     setCardSpacingMm: vi.fn(),
     setCardPositionX: vi.fn(),
     setCardPositionY: vi.fn(),
+    setUseCustomBackOffset: vi.fn(),
+    setCardBackPositionX: vi.fn(),
+    setCardBackPositionY: vi.fn(),
     setDpi: vi.fn(),
 }));
 
@@ -36,6 +42,9 @@ vi.mock('@/store/settings', () => ({
 
 vi.mock('flowbite-react', () => ({
     Label: ({ children }: { children: React.ReactNode }) => <label>{children}</label>,
+    Checkbox: ({ id, checked, onChange }: { id: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => (
+        <input type="checkbox" id={id} checked={checked} onChange={onChange} data-testid={`checkbox-${id}`} />
+    ),
 }));
 
 vi.mock('@/components/common', () => ({
@@ -113,6 +122,25 @@ describe('CardSection', () => {
         it('should render vertical offset input', () => {
             render(<CardSection />);
             expect(screen.getByText('Vertical Offset')).toBeDefined();
+        });
+    });
+
+    describe('back card offset', () => {
+        it('should show back offset inputs when checkbox is checked', () => {
+            // Initial state: custom offset false
+            mockState.useCustomBackOffset = false;
+            const { rerender } = render(<CardSection />);
+
+            expect(screen.queryByText('Back Horizontal')).toBeNull();
+
+            // Toggle checkbox (simulated by updating mock state and rerendering, 
+            // since we don't have a full userEvent setup here for the controlled component mocked state interaction)
+            // In a real integration test we would click, but here we test the conditional rendering logic
+            mockState.useCustomBackOffset = true;
+            rerender(<CardSection />);
+
+            expect(screen.getByText('Back Horizontal')).toBeDefined();
+            expect(screen.getByText('Back Vertical')).toBeDefined();
         });
     });
 });
