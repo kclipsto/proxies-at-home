@@ -8,6 +8,7 @@ type ArtworkModalData = {
   initialTab?: 'artwork' | 'settings';
   initialFace?: 'front' | 'back';
   initialArtSource?: 'scryfall' | 'mpc';
+  initialOpenAdvancedSearch?: boolean; // Auto-open Advanced Search (for failed lookups)
 };
 
 type Store = {
@@ -18,6 +19,7 @@ type Store = {
   initialTab: 'artwork' | 'settings';
   initialFace: 'front' | 'back';
   initialArtSource: 'scryfall' | 'mpc' | null;
+  initialOpenAdvancedSearch: boolean;
   openModal: (data: ArtworkModalData) => void;
   closeModal: () => void;
   updateCard: (updatedCard: CardOption) => void;
@@ -35,6 +37,7 @@ export const useArtworkModalStore = create<Store>((set, get) => ({
   initialTab: 'artwork',
   initialFace: 'front',
   initialArtSource: null,
+  initialOpenAdvancedSearch: false,
   openModal: (data) => set({
     open: true,
     card: data.card,
@@ -43,8 +46,9 @@ export const useArtworkModalStore = create<Store>((set, get) => ({
     initialTab: data.initialTab ?? 'artwork',
     initialFace: data.initialFace ?? 'front',
     initialArtSource: data.initialArtSource ?? null,
+    initialOpenAdvancedSearch: data.initialOpenAdvancedSearch ?? false,
   }),
-  closeModal: () => set({ open: false, card: null, index: null, allCards: [], initialTab: 'artwork', initialFace: 'front', initialArtSource: null }),
+  closeModal: () => set({ open: false, card: null, index: null, allCards: [], initialTab: 'artwork', initialFace: 'front', initialArtSource: null, initialOpenAdvancedSearch: false }),
   updateCard: (updatedCard: CardOption) =>
     set((state) => {
       if (!state.card || state.index === null) return state;

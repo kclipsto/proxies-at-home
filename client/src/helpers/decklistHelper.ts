@@ -27,8 +27,8 @@ export function groupCardsForDecklist(cards: CardOption[]): DecklistEntry[] {
     const set = c.set;
     const number = c.number;
     const isUpload = !!c.isUserUpload;
-    // Detect token cards by type_line or set code
-    const isToken = c.type_line?.toLowerCase().includes('token') || c.set?.toLowerCase().startsWith('t');
+    // Detect token cards by type_line
+    const isToken = c.type_line?.toLowerCase().includes('token') || false;
     // Only extract MPC ID if the source is actually 'mpc' (prevents false positives)
     const source = inferImageSource(c.imageId);
     const mpcId = source === 'mpc' ? extractMpcIdentifierFromImageId(c.imageId) : null;

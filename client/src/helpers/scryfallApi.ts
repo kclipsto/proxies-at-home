@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { API_BASE } from '@/constants';
-import type { ScryfallCard } from '../../../shared/types';
+import type { ScryfallCard, PrintInfo } from '../../../shared/types';
 
 function translateAxiosError(error: unknown): string {
     if (axios.isCancel(error)) {
@@ -56,6 +56,7 @@ export interface RawScryfallCard {
         normal?: string;
     };
     card_faces?: {
+        name?: string; // name is optional in some contexts but usually present
         colors?: string[];
         mana_cost?: string;
         image_uris?: {
@@ -63,6 +64,14 @@ export interface RawScryfallCard {
             large?: string;
             normal?: string;
         };
+    }[];
+    all_parts?: {
+        object: string;
+        id: string;
+        component: string;
+        name: string;
+        type_line: string;
+        uri: string;
     }[];
 }
 
@@ -86,6 +95,14 @@ export function getImages(data: RawScryfallCard): string[] {
 }
 
 function mapScryfallDataToCard(data: RawScryfallCard): ScryfallCard {
+    const tokenParts = data.all_parts
+        ?.filter(part => part.component === 'token')
+        .map(part => ({
+            name: part.name,
+            id: part.id,
+            uri: part.uri,
+        }));
+
     return {
         name: data.name,
         set: data.set,
@@ -97,7 +114,22 @@ function mapScryfallDataToCard(data: RawScryfallCard): ScryfallCard {
         cmc: data.cmc,
         type_line: data.type_line,
         rarity: data.rarity,
+        card_faces: data.card_faces?.map((face, index) => ({
+            name: face.name || (index === 0 ? data.name.split(' // ')[0] : data.name.split(' // ')[1]) || '',
+            imageUrl: face.image_uris?.png || face.image_uris?.large || face.image_uris?.normal,
+        })),
+        token_parts: tokenParts,
+        needs_token: !!(tokenParts && tokenParts.length > 0),
     };
+}
+
+/**
+ * Maps a Scryfall API response containing a data array to ScryfallCard objects.
+ * Used by hooks that fetch search results.
+ */
+export function mapResponseToCards(data: { data?: RawScryfallCard[] }): ScryfallCard[] {
+    if (!data.data || data.data.length === 0) return [];
+    return data.data.map(mapScryfallDataToCard);
 }
 
 export async function fetchCardWithPrints(query: string, exact: boolean = false, includePrints: boolean = true): Promise<ScryfallCard | null> {
@@ -118,7 +150,7 @@ export async function fetchCardWithPrints(query: string, exact: boolean = false,
 
         // Fetch all prints using SSE stream endpoint
         try {
-            const collectedUrls: string[] = [];
+            const collectedPrints: PrintInfo[] = [];
 
             const response = await fetch(`${API_BASE}/api/stream/cards`, {
                 method: "POST",
@@ -149,8 +181,17 @@ export async function fetchCardWithPrints(query: string, exact: boolean = false,
                     if (line.startsWith("data: ")) {
                         try {
                             const data = JSON.parse(line.slice(6)) as ScryfallCard;
-                            if (data.imageUrls?.[0]) {
-                                collectedUrls.push(data.imageUrls[0]);
+                            // Collect full print data if available
+                            if (data.prints && data.prints.length > 0) {
+                                collectedPrints.push(...data.prints);
+                            } else if (data.imageUrls?.[0]) {
+                                // Fallback: construct print from available fields
+                                collectedPrints.push({
+                                    imageUrl: data.imageUrls[0],
+                                    set: data.set || '',
+                                    number: data.number || '',
+                                    rarity: data.rarity,
+                                });
                             }
                         } catch {
                             // Skip non-JSON lines
@@ -161,7 +202,8 @@ export async function fetchCardWithPrints(query: string, exact: boolean = false,
 
             return {
                 ...cardData,
-                imageUrls: collectedUrls.length > 0 ? collectedUrls : cardData.imageUrls,
+                imageUrls: collectedPrints.length > 0 ? collectedPrints.map(p => p.imageUrl) : cardData.imageUrls,
+                prints: collectedPrints.length > 0 ? collectedPrints : undefined,
             };
         } catch (err) {
             console.error("Failed to fetch prints for card:", err);
@@ -204,4 +246,49 @@ export async function fetchCardBySetAndNumber(set: string, number: string, signa
     return mapScryfallDataToCard(data);
 }
 
+/**
+ * Batch fetch card metadata from the server.
+ * Uses the /api/stream/metadata endpoint which returns JSON (not SSE).
+ * Much faster than calling fetchCardWithPrints for each card individually.
+ */
+export async function fetchCardsMetadataBatch(
+    cardNames: string[],
+    signal?: AbortSignal
+): Promise<Map<string, ScryfallCard>> {
+    const results = new Map<string, ScryfallCard>();
+    if (cardNames.length === 0) return results;
 
+    try {
+        const response = await fetch(`${API_BASE}/api/stream/metadata`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cardQueries: cardNames.map(name => ({ name })),
+            }),
+            signal,
+        });
+
+        if (!response.ok) {
+            console.error('[fetchCardsMetadataBatch] Server error:', response.status);
+            return results;
+        }
+
+        const data = await response.json() as {
+            results: Array<{ query: { name: string }; card: ScryfallCard | null; error?: string }>;
+        };
+
+        for (const item of data.results) {
+            if (item.card) {
+                // Store by both query name and canonical name for reliable lookup
+                results.set(item.query.name.toLowerCase(), item.card);
+                if (item.card.name) {
+                    results.set(item.card.name.toLowerCase(), item.card);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[fetchCardsMetadataBatch] Failed:', e);
+    }
+
+    return results;
+}

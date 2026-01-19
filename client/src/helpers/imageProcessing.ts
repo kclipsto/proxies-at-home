@@ -1,4 +1,6 @@
 
+import { IMAGE_PROCESSING } from '@/constants/imageProcessing';
+
 export const NEAR_BLACK = 16;
 export const NEAR_WHITE = 239;
 export const ALPHA_EMPTY = 10;
@@ -107,7 +109,7 @@ export function blackenAllNearBlackPixels(
 
     const dpi = bucketDpiFromHeight(height);
     const dpiScale = dpi / 300;
-    const EDGE_PX = Math.round(64 * dpiScale);
+    const EDGE_PX = Math.round(IMAGE_PROCESSING.EDGE_ZONE_BASE_PX * dpiScale);
 
     // Use shared utility for histogram-based darkness calculation
     const darknessFactor = computeDarknessFactorFromPixels(d);
@@ -262,8 +264,12 @@ export function applyEdgeContrastCPU(imageData: ImageData, darknessFactor: numbe
     const height = imageData.height;
 
     // DPI-aware edge zone (assuming ~300dpi baseline for standard card)
-    const dpiScale = height / 1039; // ~1039px at 300dpi for 88mm card + bleed
-    const EDGE_PX = Math.round(64 * dpiScale);
+    // Standard MtG card is 63mm × 88mm. At 300dpi, 88mm = 88/25.4 * 300 ≈ 1039px
+    // This allows the edge detection to scale properly for different resolution images
+    const STANDARD_CARD_HEIGHT_300DPI = 1039;
+    const dpiScale = height / STANDARD_CARD_HEIGHT_300DPI;
+    // Base edge zone is 64px at 300dpi (~5.5mm), scaled proportionally
+    const EDGE_PX = Math.round(IMAGE_PROCESSING.EDGE_ZONE_BASE_PX * dpiScale);
 
     const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
     const MAX_BRIGHTNESS = -8 * darknessFactor;

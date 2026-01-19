@@ -4,12 +4,38 @@ import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vite
 import { CardEditorModal } from './CardEditorModal';
 import { paramsToOverrides } from './paramsToOverrides';
 import { useSettingsStore } from '@/store/settings';
+import { useUserPreferencesStore } from '@/store/userPreferences';
 import { DEFAULT_RENDER_PARAMS } from '../CardCanvas';
 import type { CardOption } from '../../../../shared/types';
 import type { Image } from '../../db';
 
 // Mock dependencies
 vi.mock('@/store/settings');
+
+vi.mock('@/store/projectStore', () => ({
+    useProjectStore: vi.fn((selector) => {
+        const state = { currentProjectId: 'test-project-id' };
+        return typeof selector === 'function' ? selector(state) : state;
+    }),
+}));
+
+vi.mock('@/store/userPreferences', () => ({
+    useUserPreferencesStore: vi.fn((selector) => {
+        const state = {
+            preferences: {
+                cardEditorSectionCollapsed: {},
+                cardEditorSectionOrder: ['basic', 'enhance', 'darkPixels', 'holographic', 'colorReplace', 'gamma', 'colorEffects', 'borderEffects'],
+            },
+            setCardEditorSectionCollapsed: vi.fn(),
+            setCardEditorSectionOrder: vi.fn(),
+        };
+        return typeof selector === 'function' ? selector(state) : state;
+    }),
+}));
+
+vi.mock('@/helpers/imageHistogram', () => ({
+    calculateDarknessFactorFromBlob: vi.fn().mockResolvedValue(0.5),
+}));
 
 // Mock PixiCardPreview since it uses WebGL
 vi.mock('../PixiPage/PixiCardPreview', () => ({
@@ -355,20 +381,23 @@ describe('CardEditorModal', () => {
     });
 
     describe('sections', () => {
+
         it('should toggle section expansion', () => {
             const setCollapsed = vi.fn();
-            (useSettingsStore as unknown as Mock).mockImplementation((selector) => {
-                if (!selector) return {
-                    darkenMode: 'none',
-                    cardEditorSectionCollapsed: { basic: false },
+            (useUserPreferencesStore as unknown as Mock).mockImplementation((selector) => {
+                if (typeof selector !== 'function') return {
+                    preferences: {
+                        cardEditorSectionCollapsed: { basic: false },
+                        cardEditorSectionOrder: ['basic', 'enhance'],
+                    },
                     setCardEditorSectionCollapsed: setCollapsed,
-                    cardEditorSectionOrder: ['basic', 'enhance'],
                 };
                 return selector({
-                    darkenMode: 'none',
-                    cardEditorSectionCollapsed: { basic: false },
+                    preferences: {
+                        cardEditorSectionCollapsed: { basic: false },
+                        cardEditorSectionOrder: ['basic', 'enhance'],
+                    },
                     setCardEditorSectionCollapsed: setCollapsed,
-                    cardEditorSectionOrder: ['basic', 'enhance'],
                 });
             });
 
@@ -377,7 +406,10 @@ describe('CardEditorModal', () => {
             const basicHeader = screen.getByText('Image Adjustments');
             fireEvent.click(basicHeader);
 
-            expect(setCollapsed).toHaveBeenCalledWith('basic', true);
+            // Expect object merge logic: { ...current, basic: !false } => { basic: true }
+            // Note: In the component, it merges with existing. Since existing is {basic:false}, result is {basic:true}.
+            // Wait, initially basic: false.
+            expect(setCollapsed).toHaveBeenCalledWith(expect.objectContaining({ basic: true }));
         });
 
         it('should toggle all sections', () => {
@@ -385,19 +417,16 @@ describe('CardEditorModal', () => {
             // Mock needs to satisfy "collapsedCount >= SECTION_IDS.length / 2" (8/2 = 4)
             const collapsedState = { basic: true, enhance: true, darkPixels: true, holographic: true };
 
-            (useSettingsStore as unknown as Mock).mockImplementation((selector) => {
-                if (!selector) return {
-                    darkenMode: 'none',
-                    cardEditorSectionCollapsed: collapsedState,
+            (useUserPreferencesStore as unknown as Mock).mockImplementation((selector) => {
+                const state = {
+                    preferences: {
+                        cardEditorSectionCollapsed: collapsedState,
+                        cardEditorSectionOrder: ['basic', 'enhance'],
+                    },
                     setCardEditorSectionCollapsed: setCollapsed,
-                    cardEditorSectionOrder: ['basic', 'enhance'],
                 };
-                return selector({
-                    darkenMode: 'none',
-                    cardEditorSectionCollapsed: collapsedState,
-                    setCardEditorSectionCollapsed: setCollapsed,
-                    cardEditorSectionOrder: ['basic', 'enhance'],
-                });
+                if (typeof selector !== 'function') return state;
+                return selector(state);
             });
 
             render(<CardEditorModal {...defaultProps} />);
@@ -410,19 +439,17 @@ describe('CardEditorModal', () => {
 
         it('should reorder sections on drag end', () => {
             const setOrder = vi.fn();
-            (useSettingsStore as unknown as Mock).mockImplementation((selector) => {
-                if (!selector) return {
-                    darkenMode: 'none',
-                    cardEditorSectionCollapsed: { basic: false },
+            (useUserPreferencesStore as unknown as Mock).mockImplementation((selector) => {
+                const state = {
+                    preferences: {
+                        cardEditorSectionCollapsed: { basic: false },
+                        cardEditorSectionOrder: ['basic', 'enhance'],
+                    },
                     setCardEditorSectionCollapsed: vi.fn(),
-                    cardEditorSectionOrder: ['basic', 'enhance'],
                     setCardEditorSectionOrder: setOrder,
                 };
-                return selector({
-                    darkenMode: 'none',
-                    cardEditorSectionCollapsed: { basic: false },
-                    cardEditorSectionOrder: ['basic', 'enhance'],
-                });
+                if (typeof selector !== 'function') return state;
+                return selector(state);
             });
 
             render(<CardEditorModal {...defaultProps} />);

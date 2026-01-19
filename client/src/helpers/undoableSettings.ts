@@ -3,8 +3,8 @@
  * Only records initial and final states, not intermediate steps.
  */
 
-import { useUndoRedoStore } from "@/store/undoRedo";
-import { useSettingsStore } from "@/store/settings";
+import { useUndoRedoStore } from "../store/undoRedo";
+import { useSettingsStore } from "../store/settings";
 
 // Keys that should be tracked for undo (excludes UI state like panel widths)
 export type UndoableSettingKey =

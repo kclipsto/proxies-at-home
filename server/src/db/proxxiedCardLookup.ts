@@ -1,6 +1,43 @@
 import { getDatabase } from './db.js';
 import { debugLog } from '../utils/debug.js';
+import { LRUCache } from '../utils/lruCache.js';
 import type { ScryfallApiCard } from '../utils/getCardImagesPaged.js';
+
+// Cache for scoring results: avoids re-scoring the same name+lang lookup
+// Key: "name:lang" (lowercase), Value: best matching card
+const scoringCache = new Map<string, ScryfallApiCard>();
+
+// LRU memory cache for hot cards - bypasses SQLite entirely for frequently accessed cards
+// Max 500 entries (~2MB memory overhead assuming ~4KB per card)
+// Key: "set:number" or "name:lang", Value: card data
+const hotCardCache = new LRUCache<string, ScryfallApiCard>(500);
+
+// Clear caches when new cards are inserted (they might be better matches)
+export function clearScoringCache(): void {
+    scoringCache.clear();
+    hotCardCache.clear();
+}
+
+// Prepared statement cache - avoids re-preparing same SQL on each call
+// Lazy-initialized on first use (after database is ready)
+// Using Map to store by SQL string for simplicity
+import type Database from 'better-sqlite3';
+const preparedStatementCache = new Map<string, Database.Statement>();
+
+function getPreparedStatement(sql: string): Database.Statement {
+    let stmt = preparedStatementCache.get(sql);
+    if (!stmt) {
+        const db = getDatabase();
+        stmt = db.prepare(sql);
+        preparedStatementCache.set(sql, stmt);
+    }
+    return stmt;
+}
+
+// Clear prepared statements when database changes (for testing)
+export function clearPreparedStatements(): void {
+    preparedStatementCache.clear();
+}
 
 /**
  * Look up a card by set code and collector number.
@@ -13,16 +50,32 @@ export function lookupCardBySetNumber(
     collectorNumber: string
 ): ScryfallApiCard | null {
     try {
-        const db = getDatabase();
-        // Set + collector_number uniquely identifies a card printing
-        // The language is determined by the printing itself, not requested
-        const stmt = db.prepare(`
-      SELECT * FROM cards 
-      WHERE set_code = ? AND collector_number = ?
-      LIMIT 1
-    `);
+        // Check hot card cache first
+        const cacheKey = `${setCode.toLowerCase()}:${collectorNumber}`;
+        const cached = hotCardCache.get(cacheKey);
+        if (cached) {
+            debugLog(`[DB Cache] Hot cache HIT for ${cacheKey}`);
+            return cached;
+        }
+
+        // Use prepared statement (cached at module level)
+        const stmt = getPreparedStatement(
+            `SELECT * FROM cards WHERE set_code = ? AND collector_number = ? LIMIT 1`
+        );
         const row = stmt.get(setCode.toLowerCase(), collectorNumber) as CardRow | undefined;
-        return row ? rowToScryfallCard(row) : null;
+        if (!row) return null;
+
+        // Treat cards without all_parts as cache miss - they need re-fetch for token data
+        if (!row.all_parts) {
+            return null;
+        }
+
+        const card = rowToScryfallCard(row);
+
+        // Store in hot cache for future lookups
+        hotCardCache.set(cacheKey, card);
+
+        return card;
     } catch {
         // Database might not be initialized yet, return null
         return null;
@@ -41,29 +94,38 @@ export function lookupCardByName(
     lang: string = 'en'
 ): ScryfallApiCard | null {
     try {
-        const db = getDatabase();
         const queryLower = name.toLowerCase();
 
-        // Get all exact name matches
-        const exactStmt = db.prepare(`
-            SELECT * FROM cards 
-            WHERE name = ? COLLATE NOCASE AND lang = ?
-        `);
+        // Use prepared statements (cached at module level)
+        const exactStmt = getPreparedStatement(
+            `SELECT * FROM cards WHERE name = ? COLLATE NOCASE AND lang = ?`
+        );
         let rows = exactStmt.all(name, lang.toLowerCase()) as CardRow[];
 
         // If no exact matches, try DFC front face matching
         // e.g., "Bala Ged Recovery" should match "Bala Ged Recovery // Bala Ged Sanctuary"
         if (rows.length === 0) {
-            const likeStmt = db.prepare(`
-                SELECT * FROM cards 
-                WHERE name LIKE ? COLLATE NOCASE AND lang = ?
-            `);
+            const likeStmt = getPreparedStatement(
+                `SELECT * FROM cards WHERE name LIKE ? COLLATE NOCASE AND lang = ?`
+            );
             rows = likeStmt.all(`${name} //%`, lang.toLowerCase()) as CardRow[];
         }
 
+        // Filter out cards without all_parts - they need re-fetch for token data
+        // This handles cards cached before all_parts column was added
+        rows = rows.filter(row => row.all_parts !== null);
+
         if (rows.length === 0) {
-            debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): Not found`);
+            debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): Not found (or missing all_parts)`);
             return null;
+        }
+
+        // Check scoring cache first - avoids re-scoring on repeated lookups
+        const cacheKey = `${queryLower}:${lang.toLowerCase()}`;
+        const cached = scoringCache.get(cacheKey);
+        if (cached) {
+            debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): Scoring cache hit`);
+            return cached;
         }
 
         // Score each card to pick the best match
@@ -92,21 +154,23 @@ export function lookupCardByName(
                 score += (1000 - Math.min(collectorNum, 999)) / 10000; // Small tiebreaker
             }
 
-            debugLog(`[DB Cache] Scoring "${card.name}" (${setCode}:${row.collector_number}): ${score.toFixed(2)}`);
             return { card, score, setCode };
         });
 
         // Sort by score descending
         scored.sort((a, b) => b.score - a.score);
 
-        // Log all candidates with their scores
-        debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): ${rows.length} candidates found`);
-        for (const { card, score, setCode } of scored) {
-            debugLog(`  [${score >= scored[0].score ? '→' : ' '}] ${score.toFixed(4)} - "${card.name}" (${setCode}:${card.collector_number}) layout=${card.layout || 'normal'}`);
+        // Log summary and top 3 candidates only (not all 64 for common cards)
+        debugLog(`[DB Cache] lookupCardByName("${name}", "${lang}"): ${rows.length} candidates, showing top 3`);
+        for (const { card, score, setCode } of scored.slice(0, 3)) {
+            debugLog(`  [→] ${score.toFixed(4)} - "${card.name}" (${setCode}:${card.collector_number})`);
         }
 
         const result = scored[0].card;
-        debugLog(`[DB Cache] Selected: "${result.name}" (${scored[0].setCode}:${result.collector_number}) with score ${scored[0].score.toFixed(4)}`);
+
+        // Cache the scoring result for future lookups
+        scoringCache.set(cacheKey, result);
+
         return result;
     } catch {
         // Database might not be initialized yet, return null
@@ -148,7 +212,8 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
             layout: card.layout || null,
             image_uris: card.image_uris ? JSON.stringify(card.image_uris) : null,
             card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
-            all_parts: card.all_parts ? JSON.stringify(card.all_parts) : null,
+            // Store '[]' for cards without tokens so we can distinguish "never fetched" (null) from "has no tokens" ([])
+            all_parts: JSON.stringify(card.all_parts || []),
         };
         stmt.run(cardData);
     } catch (error) {
@@ -158,11 +223,10 @@ export function insertOrUpdateCard(card: ScryfallApiCard): void {
 /**
  * Batch insert cards from bulk data import.
  * Uses a transaction for better performance.
- * Returns counts of new and updated cards.
+ * Returns count of processed cards (INSERT OR REPLACE handles both new and updates).
  */
 export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; updated: number } {
     const db = getDatabase();
-    const checkStmt = db.prepare('SELECT id FROM cards WHERE id = ?');
     const insertStmt = db.prepare(`
     INSERT OR REPLACE INTO cards (
       id, oracle_id, name, set_code, collector_number, lang,
@@ -175,15 +239,9 @@ export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; 
     )
   `);
 
-    let insertedCount = 0;
-    let updatedCount = 0;
-
     const insertMany = db.transaction((cardsToInsert: ScryfallApiCard[]) => {
         for (const card of cardsToInsert) {
             const id = (card as CardWithId).id || `generated_${card.set}_${card.collector_number}`;
-
-            // Check if exists for logging purposes
-            const exists = checkStmt.get(id);
 
             insertStmt.run({
                 id,
@@ -200,19 +258,15 @@ export function batchInsertCards(cards: ScryfallApiCard[]): { inserted: number; 
                 layout: card.layout || null,
                 image_uris: card.image_uris ? JSON.stringify(card.image_uris) : null,
                 card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
-                all_parts: card.all_parts ? JSON.stringify(card.all_parts) : null,
+                // Store '[]' for cards without tokens so we can distinguish "never fetched" (null) from "has no tokens" ([])
+                all_parts: JSON.stringify(card.all_parts || []),
             });
-
-            if (exists) {
-                updatedCount++;
-            } else {
-                insertedCount++;
-            }
         }
     });
 
     insertMany(cards);
-    return { inserted: insertedCount, updated: updatedCount };
+    // Return total as inserted - INSERT OR REPLACE handles both cases, exact counts not critical
+    return { inserted: cards.length, updated: 0 };
 }
 
 /**

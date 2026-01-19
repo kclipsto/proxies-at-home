@@ -98,6 +98,13 @@ export async function downloadAndImportBulkData(): Promise<{
     const jsonParser = StreamJsonParser.parser();
     const arrayStreamer = StreamArray.streamArray();
 
+    // Handle stream parsing errors
+    let streamError: Error | null = null;
+    arrayStreamer.on('error', (err: Error) => {
+        console.error('[Bulk Import] Stream parse error:', err.message);
+        streamError = err;
+    });
+
     // Process cards as they come in
     arrayStreamer.on('data', ({ value }: { value: ScryfallBulkCard }) => {
         // Convert bulk card format to our ScryfallApiCard format
@@ -136,6 +143,11 @@ export async function downloadAndImportBulkData(): Promise<{
         jsonParser,
         arrayStreamer
     );
+
+    // Check if stream had parsing errors
+    if (streamError) {
+        throw streamError;
+    }
 
     // Insert any remaining cards
     if (batch.length > 0) {

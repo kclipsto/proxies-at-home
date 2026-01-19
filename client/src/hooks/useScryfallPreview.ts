@@ -1,27 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { extractCardInfo, hasIncompleteTagSyntax } from "@/helpers/cardInfoHelper";
-import { getImages, type RawScryfallCard } from "@/helpers/scryfallApi";
+import { getImages, mapResponseToCards } from "@/helpers/scryfallApi";
 import { debugLog } from "@/helpers/debug";
 import { API_BASE } from "@/constants";
 import type { ScryfallCard } from "../../../shared/types";
 
-/**
- * Helper to map Scryfall API response to ScryfallCard objects
- */
-function mapResponseToCards(data: { data?: RawScryfallCard[] }): ScryfallCard[] {
-    if (!data.data || data.data.length === 0) return [];
-    return data.data.map((card: RawScryfallCard) => ({
-        name: card.name,
-        set: card.set,
-        setName: card.set_name,
-        number: card.collector_number,
-        imageUrls: getImages(card),
-        lang: card.lang,
-        cmc: card.cmc,
-        type_line: card.type_line,
-        rarity: card.rarity,
-    } as ScryfallCard));
-}
+
 
 export function useScryfallPreview(query: string) {
     const [setVariations, setSetVariations] = useState<ScryfallCard[]>([]);

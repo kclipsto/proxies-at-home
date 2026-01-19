@@ -1,11 +1,9 @@
 import type { CardInfo } from "./streamCards";
 import { batchSearchMpcAutofill, type MpcAutofillCard, getMpcAutofillImageUrl } from "./mpcAutofillApi";
 import { parseMpcCardName } from "./mpcUtils";
-import { useSettingsStore } from "../store";
+import { useUserPreferencesStore } from "../store";
 import { debugLog } from "./debug";
-
-// Key to match streamCards Logic
-// const cardKey = (info: CardInfo) => info.name.toLowerCase(); // Unused now
+import { normalizeDfcName } from "../../../shared/cardNameUtils";
 
 export interface MpcMatchResult {
     info: CardInfo;
@@ -23,11 +21,6 @@ export interface MpcMatchResult {
 export async function findBestMpcMatches(
     infos: CardInfo[],
 ): Promise<MpcMatchResult[]> {
-    // Normalize DFC names for MPC search: "A // B" -> "A" (front face)
-    // MPC Autofill doesn't have full DFC names, only individual face names
-    const normalizeDfcName = (name: string): string => {
-        return name.includes(' // ') ? name.split(' // ')[0].trim() : name;
-    };
 
     // Separate tokens from regular cards (MPC uses different cardType for each)
     const tokenInfos = infos.filter(info => info.isToken);
@@ -56,10 +49,10 @@ export async function findBestMpcMatches(
     const uniqueTokenNames = Array.from(nameToTokenInfos.keys());
     const uniqueCardNames = Array.from(nameToCardInfos.keys());
 
-    const settings = useSettingsStore.getState();
-    const favSources = new Set(settings.favoriteMpcSources);
-    const favTags = new Set(settings.favoriteMpcTags);
-    const minDpi = settings.favoriteMpcDpi ?? 0; // 0 means no DPI filter
+    const prefs = useUserPreferencesStore.getState().preferences;
+    const favSources = new Set(prefs?.favoriteMpcSources || []);
+    const favTags = new Set(prefs?.favoriteMpcTags || []);
+    const minDpi = prefs?.favoriteMpcDpi || 0; // 0 means no DPI filter
 
     // Batch search - separate searches for tokens and cards
     const [tokenResults, cardResults] = await Promise.all([

@@ -10,22 +10,132 @@ import {
     createFramebuffer,
     createQuadBuffer,
 } from "./webgl/webglUtils";
-import { VS_QUAD, FS_INIT, FS_STEP, FS_FINAL } from "./webgl/shaders";
+import { VS_QUAD, FS_INIT, FS_STEP, FS_FINAL, FS_DIRECT } from "./webgl/shaders";
 import type { DarkenMode } from "../store/settings";
+import { darkenModeToInt } from "../components/CardCanvas/types";
+import { debugLog } from "./debug";
 
-/**
- * Convert darkenMode string to shader int value
- * 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
- */
-function darkenModeToInt(mode: DarkenMode | undefined): number {
-    switch (mode) {
-        case 'none': return 0;
-        case 'darken-all': return 1;
-        case 'contrast-edges': return 2;
-        case 'contrast-full': return 3;
-        default: return 0;
+// WebGL Debug Logging
+const WEBGL_DEBUG = true;
+let webglContextCount = 0;
+let webglContextsCreated = 0;
+
+function webglLog(message: string, ...args: unknown[]) {
+    if (WEBGL_DEBUG) {
+        debugLog(`[WebGL] ${message}`, ...args);
     }
 }
+
+function trackContextCreation(source: string): number {
+    webglContextCount++;
+    webglContextsCreated++;
+    const id = webglContextsCreated;
+    webglLog(`Context CREATED #${id} by ${source} (active: ${webglContextCount})`);
+    return id;
+}
+
+function trackContextRelease(id: number, source: string) {
+    webglContextCount--;
+    webglLog(`Context RELEASED #${id} by ${source} (active: ${webglContextCount})`);
+}
+
+/**
+ * Persistent WebGL context manager.
+ * Maintains a single context per "purpose" (export/display) that is reused across renders.
+ * Only creates a new context on first use or if the previous one was lost.
+ */
+class WebGLContextManager {
+    private canvas: OffscreenCanvas | null = null;
+    private gl: WebGL2RenderingContext | null = null;
+    private isContextLost = false;
+    private contextId = 0;
+    private readonly purpose: string;
+
+    constructor(purpose: string) {
+        this.purpose = purpose;
+    }
+
+    /**
+     * Get or create a WebGL context at the specified size.
+     * Reuses existing context if available and not lost.
+     */
+    getContext(width: number, height: number): { canvas: OffscreenCanvas; gl: WebGL2RenderingContext; isNew: boolean } {
+        // Check if existing context is still valid (not lost by browser)
+        if (this.canvas && this.gl && !this.isContextLost) {
+            // Additional check: verify context wasn't silently lost by the browser
+            if (this.gl.isContextLost()) {
+                webglLog(`Context for ${this.purpose} was silently lost, recreating...`);
+                this.isContextLost = true;
+            } else {
+                // Context is valid, resize if needed
+                if (this.canvas.width !== width || this.canvas.height !== height) {
+                    this.canvas.width = width;
+                    this.canvas.height = height;
+                    this.gl.viewport(0, 0, width, height);
+                }
+                return { canvas: this.canvas, gl: this.gl, isNew: false };
+            }
+        }
+
+        // Need to create new context
+        this.canvas = new OffscreenCanvas(width, height);
+        this.gl = this.canvas.getContext("webgl2", {
+            premultipliedAlpha: false,
+            preserveDrawingBuffer: true,
+            antialias: false,
+        });
+
+        if (!this.gl) {
+            throw new Error("WebGL2 not supported");
+        }
+
+        // Set up context loss handler
+        this.canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            webglLog(`Context lost event for ${this.purpose}`);
+            this.isContextLost = true;
+        });
+
+        this.isContextLost = false;
+        this.contextId = trackContextCreation(this.purpose);
+        webglLog(`Context manager created new context for ${this.purpose}: ${width}x${height}`);
+
+        return { canvas: this.canvas, gl: this.gl, isNew: true };
+    }
+
+    /**
+     * Mark the context as lost. Next getContext() will create a new one.
+     */
+    handleContextLost() {
+        if (this.contextId > 0) {
+            trackContextRelease(this.contextId, this.purpose);
+        }
+        this.isContextLost = true;
+        this.gl = null;
+        this.canvas = null;
+        webglLog(`Context lost for ${this.purpose}`);
+    }
+
+    /**
+     * Explicitly release the context. Use only when done with all processing.
+     */
+    release() {
+        if (this.gl && !this.isContextLost) {
+            this.gl.getExtension("WEBGL_lose_context")?.loseContext();
+            trackContextRelease(this.contextId, this.purpose);
+        }
+        this.gl = null;
+        this.canvas = null;
+        this.isContextLost = false;
+        this.contextId = 0;
+    }
+}
+
+// Module-level context managers - reused across all renders in this worker
+const exportContextManager = new WebGLContextManager('export');
+const displayContextManager = new WebGLContextManager('display');
+const jfaContextManager = new WebGLContextManager('jfa');
+const bleedGenContextManager = new WebGLContextManager('bleed-gen');
 
 /**
  * Compute the darknessFactor from an ImageBitmap by building a luminance histogram.
@@ -36,7 +146,13 @@ function darkenModeToInt(mode: DarkenMode | undefined): number {
  * This is used for adaptive edge contrast - darker images get less aggressive
  * darkening to avoid crushing details.
  */
+// Cache for darkness factor computation to avoid re-analyzing the same ImageBitmap
+const darknessFactorCache = new WeakMap<ImageBitmap, number>();
+
 function computeDarknessFactor(img: ImageBitmap): number {
+    if (darknessFactorCache.has(img)) {
+        return darknessFactorCache.get(img)!;
+    }
     // Create a small canvas to sample the image (we don't need full resolution)
     const sampleSize = 256; // Sample at max 256x256 for performance
     const scale = Math.min(1, sampleSize / Math.max(img.width, img.height));
@@ -44,13 +160,19 @@ function computeDarknessFactor(img: ImageBitmap): number {
     const h = Math.round(img.height * scale);
 
     const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext("2d")!;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+        // Fallback to neutral darkness factor if context unavailable
+        return 0.5;
+    }
     ctx.drawImage(img, 0, 0, w, h);
 
     const imageData = ctx.getImageData(0, 0, w, h);
 
     // Use shared utility for histogram calculation
-    return computeDarknessFactorFromPixels(imageData.data);
+    const factor = computeDarknessFactorFromPixels(imageData.data);
+    darknessFactorCache.set(img, factor);
+    return factor;
 }
 
 /**
@@ -86,6 +208,57 @@ function initWebGLPrograms(gl: WebGL2RenderingContext): WebGLPrograms {
         step: progStep,
         final: progFinal,
     };
+}
+
+/**
+ * Run Jump Flood Algorithm steps to propagate seed coordinates.
+ * Returns the texture containing the final seed map.
+ */
+function runJfaSteps(
+    gl: WebGL2RenderingContext,
+    stepProgram: WebGLProgram,
+    texA: WebGLTexture,
+    texB: WebGLTexture,
+    fbA: WebGLFramebuffer,
+    fbB: WebGLFramebuffer,
+    width: number,
+    height: number
+): WebGLTexture {
+    gl.useProgram(stepProgram);
+    gl.uniform2f(gl.getUniformLocation(stepProgram, "u_resolution"), width, height);
+    const uStepLoc = gl.getUniformLocation(stepProgram, "u_step");
+    const uSeedsLoc = gl.getUniformLocation(stepProgram, "u_seeds");
+
+    let currentFb = fbA;
+    let currentTex = texA;
+    let nextFb = fbB;
+    let nextTex = texB;
+
+    const maxDim = Math.max(width, height);
+    const steps = Math.ceil(Math.log2(maxDim));
+
+    for (let i = steps - 1; i >= 0; i--) {
+        const stepSize = Math.pow(2, i);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, nextFb);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, currentTex);
+        gl.uniform1i(uSeedsLoc, 0);
+        gl.uniform1f(uStepLoc, stepSize);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Swap
+        const tempFb = currentFb;
+        currentFb = nextFb;
+        nextFb = tempFb;
+
+        const tempTex = currentTex;
+        currentTex = nextTex;
+        nextTex = tempTex;
+    }
+
+    return currentTex;
 }
 
 /**
@@ -138,17 +311,10 @@ export async function generateBleedCanvasWebGL(
     const finalWidth = Math.ceil(targetCardWidth + bleed * 2);
     const finalHeight = Math.ceil(targetCardHeight + bleed * 2);
 
-    // Create fresh canvas and context for this image
-    const canvas = new OffscreenCanvas(finalWidth, finalHeight);
-    const gl = canvas.getContext("webgl2", {
-        premultipliedAlpha: false,
-        preserveDrawingBuffer: true,
-        antialias: false,
-    });
+    // Get or create WebGL context using context manager (reuses if available)
+    const { canvas, gl, isNew } = bleedGenContextManager.getContext(finalWidth, finalHeight);
 
-    if (!gl) {
-        throw new Error("WebGL2 not supported");
-    }
+    webglLog(`Bleed generation: ${finalWidth}x${finalHeight}, bleed=${bleedWidth}${opts?.unit ?? 'mm'}, reused=${!isNew}`);
 
     // Initialize WebGL resources for this context
     const progs = initWebGLPrograms(gl);
@@ -215,39 +381,7 @@ export async function generateBleedCanvasWebGL(
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     // --- PASS 2: JFA STEPS ---
-    gl.useProgram(progs.step);
-    gl.uniform2f(gl.getUniformLocation(progs.step, "u_resolution"), finalWidth, finalHeight);
-    const uStepLoc = gl.getUniformLocation(progs.step, "u_step");
-    const uSeedsLoc = gl.getUniformLocation(progs.step, "u_seeds");
-
-    let currentFb = fbA;
-    let currentTex = texA;
-    let nextFb = fbB;
-    let nextTex = texB;
-
-    const maxDim = Math.max(finalWidth, finalHeight);
-    const steps = Math.ceil(Math.log2(maxDim));
-
-    for (let i = steps - 1; i >= 0; i--) {
-        const stepSize = Math.pow(2, i);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, nextFb);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, currentTex);
-        gl.uniform1i(uSeedsLoc, 0);
-        gl.uniform1f(uStepLoc, stepSize);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        // Swap
-        const tempFb = currentFb;
-        currentFb = nextFb;
-        nextFb = tempFb;
-
-        const tempTex = currentTex;
-        currentTex = nextTex;
-        nextTex = tempTex;
-    }
+    const finalSeedTex = runJfaSteps(gl, progs.step, texA, texB, fbA, fbB, finalWidth, finalHeight);
 
     // --- PASS 3: FINAL ---
     // Render to screen (null framebuffer)
@@ -255,7 +389,7 @@ export async function generateBleedCanvasWebGL(
     gl.useProgram(progs.final);
 
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, currentTex); // The final seed map
+    gl.bindTexture(gl.TEXTURE_2D, finalSeedTex); // The final seed map
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_seeds"), 0);
 
     gl.activeTexture(gl.TEXTURE1);
@@ -263,7 +397,7 @@ export async function generateBleedCanvasWebGL(
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_image"), 1);
 
     // Compute darknessFactor for adaptive edge contrast
-    const darkenModeInt = darkenModeToInt(opts.darkenMode);
+    const darkenModeInt = darkenModeToInt(opts.darkenMode || 'none');
     const darknessFactor = darkenModeInt > 0 ? computeDarknessFactor(img) : 0.5;
 
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_resolution"), finalWidth, finalHeight);
@@ -277,7 +411,7 @@ export async function generateBleedCanvasWebGL(
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // Cleanup WebGL resources
+    // Cleanup per-render WebGL resources - keep context alive for next render
     gl.deleteTexture(texA);
     gl.deleteTexture(texB);
     gl.deleteTexture(imgTexture);
@@ -287,21 +421,26 @@ export async function generateBleedCanvasWebGL(
     gl.deleteProgram(progs.step);
     gl.deleteProgram(progs.final);
     gl.deleteBuffer(quadBuffer);
+    // Do NOT release context - it will be reused for the next image
 
-    // Explicitly release WebGL context to avoid hitting browser context limits
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-
-    return canvas;
+    // Copy canvas content to a new canvas before returning
+    // This is necessary because the source canvas is reused by the context manager
+    const resultCanvas = new OffscreenCanvas(canvas.width, canvas.height);
+    const resultCtx = resultCanvas.getContext('2d');
+    if (resultCtx) {
+        resultCtx.drawImage(canvas, 0, 0);
+    }
+    return resultCanvas;
 }
 
 /**
- * Process a card image to generate all required blobs (export + display, normal + darkened)
- * Optimized: Runs JFA once and generates both versions with two final render passes
+ * Process a card image to generate all required blobs (export + display, normal + selected darkened)
+ * Optimized: Runs JFA once and generates only needed versions with final render passes
  */
 export async function processCardImageWebGL(
     img: ImageBitmap,
     bleedWidthMm: number,
-    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; inputHasBleedMm?: number }
+    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; inputHasBleedMm?: number; darkenMode?: number }
 ): Promise<{
     exportBlob: Blob;
     exportDpi: number;
@@ -309,16 +448,16 @@ export async function processCardImageWebGL(
     displayBlob: Blob;
     displayDpi: number;
     displayBleedWidth: number;
-    // Per-mode darkened blobs
-    exportBlobDarkenAll: Blob;
-    displayBlobDarkenAll: Blob;
-    exportBlobContrastEdges: Blob;
-    displayBlobContrastEdges: Blob;
-    exportBlobContrastFull: Blob;
-    displayBlobContrastFull: Blob;
+    // Per-mode darkened blobs (only present if that mode was generated)
+    exportBlobDarkenAll?: Blob;
+    displayBlobDarkenAll?: Blob;
+    exportBlobContrastEdges?: Blob;
+    displayBlobContrastEdges?: Blob;
+    exportBlobContrastFull?: Blob;
+    displayBlobContrastFull?: Blob;
     // Legacy (kept for backwards compatibility)
-    exportBlobDarkened: Blob;
-    displayBlobDarkened: Blob;
+    exportBlobDarkened?: Blob;
+    displayBlobDarkened?: Blob;
     // For Card Editor live preview
     baseDisplayBlob: Blob;
 }> {
@@ -359,17 +498,10 @@ export async function processCardImageWebGL(
     const finalWidth = Math.ceil(inputWidth + additionalBleedPx * 2);
     const finalHeight = Math.ceil(inputHeight + additionalBleedPx * 2);
 
-    // Create WebGL context once for all processing
-    const canvas = new OffscreenCanvas(finalWidth, finalHeight);
-    const gl = canvas.getContext("webgl2", {
-        premultipliedAlpha: false,
-        preserveDrawingBuffer: true,
-        antialias: false,
-    });
+    // Get or create WebGL context using context manager (reuses if available)
+    const { canvas, gl, isNew } = jfaContextManager.getContext(finalWidth, finalHeight);
 
-    if (!gl) {
-        throw new Error("WebGL2 not supported");
-    }
+    webglLog(`JFA processing: ${finalWidth}x${finalHeight}, additionalBleed=${additionalBleedMm}mm, reused=${!isNew}`);
 
 
 
@@ -431,39 +563,7 @@ export async function processCardImageWebGL(
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     // --- PASS 2: JFA STEPS (run once) ---
-    gl.useProgram(progs.step);
-    gl.uniform2f(gl.getUniformLocation(progs.step, "u_resolution"), finalWidth, finalHeight);
-    const uStepLoc = gl.getUniformLocation(progs.step, "u_step");
-    const uSeedsLoc = gl.getUniformLocation(progs.step, "u_seeds");
-
-    let currentFb = fbA;
-    let currentTex = texA;
-    let nextFb = fbB;
-    let nextTex = texB;
-
-    const maxDim = Math.max(finalWidth, finalHeight);
-    const steps = Math.ceil(Math.log2(maxDim));
-
-    for (let i = steps - 1; i >= 0; i--) {
-        const stepSize = Math.pow(2, i);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, nextFb);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, currentTex);
-        gl.uniform1i(uSeedsLoc, 0);
-        gl.uniform1f(uStepLoc, stepSize);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        // Swap
-        const tempFb = currentFb;
-        currentFb = nextFb;
-        nextFb = tempFb;
-
-        const tempTex = currentTex;
-        currentTex = nextTex;
-        nextTex = tempTex;
-    }
+    const finalSeedTex = runJfaSteps(gl, progs.step, texA, texB, fbA, fbB, finalWidth, finalHeight);
 
 
 
@@ -478,7 +578,7 @@ export async function processCardImageWebGL(
         glCtx.useProgram(progs.final);
 
         glCtx.activeTexture(glCtx.TEXTURE0);
-        glCtx.bindTexture(glCtx.TEXTURE_2D, currentTex);
+        glCtx.bindTexture(glCtx.TEXTURE_2D, finalSeedTex);
         glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_seeds"), 0);
 
         glCtx.activeTexture(glCtx.TEXTURE1);
@@ -502,10 +602,14 @@ export async function processCardImageWebGL(
         const displayWidth = (finalWidth / exportDpi) * displayDpi;
         const displayHeight = (finalHeight / exportDpi) * displayDpi;
         const lowResCanvas = new OffscreenCanvas(displayWidth, displayHeight);
-        const lowResCtx = lowResCanvas.getContext("2d")!;
+        const lowResCtx = lowResCanvas.getContext("2d");
+        if (!lowResCtx) {
+            throw new Error("Failed to get 2d context for display canvas");
+        }
         lowResCtx.imageSmoothingQuality = "high";
         lowResCtx.drawImage(canvas, 0, 0, displayWidth, displayHeight);
-        const displayBlob = await lowResCanvas.convertToBlob({ type: "image/png" });
+        // Use WebP for display blobs to save memory and improve performance (L6)
+        const displayBlob = await lowResCanvas.convertToBlob({ type: "image/webp", quality: 0.90 });
 
         return { exportBlob, displayBlob };
     }
@@ -513,16 +617,27 @@ export async function processCardImageWebGL(
     // Compute darknessFactor from the source image
     const darknessFactor = computeDarknessFactor(img);
 
+    // Get the current darken mode (0=none is always generated)
+    const currentDarkenMode = opts?.darkenMode ?? 0;
+
     // --- PASS 3A: FINAL (normal, darkenMode=0) ---
     const normalResult = await renderFinalAndExtract(gl, 0, darknessFactor);
 
-    // --- PASS 3B-D: Generate all 3 darkening modes ---
-    const darkenAllResult = await renderFinalAndExtract(gl, 1, darknessFactor);
-    const contrastEdgesResult = await renderFinalAndExtract(gl, 2, darknessFactor);
-    const contrastFullResult = await renderFinalAndExtract(gl, 3, darknessFactor);
+    // --- PASS 3B: Generate current darkening mode (if not mode 0) ---
+    let darkenAllResult: { exportBlob: Blob; displayBlob: Blob } | undefined;
+    let contrastEdgesResult: { exportBlob: Blob; displayBlob: Blob } | undefined;
+    let contrastFullResult: { exportBlob: Blob; displayBlob: Blob } | undefined;
+
+    if (currentDarkenMode === 1) {
+        darkenAllResult = await renderFinalAndExtract(gl, 1, darknessFactor);
+    } else if (currentDarkenMode === 2) {
+        contrastEdgesResult = await renderFinalAndExtract(gl, 2, darknessFactor);
+    } else if (currentDarkenMode === 3) {
+        contrastFullResult = await renderFinalAndExtract(gl, 3, darknessFactor);
+    }
 
 
-    // Cleanup WebGL resources
+    // Cleanup per-render WebGL resources - keep context alive for next render
     gl.deleteTexture(texA);
     gl.deleteTexture(texB);
     gl.deleteTexture(imgTexture);
@@ -532,9 +647,7 @@ export async function processCardImageWebGL(
     gl.deleteProgram(progs.step);
     gl.deleteProgram(progs.final);
     gl.deleteBuffer(quadBuffer);
-
-    // Explicitly release WebGL context to avoid hitting browser context limits
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    // Do NOT release context - it will be reused for the next image
 
     return {
         exportBlob: normalResult.exportBlob,
@@ -543,17 +656,182 @@ export async function processCardImageWebGL(
         displayBlob: normalResult.displayBlob,
         displayDpi,
         displayBleedWidth: totalBleedMm,
-        // Per-mode blobs
-        exportBlobDarkenAll: darkenAllResult.exportBlob,
-        displayBlobDarkenAll: darkenAllResult.displayBlob,
-        exportBlobContrastEdges: contrastEdgesResult.exportBlob,
-        displayBlobContrastEdges: contrastEdgesResult.displayBlob,
-        exportBlobContrastFull: contrastFullResult.exportBlob,
-        displayBlobContrastFull: contrastFullResult.displayBlob,
-        // Legacy (maps to contrast-edges for backwards compatibility)
-        exportBlobDarkened: contrastEdgesResult.exportBlob,
-        displayBlobDarkened: contrastEdgesResult.displayBlob,
+        // Per-mode blobs (only present if that mode was generated)
+        exportBlobDarkenAll: darkenAllResult?.exportBlob,
+        displayBlobDarkenAll: darkenAllResult?.displayBlob,
+        exportBlobContrastEdges: contrastEdgesResult?.exportBlob,
+        displayBlobContrastEdges: contrastEdgesResult?.displayBlob,
+        exportBlobContrastFull: contrastFullResult?.exportBlob,
+        displayBlobContrastFull: contrastFullResult?.displayBlob,
+        // Legacy (maps to contrast-edges if present)
+        exportBlobDarkened: contrastEdgesResult?.exportBlob,
+        displayBlobDarkened: contrastEdgesResult?.displayBlob,
         // For Card Editor live preview (undarkened version)
         baseDisplayBlob: normalResult.displayBlob,
+    };
+}
+
+/**
+ * GPU-accelerated processing for images with existing bleed.
+ * 
+ * This is a fast path that skips the expensive JFA bleed generation.
+ * It simply resizes the image to the target dimensions and applies
+ * darkening effects using WebGL shaders.
+ * 
+ * Used for MPC cards and other images that already have bleed built-in.
+ * 
+ * Optimized for browser compatibility:
+ * - Reuses a SINGLE WebGL context for all renders
+ * - Only generates the needed modes (none + current darkenMode)
+ * - Releases context once at the end
+ */
+export async function processExistingBleedWebGL(
+    img: ImageBitmap,
+    bleedWidthMm: number,
+    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; darkenMode?: number }
+): Promise<{
+    exportBlob: Blob;
+    exportDpi: number;
+    exportBleedWidth: number;
+    displayBlob: Blob;
+    displayDpi: number;
+    displayBleedWidth: number;
+    // Per-mode darkened blobs (only present if that mode was generated)
+    exportBlobDarkenAll?: Blob;
+    displayBlobDarkenAll?: Blob;
+    exportBlobContrastEdges?: Blob;
+    displayBlobContrastEdges?: Blob;
+    exportBlobContrastFull?: Blob;
+    displayBlobContrastFull?: Blob;
+    // Legacy
+    exportBlobDarkened?: Blob;
+    displayBlobDarkened?: Blob;
+    // For Card Editor live preview
+    baseDisplayBlob: Blob;
+    baseExportBlob: Blob;
+}> {
+    const exportDpi = opts?.exportDpi ?? 300;
+    const displayDpi = opts?.displayDpi ?? 300;
+    const unit = opts?.unit ?? "mm";
+
+    // Standard MTG card dimensions: 63x88mm
+    const cardWidthMm = 63;
+    const cardHeightMm = 88;
+
+    // Convert bleed to mm
+    const bleedMm = unit === "in" ? bleedWidthMm * 25.4 : bleedWidthMm;
+
+    // Calculate dimensions at each DPI
+    const exportBleedPx = Math.round(getBleedInPixels(bleedMm, "mm", exportDpi));
+    const displayBleedPx = Math.round(getBleedInPixels(bleedMm, "mm", displayDpi));
+    const exportWidth = Math.ceil(IN(cardWidthMm / 25.4, exportDpi) + exportBleedPx * 2);
+    const exportHeight = Math.ceil(IN(cardHeightMm / 25.4, exportDpi) + exportBleedPx * 2);
+    const displayWidth = Math.ceil(IN(cardWidthMm / 25.4, displayDpi) + displayBleedPx * 2);
+    const displayHeight = Math.ceil(IN(cardHeightMm / 25.4, displayDpi) + displayBleedPx * 2);
+
+    // Compute darknessFactor for adaptive effects
+    const darknessFactor = computeDarknessFactor(img);
+
+    // Get the current darken mode (0=none is always generated)
+    const currentDarkenMode = opts?.darkenMode ?? 0;
+    // Modes to generate: always mode 0, plus current mode if different
+    const modesToGenerate = currentDarkenMode === 0 ? [0] : [0, currentDarkenMode];
+
+    // Helper to render selected modes at a given resolution using a REUSED context
+    async function renderSelectedModes(
+        targetWidth: number,
+        targetHeight: number,
+        mimeType: "image/png" | "image/webp" = "image/png"
+    ): Promise<Map<number, Blob>> {
+        const isExport = mimeType === 'image/png';
+        const contextManager = isExport ? exportContextManager : displayContextManager;
+
+        // Get or create context - will reuse if available
+        const { canvas, gl, isNew } = contextManager.getContext(targetWidth, targetHeight);
+
+        webglLog(`renderSelectedModes: ${targetWidth}x${targetHeight}, modes=[${modesToGenerate.join(',')}], format=${mimeType}, reused=${!isNew}`);
+
+        // Create shader program (could cache this too, but shaders are cheap)
+        const vs = createShader(gl, gl.VERTEX_SHADER, VS_QUAD);
+        const fs = createShader(gl, gl.FRAGMENT_SHADER, FS_DIRECT);
+        const program = createProgram(gl, vs, fs);
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
+
+        // Create quad buffer
+        const quadBuffer = createQuadBuffer(gl);
+
+        // Create image texture for this specific image
+        const imgTexture = createTexture(gl, img.width, img.height, img);
+        gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+        // Setup viewport and attributes
+        gl.viewport(0, 0, targetWidth, targetHeight);
+        const aPositionLoc = 0;
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+        gl.enableVertexAttribArray(aPositionLoc);
+        gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
+
+        gl.useProgram(program);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+        gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
+        gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), targetWidth, targetHeight);
+        gl.uniform1f(gl.getUniformLocation(program, "u_darknessFactor"), darknessFactor);
+
+        const darkenModeLoc = gl.getUniformLocation(program, "u_darkenMode");
+        const blobs = new Map<number, Blob>();
+
+        // Render only the needed modes
+        for (const mode of modesToGenerate) {
+            gl.uniform1i(darkenModeLoc, mode);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            blobs.set(mode, await canvas.convertToBlob({
+                type: mimeType,
+                quality: mimeType === "image/webp" ? 0.90 : undefined
+            }));
+        }
+
+        // Cleanup per-image resources only - keep context alive for next image
+        gl.deleteTexture(imgTexture);
+        gl.deleteBuffer(quadBuffer);
+        gl.deleteProgram(program);
+        // Do NOT release context - it will be reused for the next image
+
+        return blobs;
+    }
+
+    // Render export and display versions sequentially to avoid multiple WebGL contexts
+    // Firefox aggressively reclaims contexts, so parallel creation causes crashes
+    // Use WebP for display blobs (L6)
+    const exportBlobs = await renderSelectedModes(exportWidth, exportHeight, "image/png");
+    const displayBlobs = await renderSelectedModes(displayWidth, displayHeight, "image/webp");
+
+    // Extract blobs from maps - mode 0 (none) is always present
+    const exportBlob = exportBlobs.get(0)!;
+    const displayBlob = displayBlobs.get(0)!;
+
+    return {
+        exportBlob,
+        exportDpi,
+        exportBleedWidth: bleedMm,
+        displayBlob,
+        displayDpi,
+        displayBleedWidth: bleedMm,
+        // Per-mode blobs (only present if that mode was generated)
+        exportBlobDarkenAll: exportBlobs.get(1),
+        displayBlobDarkenAll: displayBlobs.get(1),
+        exportBlobContrastEdges: exportBlobs.get(2),
+        displayBlobContrastEdges: displayBlobs.get(2),
+        exportBlobContrastFull: exportBlobs.get(3),
+        displayBlobContrastFull: displayBlobs.get(3),
+        // Legacy (maps to contrast-edges if present)
+        exportBlobDarkened: exportBlobs.get(2),
+        displayBlobDarkened: displayBlobs.get(2),
+        // For Card Editor live preview
+        baseDisplayBlob: displayBlob,
+        baseExportBlob: exportBlob,
     };
 }

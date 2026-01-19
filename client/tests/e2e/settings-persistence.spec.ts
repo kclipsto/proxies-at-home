@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Settings Persistence', () => {
     test('should persist column count after reload', async ({ page }) => {

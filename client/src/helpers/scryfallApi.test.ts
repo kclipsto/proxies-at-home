@@ -219,12 +219,12 @@ describe('scryfallApi', () => {
             };
             mockGet.mockResolvedValue(mockSearchResponse);
 
-            // 2. Mock Print Fetch Stream (SSE)
+            // 2. Mock Print Fetch Stream (SSE) - with prints array
             const streamData = [
                 'event: print-found\n',
-                'data: {"imageUrls":["http://example.com/print1.jpg"]}\n\n',
+                'data: {"imageUrls":["http://example.com/print1.jpg"],"prints":[{"imageUrl":"http://example.com/print1.jpg","set":"cmd","number":"1","rarity":"uncommon"}]}\n\n',
                 'event: print-found\n',
-                'data: {"imageUrls":["http://example.com/print2.jpg"]}\n\n'
+                'data: {"imageUrls":["http://example.com/print2.jpg"],"prints":[{"imageUrl":"http://example.com/print2.jpg","set":"2xm","number":"274","rarity":"rare"}]}\n\n'
             ].join("");
 
             const mockRead = vi.fn()
@@ -248,6 +248,11 @@ describe('scryfallApi', () => {
             // The implementation collects all print URLs
             expect(result?.imageUrls).toContain('http://example.com/print1.jpg');
             expect(result?.imageUrls).toContain('http://example.com/print2.jpg');
+            // Also verify prints array is populated
+            expect(result?.prints).toBeDefined();
+            expect(result?.prints).toHaveLength(2);
+            expect(result?.prints?.[0]).toMatchObject({ imageUrl: 'http://example.com/print1.jpg', set: 'cmd', number: '1' });
+            expect(result?.prints?.[1]).toMatchObject({ imageUrl: 'http://example.com/print2.jpg', set: '2xm', number: '274' });
 
             expect(global.fetch).toHaveBeenCalledWith(
                 `${API_BASE}/api/stream/cards`,

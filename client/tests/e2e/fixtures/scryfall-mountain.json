@@ -1,0 +1,19 @@
+{
+    "data": [
+        {
+            "name": "Mountain",
+            "set": "leb",
+            "number": "295",
+            "imageUrls": [
+                "https://cards.scryfall.io/png/front/2/9/295b92bc-d66f-45d8-9bbe-5f5f13e39fd4.png"
+            ],
+            "type_line": "Basic Land — Mountain",
+            "mana_cost": "",
+            "colors": [
+                "R"
+            ],
+            "cmc": 0
+        }
+    ],
+    "has_more": false
+}

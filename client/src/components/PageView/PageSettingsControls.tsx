@@ -1,5 +1,6 @@
 import { useSettingsStore } from "@/store/settings";
-import { useLayoutEffect, useRef } from "react";
+import { useUserPreferencesStore } from "@/store/userPreferences";
+import { useLayoutEffect, useRef, useCallback } from "react";
 import {
   MouseSensor,
   TouchSensor,
@@ -28,6 +29,7 @@ import { CardSection } from "../SettingsPanel/sections/CardSection";
 import { FilterSortSection } from "../SettingsPanel/sections/FilterSortSection";
 import { ExportSection } from "../SettingsPanel/sections/ExportSection";
 import { ApplicationSection } from "../SettingsPanel/sections/ApplicationSection";
+import { ProjectsSection } from "../SettingsPanel/sections/ProjectsSection";
 import { useImageProcessing } from "@/hooks/useImageProcessing";
 import {
   HardDriveUpload,
@@ -40,6 +42,7 @@ import {
   Settings,
   ChevronsDown,
   ChevronsUp,
+  Folder,
 } from "lucide-react";
 import { AutoTooltip } from "../common";
 import { PullToRefresh } from "../PullToRefresh";
@@ -64,15 +67,50 @@ export function PageSettingsControls({
   cards,
   mobile,
 }: PageSettingsControlsProps) {
-  const settingsPanelState = useSettingsStore((state) => state.settingsPanelState);
-  const setPanelOrder = useSettingsStore((state) => state.setPanelOrder);
-  const togglePanelCollapse = useSettingsStore(
-    (state) => state.togglePanelCollapse
+  /* Global UI Preferences */
+  /* Global UI Preferences */
+  const rawSettingsPanelState = useUserPreferencesStore(
+    (state) => state.preferences?.settingsPanelState
   );
-  const collapseAllPanels = useSettingsStore((state) => state.collapseAllPanels);
-  const expandAllPanels = useSettingsStore((state) => state.expandAllPanels);
-  const isCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
-  const toggleSettingsPanel = useSettingsStore((state) => state.toggleSettingsPanel);
+  // Ensure we always have a valid object with order array
+  const settingsPanelState = rawSettingsPanelState && Array.isArray(rawSettingsPanelState.order)
+    ? rawSettingsPanelState
+    : { order: ['projects', 'layout', 'bleed', 'card', 'guides', 'darken', 'filterSort', 'export', 'application'], collapsed: {} };
+  const setSettingsPanelState = useUserPreferencesStore(
+    (state) => state.setSettingsPanelState
+  );
+
+  /* Helper functions for panel state */
+  const setPanelOrder = (order: string[]) => {
+    setSettingsPanelState({ ...settingsPanelState, order });
+  };
+  const togglePanelCollapse = (id: string) => {
+    setSettingsPanelState({
+      ...settingsPanelState,
+      collapsed: {
+        ...settingsPanelState.collapsed,
+        [id]: !settingsPanelState.collapsed[id],
+      },
+    });
+  };
+  const collapseAllPanels = () => {
+    const allCollapsed = settingsPanelState.order.reduce((acc, id) => ({
+      ...acc,
+      [id]: true
+    }), {});
+    setSettingsPanelState({ ...settingsPanelState, collapsed: allCollapsed });
+  };
+  const expandAllPanels = () => {
+    setSettingsPanelState({ ...settingsPanelState, collapsed: {} });
+  };
+
+  const isCollapsed = useUserPreferencesStore(
+    (state) => state.preferences?.isSettingsPanelCollapsed ?? false
+  );
+  const setIsSettingsPanelCollapsed = useUserPreferencesStore(
+    (state) => state.setIsSettingsPanelCollapsed
+  );
+  const toggleSettingsPanel = useCallback(() => setIsSettingsPanelCollapsed(!isCollapsed), [isCollapsed, setIsSettingsPanelCollapsed]);
 
   // Filter state for reactive badge
   const filterManaCost = useSettingsStore((state) => state.filterManaCost);
@@ -142,6 +180,20 @@ export function PageSettingsControls({
     const onToggle = () => togglePanelCollapse(id);
 
     switch (id) {
+      case "projects":
+        return (
+          <SettingsPanel
+            key={id}
+            id={id}
+            title="Projects"
+            isOpen={isOpen}
+            onToggle={onToggle}
+            icon={Folder}
+            mobile={mobile}
+          >
+            <ProjectsSection />
+          </SettingsPanel>
+        );
       case "layout":
         return (
           <SettingsPanel
@@ -225,7 +277,7 @@ export function PageSettingsControls({
             badge={totalFilters}
             onClearBadge={clearAllFilters}
           >
-            <FilterSortSection />
+            <FilterSortSection cards={cards} />
           </SettingsPanel>
         );
       case "export":
@@ -271,6 +323,10 @@ export function PageSettingsControls({
           let Icon = Settings;
           let label = "";
           switch (id) {
+            case "projects":
+              Icon = Folder;
+              label = "Projects";
+              break;
             case "layout":
               Icon = LayoutTemplate;
               label = "Layout";

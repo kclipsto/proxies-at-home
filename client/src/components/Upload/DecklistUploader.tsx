@@ -2,15 +2,17 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Button, Modal, ModalBody, ModalHeader, Textarea } from "flowbite-react";
-import { ExternalLink, Sparkles } from "lucide-react";
-import { parseDeckToInfos } from "@/helpers/cardInfoHelper";
-import { streamCards, type CardInfo } from "@/helpers/streamCards";
+import { ExternalLink, Search, Sparkles } from "lucide-react";
+import { parseDeckList } from "@/helpers/importParsers";
+import type { ImportIntent } from "@/helpers/importParsers";
 import { addRemoteImage } from "@/helpers/dbUtils";
-import { undoableAddCards } from "@/helpers/undoableActions";
-import { db } from "../../db";
-import { useCardsStore, useSettingsStore } from "@/store";
+import { db } from "@/db";
+import { useCardsStore, useSettingsStore, useProjectStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
 import { AdvancedSearch } from "../ArtworkModal";
+import { handleAutoImportTokens } from "@/helpers/tokenImportHelper";
+import { useToastStore } from "@/store/toast";
+import { useCardImport } from "@/hooks/useCardImport";
 
 type Props = {
     mobile?: boolean;
@@ -20,85 +22,47 @@ type Props = {
 
 export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props) {
     const [deckText, setDeckText] = useState("");
-    const fetchController = useRef<AbortController | null>(null);
-    const enrichmentController = useRef<AbortController | null>(null);
     const tokenFetchController = useRef<AbortController | null>(null);
 
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
-
-    const globalLanguage = useSettingsStore((s) => s.globalLanguage ?? "en");
     const preferredArtSource = useSettingsStore((s) => s.preferredArtSource);
-
     const clearAllCardsAndImages = useCardsStore((state) => state.clearAllCardsAndImages);
+    const { processCards, cancel: cancelCardFetch } = useCardImport({
+        onComplete: () => {
+            setDeckText("");
+            onUploadComplete?.();
+        }
+    });
 
     const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
     const [showNoTokensModal, setShowNoTokensModal] = useState(false);
     const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
 
-    // Live query to check if there are any cards that need token fetching
-    // Checks for:
-    // 1. Cards with explicit needed tokens (needs_token === true)
-    // 2. Cards that need token lookup (token_parts undefined, not a back card, not a token)
+    // Check if we have cards that need tokens but don't have them
+    const currentProjectId = useProjectStore((state) => state.currentProjectId);
     const hasTokensToFetch = useLiveQuery(async () => {
-        const count = await db.cards.filter(c =>
-            // Cards that have known tokens to fetch
-            (c.needs_token === true) ||
-            // Cards that need token lookup (MPC imports typically have undefined token_parts)
-            (c.token_parts === undefined &&
-                !c.linkedFrontId && // Skip back cards
-                !c.type_line?.toLowerCase().includes('token')) // Skip tokens
-        ).count();
-        return count > 0;
-    }, [], false);
-
-    // --- Fetch Logic ---
-
-    const processCardFetch = async (infos: CardInfo[], artSource?: 'scryfall' | 'mpc') => {
-        onUploadComplete?.();
-
-        if (fetchController.current) {
-            fetchController.current.abort();
-        }
-        fetchController.current = new AbortController();
-
-        if (infos.length === 0) {
-            alert("No valid cards found to import. Please check your input.");
-            return;
-        }
-
-        try {
-            // No loading modal - processing toast will show via useImageProcessing
-            await streamCards({
-                cardInfos: infos,
-                language: globalLanguage,
-                importType: 'scryfall',
-                signal: fetchController.current.signal,
-                artSource,
-                onComplete: () => {
-                    setDeckText("");
-                    onUploadComplete?.();
-
-                    // Check for auto-import tokens setting
-                    if (useSettingsStore.getState().autoImportTokens) {
-                        handleAddTokens(true);
-                    }
-                },
-            });
-        } catch (err: unknown) {
-            if (err instanceof Error && err.name !== "AbortError") {
-                alert(err.message || "Something went wrong while fetching cards.");
-            } else if (!(err instanceof Error)) {
-                alert("An unknown error occurred while fetching cards.");
-            }
-        } finally {
-            fetchController.current = null;
-        }
-    };
+        if (!currentProjectId) return false;
+        const cards = await db.cards
+            .where('projectId').equals(currentProjectId)
+            .filter(c => !!c.needs_token)
+            .toArray();
+        return cards.length > 0;
+    }, [currentProjectId]);
 
     const handleSubmit = async () => {
-        const infos = parseDeckToInfos(deckText || "");
-        if (!infos.length) return;
-        await processCardFetch(infos);
+        const text = deckText.trim();
+        if (!text) return;
+
+        const intents = parseDeckList(text);
+
+        const enrichedIntents = intents.map(i => ({
+            ...i,
+            sourcePreference: i.sourcePreference || preferredArtSource
+        }));
+
+        if (!enrichedIntents.length) return;
+        onUploadComplete?.();
+        await processCards(enrichedIntents);
     };
 
     const handleAddCard = async (cardName: string, mpcImageUrl?: string, specificPrint?: { set: string; number: string }) => {
@@ -114,110 +78,32 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             const imageId = await addRemoteImage([mpcImageUrl], 1);
 
             // Add the card with the image and mark for enrichment
-            const added = await undoableAddCards([{
+            const intent: ImportIntent = {
                 name: baseName,
-                isUserUpload: false,
-                imageId,
-                hasBuiltInBleed: true,
-                needsEnrichment: true,
-            }]);
+                quantity: 1,
+                localImageId: imageId,
+                isToken: false,
+                sourcePreference: 'manual'
+            };
 
-            if (added.length > 0) {
-                useSettingsStore.getState().setSortBy("manual");
-            }
+            await processCards([intent]);
+            useSettingsStore.getState().setSortBy("manual");
             return;
         }
 
-        // Standard Scryfall-based card addition
-        // Include specific print details if available (set/number) so backend can match exactly
-        // Force artSource to 'scryfall' to prevent MPC override when user explicitly selected Scryfall art
-        await processCardFetch([{
+        const intent: ImportIntent = {
             name: cardName,
             quantity: 1,
             set: specificPrint?.set,
-            number: specificPrint?.number
-        }], 'scryfall');
+            number: specificPrint?.number,
+            isToken: false,
+            sourcePreference: 'scryfall' // Force Scryfall
+        };
+
+        await processCards([intent]);
     };
 
     // --- Token Import Logic ---
-
-    /**
-     * Normalize a card key for deduplication
-     */
-    const normalizeKey = (name: string, set?: string, number?: string) =>
-        `${name.toLowerCase()}| ${(set || "").toLowerCase()}| ${number || ""} `;
-
-    /**
-     * Extract set/number from a Scryfall token URI
-     * e.g., "https://api.scryfall.com/cards/t2xm/4" -> { set: "t2xm", number: "4" }
-     */
-    const extractTokenPrintFromUri = (uri?: string): { set?: string; number?: string } => {
-        if (!uri) return {};
-        try {
-            const u = new URL(uri);
-            const parts = u.pathname.split("/").filter(Boolean);
-            // Look for "cards" segment and extract set/number
-            const cardsIdx = parts.findIndex((p) => p === "cards");
-            if (cardsIdx >= 0 && parts[cardsIdx + 1] && parts[cardsIdx + 2]) {
-                return { set: parts[cardsIdx + 1], number: parts[cardsIdx + 2] };
-            }
-        } catch {
-            // Ignore parsing errors
-        }
-        return {};
-    };
-
-    /**
-     * Find tokens that are needed but not yet in the collection
-     * @param skipExisting If true, skip tokens that already exist in the collection (for auto-import)
-     */
-    const computeMissingTokens = async (skipExisting: boolean = false): Promise<CardInfo[]> => {
-        const cards = await db.cards.toArray();
-        if (cards.length === 0) return [];
-
-        // Build a set of existing card names to avoid re-fetching tokens already in collection
-        const existingCardNames = new Set<string>();
-        if (skipExisting) {
-            for (const card of cards) {
-                if (card.name) {
-                    existingCardNames.add(card.name.toLowerCase());
-                }
-            }
-        }
-
-        const seenKeys = new Set<string>();
-        const tokensToFetch: CardInfo[] = [];
-
-        for (const card of cards) {
-            // Skip token cards themselves to avoid chaining into their token_parts
-            const setCode = card.set?.toLowerCase() || "";
-            if (setCode.startsWith("t")) continue;
-            if (card.type_line?.toLowerCase().includes("token")) continue;
-
-            // Skip cards without token_parts
-            if (!card.token_parts || card.token_parts.length === 0) continue;
-
-            for (const token of card.token_parts) {
-                if (!token.name) continue;
-
-                // Skip if this token is already in the collection (only for auto-import)
-                if (skipExisting && existingCardNames.has(token.name.toLowerCase())) continue;
-
-                const { set, number } = extractTokenPrintFromUri(token.uri);
-                const keyWithPrint = normalizeKey(token.name, set, number);
-                const keyNameOnly = normalizeKey(token.name);
-
-                // Skip if already queued for fetch in this batch
-                if (seenKeys.has(keyWithPrint) || seenKeys.has(keyNameOnly)) continue;
-
-                seenKeys.add(keyWithPrint);
-                seenKeys.add(keyNameOnly);
-                tokensToFetch.push({ name: token.name, set, number, quantity: 1, isToken: true });
-            }
-        }
-
-        return tokensToFetch;
-    };
 
     const handleAddTokens = async (silent: boolean = false) => {
         // Prevent overlapping token fetches
@@ -227,96 +113,21 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
         tokenFetchController.current = new AbortController();
 
         try {
-            const cards = await db.cards.toArray();
-
-            // Find cards that don't have token_parts yet (likely MPC imports)
-            // These need to be looked up on Scryfall first
-            const cardsNeedingTokenLookup = cards.filter(c =>
-                c.token_parts === undefined &&
-                !c.linkedFrontId && // Skip back cards
-                !c.type_line?.toLowerCase().includes('token') // Skip tokens
-            );
-
-            // If we have cards without token_parts, fetch their token data from server
-            if (cardsNeedingTokenLookup.length > 0) {
-                const API_BASE = import.meta.env.VITE_API_BASE || '';
-                const CHUNK_SIZE = 100;
-
-                // Process in chunks to respect server limit
-                for (let i = 0; i < cardsNeedingTokenLookup.length; i += CHUNK_SIZE) {
-                    // Check abort signal between chunks
-                    if (tokenFetchController.current?.signal.aborted) break;
-
-                    const chunk = cardsNeedingTokenLookup.slice(i, i + CHUNK_SIZE);
-
-                    try {
-                        const response = await fetch(`${API_BASE}/api/cards/images/tokens`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                cards: chunk.map(c => ({
-                                    name: c.name,
-                                    set: c.set,
-                                    number: c.number,
-                                })),
-                            }),
-                            signal: tokenFetchController.current.signal,
-                        });
-
-                        if (response.ok) {
-                            const tokenData = await response.json() as Array<{
-                                name: string;
-                                token_parts?: Array<{ id?: string; name: string; type_line?: string; uri?: string }>;
-                            }>;
-
-                            // Update cards in DB with token_parts
-                            await db.transaction('rw', db.cards, async () => {
-                                for (const data of tokenData) {
-                                    // Update if we got a response (even empty array means "checked, none found")
-                                    if (data.token_parts !== undefined) {
-                                        // Find matching card(s) and update
-                                        const matchingCards = chunk.filter(c =>
-                                            c.name.toLowerCase() === data.name.toLowerCase()
-                                        );
-                                        for (const card of matchingCards) {
-                                            await db.cards.update(card.uuid, {
-                                                token_parts: data.token_parts,
-                                                needs_token: data.token_parts!.length > 0,
-                                            });
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    } catch (e) {
-                        console.error("Token fetch chunk failed", e);
-                        // Continue to next chunk even if one fails
-                    }
-                }
-            }
-
-            // Now compute missing tokens with updated data
-            const tokensToFetch = await computeMissingTokens(silent);
-
-            if (tokensToFetch.length === 0) {
-                if (!silent) {
-                    setShowNoTokensModal(true);
-                }
-                return;
-            }
-
-            await streamCards({
-                cardInfos: tokensToFetch,
-                language: globalLanguage,
-                importType: "scryfall",
+            await handleAutoImportTokens({
+                silent,
                 signal: tokenFetchController.current.signal,
                 onComplete: () => {
                     onUploadComplete?.();
                 },
+                onNoTokens: () => {
+                    if (!silent) {
+                        setShowNoTokensModal(true);
+                    }
+                }
             });
         } catch (err: unknown) {
             if (err instanceof Error && err.name !== "AbortError") {
-                alert(err.message || "Something went wrong while fetching tokens.");
+                useToastStore.getState().showErrorToast(err.message || "Something went wrong while fetching tokens.");
             }
         } finally {
             tokenFetchController.current = null;
@@ -338,14 +149,9 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
     const confirmClear = async () => {
         setLoadingTask("Clearing Images");
 
-        if (fetchController.current) {
-            fetchController.current.abort();
-            fetchController.current = null;
-        }
-        if (enrichmentController.current) {
-            enrichmentController.current.abort();
-            enrichmentController.current = null;
-        }
+        // Cancel any active card fetching
+        cancelCardFetch();
+
         if (tokenFetchController.current) {
             tokenFetchController.current.abort();
             tokenFetchController.current = null;
@@ -355,9 +161,9 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
             await clearAllCardsAndImages();
         } catch (err: unknown) {
             if (err instanceof Error) {
-                alert(err.message || "Failed to clear images.");
+                useToastStore.getState().showErrorToast(err.message || "Failed to clear images.");
             } else {
-                alert("An unknown error occurred while clearing images.");
+                useToastStore.getState().showErrorToast("An unknown error occurred while clearing images.");
             }
         } finally {
             setLoadingTask(null);
@@ -408,6 +214,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                 />
             </div>
 
+
             <div className="flex flex-col gap-3">
                 <Button color="blue" size="lg" onClick={handleSubmit} disabled={!deckText.trim()}>
                     Fetch Cards
@@ -425,9 +232,7 @@ export function DecklistUploader({ mobile, cardCount, onUploadComplete }: Props)
                     size="lg"
                     onClick={() => setIsAdvancedSearchOpen(true)}
                 >
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
+                    <Search className="w-5 h-5 mr-2" />
                     Advanced Search
                 </Button>
                 <Button

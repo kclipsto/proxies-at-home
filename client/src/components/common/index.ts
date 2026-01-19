@@ -11,6 +11,8 @@ export { ArtSourceToggle } from './ArtSourceToggle';
 export { Loader } from './Loader';
 export { default as LoadingOverlay } from './LoadingOverlay';
 export { LoadingScreen } from './LoadingScreen';
+export { PlaceholderCard } from './PlaceholderCard';
+export type { PlaceholderCardProps } from './PlaceholderCard';
 
 // UI Components
 export { AutoTooltip } from './AutoTooltip';

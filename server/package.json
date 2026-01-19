@@ -21,14 +21,17 @@
     "better-sqlite3": "^12.5.0",
     "bottleneck": "^2.19.5",
     "cheerio": "^1.1.2",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "express": "^5.2.1",
+    "lru-cache": "^11.2.4",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "stream-json": "^1.9.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",

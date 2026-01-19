@@ -35,19 +35,12 @@ describe("useSettingsStore", () => {
             bleedEdge: true,
             zoom: 1,
             dpi: 900,
-            settingsPanelState: {
-                order: ["layout", "bleed", "guides", "card", "filterSort", "application"],
-                collapsed: {},
-            },
-            isSettingsPanelCollapsed: false,
-            isUploadPanelCollapsed: false,
             sortBy: "manual",
             sortOrder: "asc",
             filterManaCost: [],
             filterColors: [],
             filterTypes: [],
             filterCategories: [],
-            filterSectionCollapsed: {},
             filterMatchType: "partial",
         });
     });
@@ -266,74 +259,7 @@ describe("useSettingsStore", () => {
         });
     });
 
-    describe("panel state management", () => {
-        it("setPanelOrder should update panel order", () => {
-            const { setPanelOrder } = useSettingsStore.getState();
-            const newOrder = ["bleed", "layout", "guides"];
 
-            setPanelOrder(newOrder);
-
-            expect(useSettingsStore.getState().settingsPanelState.order).toEqual(newOrder);
-        });
-
-        it("togglePanelCollapse should toggle panel collapsed state", () => {
-            const { togglePanelCollapse } = useSettingsStore.getState();
-
-            togglePanelCollapse("layout");
-            expect(useSettingsStore.getState().settingsPanelState.collapsed.layout).toBe(true);
-
-            togglePanelCollapse("layout");
-            expect(useSettingsStore.getState().settingsPanelState.collapsed.layout).toBe(false);
-        });
-
-        it("expandAllPanels should set all panels to not collapsed", () => {
-            useSettingsStore.setState({
-                settingsPanelState: {
-                    order: ["layout", "bleed", "guides"],
-                    collapsed: { layout: true, bleed: true, guides: true },
-                },
-            });
-            const { expandAllPanels } = useSettingsStore.getState();
-
-            expandAllPanels();
-
-            const collapsed = useSettingsStore.getState().settingsPanelState.collapsed;
-            expect(collapsed.layout).toBe(false);
-            expect(collapsed.bleed).toBe(false);
-            expect(collapsed.guides).toBe(false);
-        });
-
-        it("collapseAllPanels should set all panels to collapsed", () => {
-            const { collapseAllPanels } = useSettingsStore.getState();
-
-            collapseAllPanels();
-
-            const collapsed = useSettingsStore.getState().settingsPanelState.collapsed;
-            expect(collapsed.layout).toBe(true);
-            expect(collapsed.bleed).toBe(true);
-            expect(collapsed.guides).toBe(true);
-        });
-
-        it("toggleSettingsPanel should toggle settings panel collapsed state", () => {
-            const { toggleSettingsPanel } = useSettingsStore.getState();
-
-            toggleSettingsPanel();
-            expect(useSettingsStore.getState().isSettingsPanelCollapsed).toBe(true);
-
-            toggleSettingsPanel();
-            expect(useSettingsStore.getState().isSettingsPanelCollapsed).toBe(false);
-        });
-
-        it("toggleUploadPanel should toggle upload panel collapsed state", () => {
-            const { toggleUploadPanel } = useSettingsStore.getState();
-
-            toggleUploadPanel();
-            expect(useSettingsStore.getState().isUploadPanelCollapsed).toBe(true);
-
-            toggleUploadPanel();
-            expect(useSettingsStore.getState().isUploadPanelCollapsed).toBe(false);
-        });
-    });
 
     describe("filter settings", () => {
         it("setFilterManaCost should update filter", () => {
@@ -360,11 +286,7 @@ describe("useSettingsStore", () => {
             expect(useSettingsStore.getState().filterCategories).toEqual(["Main", "Sideboard"]);
         });
 
-        it("setFilterSectionCollapsed should update collapsed state for section", () => {
-            const { setFilterSectionCollapsed } = useSettingsStore.getState();
-            setFilterSectionCollapsed("mana", true);
-            expect(useSettingsStore.getState().filterSectionCollapsed.mana).toBe(true);
-        });
+
 
         it("setFilterMatchType should update match type", () => {
             const { setFilterMatchType } = useSettingsStore.getState();
@@ -490,17 +412,7 @@ describe("useSettingsStore", () => {
             expect(useSettingsStore.getState().globalLanguage).toBe("de");
         });
 
-        it("setSettingsPanelWidth should update setting", () => {
-            const { setSettingsPanelWidth } = useSettingsStore.getState();
-            setSettingsPanelWidth(400);
-            expect(useSettingsStore.getState().settingsPanelWidth).toBe(400);
-        });
 
-        it("setUploadPanelWidth should update setting", () => {
-            const { setUploadPanelWidth } = useSettingsStore.getState();
-            setUploadPanelWidth(350);
-            expect(useSettingsStore.getState().uploadPanelWidth).toBe(350);
-        });
 
         it("setBleedEdgeUnit should update setting", () => {
             const { setBleedEdgeUnit } = useSettingsStore.getState();

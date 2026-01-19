@@ -44,6 +44,51 @@ async function delayScryfallRequest() {
   }
 }
 
+// In-flight request cache to deduplicate concurrent identical requests
+// Using TTL to prevent stale entries from accumulating in long-running servers
+interface InFlightEntry {
+  promise: Promise<ScryfallApiCard[]>;
+  createdAt: number;
+}
+
+const inFlightSearches = new Map<string, InFlightEntry>();
+const IN_FLIGHT_TTL_MS = 60_000; // 1 minute max
+const MAX_IN_FLIGHT_ENTRIES = 500;
+
+/**
+ * Deduplicate in-flight searches. If the same search is already in progress,
+ * return the existing promise instead of making a duplicate API call.
+ * Includes TTL to prevent memory leaks from stale entries.
+ */
+function deduplicatedSearch(
+  cacheKey: string,
+  searchFn: () => Promise<ScryfallApiCard[]>
+): Promise<ScryfallApiCard[]> {
+  const now = Date.now();
+
+  // Cleanup stale entries and enforce max size periodically
+  if (inFlightSearches.size > MAX_IN_FLIGHT_ENTRIES / 2) {
+    for (const [key, entry] of inFlightSearches.entries()) {
+      if (now - entry.createdAt > IN_FLIGHT_TTL_MS) {
+        inFlightSearches.delete(key);
+      }
+    }
+  }
+
+  const existing = inFlightSearches.get(cacheKey);
+  if (existing && (now - existing.createdAt < IN_FLIGHT_TTL_MS)) {
+    debugLog(`[Scryfall] Deduplicating in-flight request: ${cacheKey}`);
+    return existing.promise;
+  }
+
+  const promise = searchFn().finally(() => {
+    inFlightSearches.delete(cacheKey);
+  });
+
+  inFlightSearches.set(cacheKey, { promise, createdAt: now });
+  return promise;
+}
+
 /** Escape colon in collector numbers like "321a" (safe) */
 function escapeColon(s: string | number): string {
   return String(s).replace(/:/g, "\\:");
@@ -230,38 +275,78 @@ export async function batchFetchCards(
   const tokenCards = cardsToFetch.filter(ci => ci.isToken);
   const regularCards = cardsToFetch.filter(ci => !ci.isToken);
 
-  // Fetch tokens individually with type:token filter
+  // Fetch tokens using batched OR queries (much faster than individual searches)
+  // The /cards/collection API doesn't support type filters, so we use search API with OR
   if (tokenCards.length > 0) {
-    debugLog(`[batchFetchCards] Fetching ${tokenCards.length} tokens with type:token filter`);
-    for (const ci of tokenCards) {
+    debugLog(`[batchFetchCards] Fetching ${tokenCards.length} tokens with batched OR queries`);
+
+    // Build batches of token names for OR queries
+    // Keep query length reasonable (~800 chars max to be safe with Scryfall limits)
+    const TOKEN_BATCH_SIZE = 15; // ~15 tokens per query
+    const tokenBatches: CardInfo[][] = [];
+    for (let i = 0; i < tokenCards.length; i += TOKEN_BATCH_SIZE) {
+      tokenBatches.push(tokenCards.slice(i, i + TOKEN_BATCH_SIZE));
+    }
+
+    const fetchTokenBatch = async (batch: CardInfo[]): Promise<void> => {
       try {
         await delayScryfallRequest();
-        const q = `!"${ci.name}" type:token include:extras`;
-        debugLog(`[batchFetchCards] Token query: ${q}`);
+
+        // Build OR query: (name:"Token A" OR name:"Token B") type:token include:extras
+        const orClauses = batch.map(ci => `name:"${ci.name.replace(/"/g, '\\"')}"`).join(' OR ');
+        const q = `(${orClauses}) type:token include:extras`;
+        debugLog(`[batchFetchCards] Token batch query (${batch.length} tokens): ${q.substring(0, 100)}...`);
+
         const response = await AX.get<ScryfallResponse>('https://api.scryfall.com/cards/search', {
           params: { q, unique: 'prints' }
         });
 
-        if (response.data?.data?.[0]) {
-          const card = response.data.data[0];
-          if (!card.name) continue;
-          debugLog(`[batchFetchCards] Token found: "${card.name}" (${card.set}:${card.collector_number})`);
+        if (response.data?.data) {
+          for (const card of response.data.data) {
+            if (!card.name) continue;
+            debugLog(`[batchFetchCards] Token found: "${card.name}" (${card.set}:${card.collector_number})`);
 
-          const key = card.name.toLowerCase();
-          results.set(key, card);
-
-          // Also store by original query name if different
-          const queryKey = ci.name.toLowerCase();
-          if (queryKey !== key) {
-            results.set(queryKey, card);
+            const key = card.name.toLowerCase();
+            // Only store if not already in results (first match wins)
+            if (!results.has(key)) {
+              results.set(key, card);
+              insertOrUpdateCard(card);
+            }
           }
-
-          insertOrUpdateCard(card);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        debugLog(`[batchFetchCards] Token search failed for "${ci.name}": ${msg}`);
+        debugLog(`[batchFetchCards] Token batch search failed: ${msg}`);
+
+        // Fallback: if batch query fails (e.g., too long), try individual queries
+        if (batch.length > 1) {
+          debugLog(`[batchFetchCards] Falling back to individual token queries`);
+          for (const ci of batch) {
+            try {
+              await delayScryfallRequest();
+              const q = `!"${ci.name}" type:token include:extras`;
+              const response = await AX.get<ScryfallResponse>('https://api.scryfall.com/cards/search', {
+                params: { q, unique: 'prints' }
+              });
+              if (response.data?.data?.[0]) {
+                const card = response.data.data[0];
+                if (card.name) {
+                  results.set(card.name.toLowerCase(), card);
+                  results.set(ci.name.toLowerCase(), card);
+                  insertOrUpdateCard(card);
+                }
+              }
+            } catch {
+              debugLog(`[batchFetchCards] Individual token search also failed for "${ci.name}"`);
+            }
+          }
+        }
       }
+    };
+
+    // Process token batches sequentially (each batch is one API call)
+    for (const batch of tokenBatches) {
+      await fetchTokenBatch(batch);
     }
   }
 
@@ -470,77 +555,82 @@ export async function getCardsWithImagesForCardInfo(
 ): Promise<ScryfallApiCard[]> {
   const { name, set, number, isToken } = cardInfo || {};
 
-  // Add type:token filter for explicit token searches
-  const typeFilter = isToken ? " type:token" : "";
+  // Create cache key for request deduplication
+  const cacheKey = `cards:${name}:${set || ''}:${number || ''}:${unique}:${language}:${isToken || false}`;
 
-  const executeStrategy = (queryTemplate: (lang: string) => string) => {
-    return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
-  };
+  return deduplicatedSearch(cacheKey, async () => {
+    // Add type:token filter for explicit token searches
+    const typeFilter = isToken ? " type:token" : "";
 
-  // 1) Exact printing - when user specifies set AND number
-  // This takes priority regardless of unique parameter
-  if (set && number) {
+    const executeStrategy = (queryTemplate: (lang: string) => string) => {
+      return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
+    };
+
+    // 1) Exact printing - when user specifies set AND number
+    // This takes priority regardless of unique parameter
+    if (set && number) {
+      const results = await executeStrategy((lang) =>
+        `set:${set} number:${escapeColon(number)} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
+      );
+      if (results.length) return results;
+      // If no results with exact match, fall through to broader search
+    }
+
+    // 2) Set + name - when user specifies set but not number
+    if (set && !number) {
+      const results = await executeStrategy((lang) =>
+        `set:${set} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
+      );
+      if (results.length) return results;
+      // If no results with set filter, fall through to name-only
+    }
+
+    // 3) Name-only search - get all arts/prints based on unique parameter
     const results = await executeStrategy((lang) =>
-      `set:${set} number:${escapeColon(number)} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
+      `!"${name}"${typeFilter} include:extras unique:${unique} lang:${lang}`
     );
-    if (results.length) return results;
-    // If no results with exact match, fall through to broader search
-  }
 
-  // 2) Set + name - when user specifies set but not number
-  if (set && !number) {
-    const results = await executeStrategy((lang) =>
-      `set:${set} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
-    );
-    if (results.length) return results;
-    // If no results with set filter, fall through to name-only
-  }
+    // Score and sort results to prioritize best matches
+    const queryLower = name.toLowerCase();
 
-  // 3) Name-only search - get all arts/prints based on unique parameter
-  const results = await executeStrategy((lang) =>
-    `!"${name}"${typeFilter} include:extras unique:${unique} lang:${lang}`
-  );
+    const scoreCard = (card: ScryfallApiCard): number => {
+      let score = 0;
+      const cardName = card.name?.toLowerCase() || '';
 
-  // Score and sort results to prioritize best matches
-  const queryLower = name.toLowerCase();
-
-  const scoreCard = (card: ScryfallApiCard): number => {
-    let score = 0;
-    const cardName = card.name?.toLowerCase() || '';
-
-    // Exact full name match (highest priority)
-    if (cardName === queryLower) {
-      score += 100;
-    }
-    // DFC: query matches one of the faces
-    else if (cardName.includes(' // ')) {
-      const [front, back] = cardName.split(' // ').map(s => s.trim());
-      if (front === queryLower || back === queryLower) {
-        score += 90;
+      // Exact full name match (highest priority)
+      if (cardName === queryLower) {
+        score += 100;
       }
-    }
-    // Query is DFC format, card matches one face
-    else if (queryLower.includes(' // ')) {
-      const [front, back] = queryLower.split(' // ').map(s => s.trim());
-      if (cardName === front || cardName === back) {
-        score += 90;
+      // DFC: query matches one of the faces
+      else if (cardName.includes(' // ')) {
+        const [front, back] = cardName.split(' // ').map(s => s.trim());
+        if (front === queryLower || back === queryLower) {
+          score += 90;
+        }
       }
-    }
+      // Query is DFC format, card matches one face
+      else if (queryLower.includes(' // ')) {
+        const [front, back] = queryLower.split(' // ').map(s => s.trim());
+        if (cardName === front || cardName === back) {
+          score += 90;
+        }
+      }
 
-    // Deprioritize art_series (often have wrong metadata)
-    if (card.layout === 'art_series') {
-      score -= 50;
-    }
+      // Deprioritize art_series (often have wrong metadata)
+      if (card.layout === 'art_series') {
+        score -= 50;
+      }
 
-    return score;
-  };
+      return score;
+    };
 
-  results.sort((a, b) => scoreCard(b) - scoreCard(a));
+    results.sort((a, b) => scoreCard(b) - scoreCard(a));
 
-  debugLog(`[Scryfall] Sorted results for "${name}":`,
-    results.slice(0, 3).map(c => `${c.name} (score: ${scoreCard(c)})`));
+    debugLog(`[Scryfall] Sorted results for "${name}":`,
+      results.slice(0, 3).map(c => `${c.name} (score: ${scoreCard(c)})`));
 
-  return results;
+    return results;
+  });
 }
 
 /**

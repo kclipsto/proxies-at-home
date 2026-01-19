@@ -84,7 +84,8 @@ export function extractCardInfo(input: string, quantity: number = 1): CardInfo {
   // Check for {Number} only format (e.g. Name {123}) - User requested to drop number
   const numBracketsOnly = /\s*\{([a-z0-9]+)\}\s*$/i;
   const setNumTail = /\s*\(([a-z0-9]{2,5})\)\s*([a-z0-9-]+)?\s*$/i;
-  const setColonTail = /\s*(?:set:|s:)([a-z0-9]+)\s*$/i;
+  // Use word boundary (\b) to ensure s: is not matched when part of is: (Scryfall syntax)
+  const setColonTail = /\s*(?:set:|\bs:)([a-z0-9]+)\s*$/i;
   const numColonTail = /\s*(?:num:|cn:)([a-z0-9]+)\s*$/i;
 
   let parsing = true;

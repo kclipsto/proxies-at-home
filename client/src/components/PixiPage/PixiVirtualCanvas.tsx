@@ -88,11 +88,11 @@ interface PixiVirtualCanvasProps {
     style?: React.CSSProperties;
 }
 
-// Margin above/below viewport to pre-render cards
-const RENDER_MARGIN = 200;
+// Margin above/below viewport to pre-render cards (increased for smoother scrolling)
+const RENDER_MARGIN = 1000;
 
-// Number of cards to pre-initialize on startup (one page worth)
-const PRE_INIT_COUNT = 9;
+// Number of cards to pre-initialize on startup (four pages worth)
+const PRE_INIT_COUNT = 36;
 
 // Blank cardback ID - cards with this back should show white when flipped
 const BLANK_CARDBACK_ID = 'cardback_builtin_blank';
@@ -582,16 +582,39 @@ function PixiVirtualCanvasInner({
 
             const currentCardIds = new Set(cards.map(c => c.card.uuid));
 
+            // Helper to clean up sprite and revoke blob URLs
+            const cleanupSprite = (uuid: string) => {
+                const data = sprites.get(uuid);
+                if (!data) return;
+
+                try {
+                    container.removeChild(data.sprite);
+                    destroySpriteData(data);
+                } catch (e) {
+                    console.warn('[PixiVirtualCanvas] Error removing sprite:', e);
+                }
+
+                // Revoke blob URLs to free memory (fix for ERR_BLOB_OUT_OF_MEMORY)
+                const frontKey = `front-${uuid}`;
+                const backKey = `back-${uuid}`;
+                const oldFrontUrl = blobUrlsRef.current.get(frontKey);
+                const oldBackUrl = blobUrlsRef.current.get(backKey);
+
+                if (oldFrontUrl) {
+                    URL.revokeObjectURL(oldFrontUrl);
+                    blobUrlsRef.current.delete(frontKey);
+                }
+                if (oldBackUrl) {
+                    URL.revokeObjectURL(oldBackUrl);
+                    blobUrlsRef.current.delete(backKey);
+                }
+                sprites.delete(uuid);
+            };
+
             // Remove sprites for cards that no longer exist
-            sprites.forEach((data, uuid) => {
+            sprites.forEach((_, uuid) => {
                 if (!currentCardIds.has(uuid)) {
-                    try {
-                        container.removeChild(data.sprite);
-                        destroySpriteData(data);
-                    } catch (e) {
-                        console.warn('[PixiVirtualCanvas] Error removing sprite:', e);
-                    }
-                    sprites.delete(uuid);
+                    cleanupSprite(uuid);
                 }
             });
 
@@ -622,8 +645,14 @@ function PixiVirtualCanvasInner({
                     continue;
                 }
 
-                // Skip if not visible and not pre-init (unless already exists)
-                if (!isInView && !shouldPreInit && !sprites.has(uuid)) {
+                // If sprite exists but is now out of view (and not in pre-init range), destroy it to free memory
+                if (sprites.has(uuid) && !isInView && !shouldPreInit) {
+                    cleanupSprite(uuid);
+                    continue;
+                }
+
+                // Skip if not visible and not pre-init
+                if (!isInView && !shouldPreInit) {
                     continue;
                 }
 
@@ -643,24 +672,7 @@ function PixiVirtualCanvasInner({
 
                 // If artwork changed, destroy old sprite data and recreate
                 if (artworkChanged && spriteData) {
-                    try {
-                        container.removeChild(spriteData.sprite);
-                        destroySpriteData(spriteData);
-                        // Revoke old blob URLs
-                        const oldFrontUrl = blobUrlsRef.current.get(`front-${uuid}`);
-                        const oldBackUrl = blobUrlsRef.current.get(`back-${uuid}`);
-                        if (oldFrontUrl) {
-                            URL.revokeObjectURL(oldFrontUrl);
-                            blobUrlsRef.current.delete(`front-${uuid}`);
-                        }
-                        if (oldBackUrl) {
-                            URL.revokeObjectURL(oldBackUrl);
-                            blobUrlsRef.current.delete(`back-${uuid}`);
-                        }
-                    } catch (e) {
-                        console.warn('[PixiVirtualCanvas] Error destroying sprite for refresh:', e);
-                    }
-                    sprites.delete(uuid);
+                    cleanupSprite(uuid);
                     spriteData = undefined;
                 }
 

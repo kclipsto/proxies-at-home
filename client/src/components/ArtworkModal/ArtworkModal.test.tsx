@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { ImportOrchestrator } from '@/helpers/ImportOrchestrator';
 
 
 // Use vi.hoisted to hoist mock values
@@ -90,6 +91,7 @@ vi.mock('@/store/settings', () => ({
                 setDefaultCardbackId: mockSetDefaultCardbackId,
                 preferredArtSource: 'scryfall',
             }),
+            subscribe: vi.fn(() => vi.fn()),
         }
     ),
 }));
@@ -164,6 +166,27 @@ vi.mock('@/helpers/dfcHelpers', () => ({
 
 vi.mock('@/helpers/imageHelper', () => ({
     parseImageIdFromUrl: vi.fn((url: string) => url),
+}));
+
+vi.mock('@/helpers/ImportOrchestrator', () => ({
+    ImportOrchestrator: {
+        resolve: vi.fn().mockResolvedValue({
+            cardsToAdd: [{
+                name: 'Resolved Card',
+                set: 'abc',
+                number: '1',
+                imageId: 'resolved-image-id',
+                isUserUpload: false,
+                hasBuiltInBleed: false,
+                needsEnrichment: false,
+            }],
+            backCardTasks: []
+        }),
+    },
+}));
+
+vi.mock('@/helpers/tokenImportHelper', () => ({
+    handleAutoImportTokens: vi.fn(),
 }));
 
 
@@ -496,6 +519,22 @@ describe('ArtworkModal', () => {
             const updatedCard = { uuid: 'test-uuid', name: 'Test Card', imageId: 'mpc-id' };
             mockDbCards.get.mockResolvedValue(updatedCard);
 
+            vi.mocked(ImportOrchestrator.resolve).mockResolvedValueOnce({
+                cardsToAdd: [{
+                    name: 'Resolved Card',
+                    set: 'abc',
+                    number: '1',
+                    imageId: 'resolved-image-id',
+                    isUserUpload: false,
+                    hasBuiltInBleed: false,
+                    needsEnrichment: true,
+                    isToken: false,
+                    token_parts: undefined,
+                    needs_token: false
+                }],
+                backCardTasks: []
+            });
+
             render(<ArtworkModal />);
             fireEvent.click(screen.getByTestId('select-mpc-art'));
 
@@ -666,7 +705,7 @@ describe('ArtworkModal', () => {
             fireEvent.click(screen.getByTestId('select-card'));
 
             await waitFor(() => {
-                expect(mockFetchCardWithPrints).toHaveBeenCalledWith('Selected Card', true, false);
+                expect(mockFetchCardWithPrints).toHaveBeenCalledWith('Selected Card', true, true);
             });
         });
     });
@@ -800,7 +839,7 @@ describe('ArtworkModal', () => {
             render(<ArtworkModal />);
 
             await waitFor(() => {
-                expect(mockFetchCardWithPrints).toHaveBeenCalledWith('Test Card', false, false);
+                expect(mockFetchCardWithPrints).toHaveBeenCalledWith('Test Card', false, true);
             });
         });
     });
@@ -837,9 +876,9 @@ describe('ArtworkModal', () => {
                     'https://example.com/art.jpg', // parseImageIdFromUrl returns identity in mock
                     expect.objectContaining({ uuid: 'card-1' }),
                     false,
+                    'Resolved Card',  // Now always uses resolved.name from ImportOrchestrator
                     undefined,
-                    undefined,
-                    undefined,
+                    expect.objectContaining({ set: 'abc', number: '1' }),
                     undefined
                 );
                 expect(mockChangeCardArtwork).toHaveBeenCalledWith(
@@ -847,9 +886,9 @@ describe('ArtworkModal', () => {
                     'https://example.com/art.jpg',
                     expect.objectContaining({ uuid: 'card-2' }),
                     false,
+                    'Resolved Card',  // Now always uses resolved.name from ImportOrchestrator
                     undefined,
-                    undefined,
-                    undefined,
+                    expect.objectContaining({ set: 'abc', number: '1' }),
                     undefined
                 );
             });
@@ -866,12 +905,12 @@ describe('ArtworkModal', () => {
                 expect(mockChangeCardArtwork).toHaveBeenCalledTimes(2);
                 expect(mockChangeCardArtwork).toHaveBeenCalledWith(
                     'img-2',
-                    'https://mpc.example.com/mpc-123',
+                    'resolved-image-id',
                     expect.objectContaining({ uuid: 'card-2' }),
                     false,
-                    'Test Card', // From parseMpcCardLogic mock
+                    'Resolved Card', // From ImportOrchestrator mock
                     undefined,
-                    undefined,
+                    expect.objectContaining({ set: 'abc', number: '1' }),
                     false // hasBuiltInBleed
                 );
             });
@@ -1170,4 +1209,5 @@ describe('ArtworkModal', () => {
             expect(header).toBeDefined();
         });
     });
+
 });

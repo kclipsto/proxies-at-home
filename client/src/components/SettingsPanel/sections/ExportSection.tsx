@@ -3,8 +3,7 @@ import { Label, Select } from "flowbite-react";
 import { ExportActions } from "../../LayoutSettings/ExportActions";
 import { ToggleButtonGroup } from "../../common";
 import { useMemo, useEffect } from "react";
-
-import type { CardOption } from "../../../../../shared/types";
+import type { CardOption } from "@/types";
 
 const INCH_TO_MM = 25.4;
 const MAX_BROWSER_DIMENSION = 16384;
@@ -26,6 +25,7 @@ export function ExportSection({ cards }: Props) {
     const setDpi = useSettingsStore((state) => state.setDpi);
     const decklistSortAlpha = useSettingsStore((state) => state.decklistSortAlpha);
     const setDecklistSortAlpha = useSettingsStore((state) => state.setDecklistSortAlpha);
+
 
     const maxSafeDpiForPage = useMemo(() => {
         const widthIn = pageUnit === "in" ? pageWidth : pageWidth / INCH_TO_MM;
@@ -64,19 +64,20 @@ export function ExportSection({ cards }: Props) {
         return options;
     }, [maxSafeDpiForPage]);
 
+    // If current DPI exceeds max, clamp it down
     useEffect(() => {
-        if (!availableDpiOptions.some((opt) => opt.value === dpi)) {
-            const highestOption = availableDpiOptions[availableDpiOptions.length - 1];
+        if (dpi > maxSafeDpiForPage) {
+            const highestOption = availableDpiOptions.at(-1);
             if (highestOption) {
                 setDpi(highestOption.value);
             }
         }
-    }, [availableDpiOptions, dpi, setDpi]);
+    }, [availableDpiOptions, dpi, maxSafeDpiForPage, setDpi]);
+
 
     return (
         <div className="space-y-4">
             <ExportActions cards={cards} />
-
             <div>
                 <Label>PDF Export DPI</Label>
                 <Select
@@ -107,3 +108,4 @@ export function ExportSection({ cards }: Props) {
         </div>
     );
 }
+

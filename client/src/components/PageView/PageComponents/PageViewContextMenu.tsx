@@ -5,7 +5,7 @@ import { useSelectionStore } from "@/store/selection";
 import { undoableDeleteCard, undoableDeleteCardsBatch, undoableDuplicateCard, undoableDuplicateCardsBatch } from "@/helpers/undoableActions";
 import { useArtworkModalStore, useCardEditorModalStore } from "@/store";
 import { db } from "@/db";
-import type { CardOption } from "../../../../../shared/types";
+import type { CardOption } from "@/types";
 
 interface PageViewContextMenuProps {
     contextMenu: {

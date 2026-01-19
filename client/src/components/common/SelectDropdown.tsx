@@ -72,7 +72,7 @@ export function SelectDropdown({
     const containerRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
 
     // Calculate if all favorites are selected (multi) or any favorite is selected (single)
     const anyFavoriteSelected = favorites && favorites.values.length > 0 &&
@@ -80,13 +80,14 @@ export function SelectDropdown({
     const allFavoritesSelected = favorites && favorites.values.length > 0 &&
         favorites.values.every(v => favorites.isSelected(v));
 
-    // Calculate dropdown position
+    // Calculate dropdown position and width
     useLayoutEffect(() => {
         if (isOpen && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
             setDropdownPos({
                 top: rect.bottom + 4,
                 left: rect.left,
+                width: rect.width,
             });
         }
     }, [isOpen]);
@@ -183,12 +184,12 @@ export function SelectDropdown({
                     <Star className={`w-4 h-4 ${(singleSelectMode ? anyFavoriteSelected : allFavoritesSelected) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} />
                 </button>
             )}
-            <div ref={containerRef} className="relative h-10">
+            <div ref={containerRef} className={`relative h-10 ${className.includes('w-full') ? 'flex-1' : ''}`}>
                 <button
                     ref={buttonRef}
                     type="button"
                     onClick={onToggle}
-                    className="no-active-translate flex items-center h-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-0 whitespace-nowrap overflow-hidden"
+                    className={`no-active-translate flex items-center h-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-0 whitespace-nowrap overflow-hidden ${className.includes('w-full') ? 'w-full justify-between' : ''}`}
                 >
                     {/* Split button: Label on left with separator */}
                     {label && (
@@ -200,8 +201,11 @@ export function SelectDropdown({
                         </>
                     )}
                     {/* Value section */}
-                    <span className="h-full flex items-center gap-1 px-2 text-gray-900 dark:text-white">
+                    <span className="h-full flex items-center gap-1 px-2 text-gray-900 dark:text-white truncate">
                         {renderButtonContent()}
+                    </span>
+                    {/* Chevron - separate for justify-between to push it right */}
+                    <span className="h-full flex items-center px-2">
                         {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
                     </span>
                 </button>
@@ -209,7 +213,7 @@ export function SelectDropdown({
                     <div
                         ref={dropdownRef}
                         className="fixed z-100000 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg overflow-y-auto overscroll-contain flex flex-col"
-                        style={{ top: dropdownPos.top, left: dropdownPos.left, maxHeight: dropdownMaxHeight }}
+                        style={{ top: dropdownPos.top, left: dropdownPos.left, minWidth: dropdownPos.width, maxHeight: dropdownMaxHeight }}
                     >
                         {children}
                     </div>,

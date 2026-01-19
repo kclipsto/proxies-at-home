@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -11,23 +11,20 @@ test.describe('ZIP Export Custom', () => {
         test.skip(browserName === 'webkit', 'WebKit is flaky with downloads in this environment');
         await page.goto('/');
 
-        page.on('console', msg => console.log(`Browser Console: ${msg.text()}`));
-
-        // Wait for the upload section to be visible
-        await expect(page.getByText('Upload Other Images')).toBeVisible();
-
-        // Upload a custom image
-        const fileInput = page.locator('input#upload-standard');
+        // Upload a custom image via unified input
+        const fileInput = page.locator('input#upload-images-unified');
         await fileInput.setInputFiles(path.join(__dirname, '../fixtures/irenicus.png'));
 
         // Wait for card to appear
-        await expect(page.getByTitle('Drag')).toHaveCount(1, { timeout: 30000 });
+        await expect(page.locator('[data-dnd-sortable-item]')).toHaveCount(1, { timeout: 30000 });
 
         // Setup download listener
         const downloadPromise = page.waitForEvent('download');
 
-        // Click Export ZIP button
-        await page.getByRole('button', { name: 'Export Card Images (.zip)' }).click();
+        // Click Export Card Images button (it's a split button with label "Export Card Images")
+        const exportButton = page.locator('button:has-text("Export Card Images")').first();
+        await expect(exportButton).toBeVisible({ timeout: 5000 });
+        await exportButton.click();
 
         const download = await downloadPromise;
         const downloadPath = await download.path();
@@ -35,9 +32,8 @@ test.describe('ZIP Export Custom', () => {
         // Verify filename
         expect(download.suggestedFilename()).toMatch(/^card_images_.*\.zip$/);
 
-        // Verify file size is significantly larger than an empty zip (22 bytes)
+        // Verify file size is significantly larger than an empty zip
         const stats = fs.statSync(downloadPath);
-        console.log(`Downloaded ZIP size: ${stats.size} bytes`);
-        expect(stats.size).toBeGreaterThan(1000); // Arbitrary threshold, but image is ~1.2MB
+        expect(stats.size).toBeGreaterThan(1000);
     });
 });

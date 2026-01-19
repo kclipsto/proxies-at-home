@@ -158,6 +158,119 @@ describe('streamCards', () => {
         expect(result.addedCardUuids).toContain('uuid-1');
     });
 
+    describe('Token detection', () => {
+        it('should set isToken from CardInfo when importing from deck builder', async () => {
+            const options: any = {
+                cardInfos: [{ name: 'Soldier Token', isToken: true }],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-token', name: 'Soldier' }]);
+            (addRemoteImage as any).mockResolvedValue('img-token');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Soldier',
+                        imageUrls: ['http://img'],
+                        set: 'SET',
+                        number: '1',
+                        lang: 'en',
+                        type_line: 'Token Creature — Soldier'
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should pass isToken: true from CardInfo
+            expect(undoableAddCards).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({ name: 'Soldier', isToken: true })
+                ]),
+                undefined
+            );
+        });
+
+        it('should detect isToken from Scryfall type_line containing "token"', async () => {
+            const options: any = {
+                cardInfos: [{ name: 'Treasure Token' }],  // No isToken set in CardInfo
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-treasure', name: 'Treasure' }]);
+            (addRemoteImage as any).mockResolvedValue('img-treasure');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Treasure',
+                        imageUrls: ['http://img'],
+                        set: 'SET',
+                        number: '1',
+                        lang: 'en',
+                        type_line: 'Token Artifact — Treasure'  // Contains "Token"
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should detect isToken from type_line
+            expect(undoableAddCards).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({ name: 'Treasure', isToken: true })
+                ]),
+                undefined
+            );
+        });
+
+        it('should set isToken: false for non-token cards', async () => {
+            const options: any = {
+                cardInfos: [{ name: 'Lightning Bolt' }],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-bolt', name: 'Lightning Bolt' }]);
+            (addRemoteImage as any).mockResolvedValue('img-bolt');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Lightning Bolt',
+                        imageUrls: ['http://img'],
+                        set: 'A25',
+                        number: '141',
+                        lang: 'en',
+                        type_line: 'Instant'  // Not a token
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should have isToken: false (not undefined)
+            expect(undoableAddCards).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({ name: 'Lightning Bolt', isToken: false })
+                ]),
+                expect.anything()
+            );
+        });
+    });
+
     it('should process "card-error" SSE events (fallback placeholders)', async () => {
         const options: any = {
             cardInfos: [{ name: 'Missing Card' }],

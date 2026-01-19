@@ -134,6 +134,36 @@ describe('scryfallRouter', () => {
                 params: { q: 'test', unique: 'prints', order: 'released' },
             });
         });
+
+        it('should pass through is: syntax unchanged', async () => {
+            const mockResponse = { data: [{ name: 'Krenko, Mob Boss' }] };
+            vi.mocked(axios.get).mockResolvedValueOnce({ data: mockResponse });
+
+            const res = await request(app).get('/api/scryfall/search?q=is:commander+c:r');
+            expect(res.status).toBe(200);
+            expect(axios.get).toHaveBeenCalledWith('/cards/search', { params: { q: 'is:commander c:r' } });
+        });
+
+        it('should pass through complex Scryfall syntax', async () => {
+            const mockResponse = { data: [] };
+            vi.mocked(axios.get).mockResolvedValueOnce({ data: mockResponse });
+
+            // Test: is:fetchland, o: (oracle text), c: (colors)
+            const res = await request(app).get('/api/scryfall/search?q=is:fetchland+o:search');
+            expect(res.status).toBe(200);
+            expect(axios.get).toHaveBeenCalledWith('/cards/search', { params: { q: 'is:fetchland o:search' } });
+        });
+
+        it('should pass through t:legend as type filter, not token search', async () => {
+            const mockResponse = { data: [{ name: 'Krenko, Mob Boss' }] };
+            vi.mocked(axios.get).mockResolvedValueOnce({ data: mockResponse });
+
+            // t:legend should NOT become "legend type:token"
+            // It should pass through as t:legend for Scryfall to interpret as type:legendary
+            const res = await request(app).get('/api/scryfall/search?q=t:legend');
+            expect(res.status).toBe(200);
+            expect(axios.get).toHaveBeenCalledWith('/cards/search', { params: { q: 't:legend' } });
+        });
     });
 
     describe('GET /cards/:set/:number', () => {

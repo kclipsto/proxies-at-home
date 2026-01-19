@@ -147,10 +147,10 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  // 2. Keep-alive pings to prevent timeouts
+  // 2. Keep-alive pings to prevent timeouts (10s for slow networks)
   const keepAliveInterval = setInterval(() => {
     res.write(":keep-alive\n\n");
-  }, 15000);
+  }, 10000);
 
   // 3. Cleanup when the client disconnects
   let isClosed = false;
@@ -230,7 +230,9 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
           }
 
           if (card) {
-            const { imageUrls } = extractCardImages(card, ci.name);
+            // Build response once - this calls extractCardImages internally
+            const cardToSend = buildCardResponse(ci.name, ci.set, ci.number, card, language);
+
             debugLog(`[STREAM] Card data for "${ci.name}":`, {
               name: card.name,
               set: card.set,
@@ -238,12 +240,11 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
               hasImageUris: !!card.image_uris,
               hasFaces: !!card.card_faces,
               facesCount: card.card_faces?.length,
-              imageUrls: imageUrls.slice(0, 2), // First 2 URLs
+              imageUrls: cardToSend.imageUrls.slice(0, 2),
             });
 
-            if (imageUrls.length > 0) {
-              const cardToSend = buildCardResponse(ci.name, ci.set, ci.number, card, language);
-              debugLog(`[STREAM] Sending imageUrls[0]:`, imageUrls[0]?.substring(0, 80) + '...');
+            if (cardToSend.imageUrls.length > 0) {
+              debugLog(`[STREAM] Sending imageUrls[0]:`, cardToSend.imageUrls[0]?.substring(0, 80) + '...');
               res.write(`event: card-found\ndata: ${JSON.stringify(cardToSend)}\n\n`);
             } else {
               throw new Error("No images found for card on Scryfall.");
@@ -271,6 +272,60 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
     res.write(`event: fatal-error\ndata: ${JSON.stringify({ message: "An unexpected server error occurred." })}\n\n`);
     clearInterval(keepAliveInterval);
     res.end();
+  }
+});
+
+/**
+ * POST /metadata - Batch fetch card metadata (JSON response, not SSE)
+ * Used by ImportOrchestrator to enrich MPC imports without streaming overhead.
+ * Request body: { cardQueries: CardInfo[], language?: string }
+ * Response: { results: Array<{ query: CardInfo, card: ScryfallCard | null, error?: string }> }
+ */
+streamRouter.post("/metadata", async (req: Request, res: Response) => {
+  try {
+    const language = (req.body.language || "en").toLowerCase();
+    const cardQueries = normalizeCardInfos(
+      Array.isArray(req.body.cardQueries) ? req.body.cardQueries : null,
+      null,
+      language
+    );
+
+    if (cardQueries.length === 0) {
+      res.json({ results: [] });
+      return;
+    }
+
+    // Use the existing batch fetch infrastructure
+    const batchResults = await batchFetchCards(cardQueries, language);
+
+    const results: Array<{ query: { name: string; set?: string; number?: string }; card: ScryfallCard | null; error?: string }> = [];
+
+    for (const ci of cardQueries) {
+      try {
+        let card = lookupCardFromBatch(batchResults, ci);
+
+        // Fallback to individual search if not in batch
+        if (!card) {
+          const individualResults = await getCardsWithImagesForCardInfo(ci, "art", language);
+          card = individualResults?.[0];
+        }
+
+        if (card) {
+          const cardResponse = buildCardResponse(ci.name, ci.set, ci.number, card, language);
+          results.push({ query: { name: ci.name, set: ci.set, number: ci.number }, card: cardResponse });
+        } else {
+          results.push({ query: { name: ci.name, set: ci.set, number: ci.number }, card: null, error: "Card not found" });
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        results.push({ query: { name: ci.name, set: ci.set, number: ci.number }, card: null, error: msg });
+      }
+    }
+
+    res.json({ results });
+  } catch (error: unknown) {
+    console.error("[METADATA] Error:", error);
+    res.status(500).json({ error: "An unexpected server error occurred." });
   }
 });
 

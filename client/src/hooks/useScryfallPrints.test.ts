@@ -15,6 +15,8 @@ describe('useScryfallPrints', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         global.fetch = vi.fn();
+        // Reset module to clear global cache between tests
+        vi.resetModules();
     });
 
     describe('initial state', () => {
@@ -35,14 +37,15 @@ describe('useScryfallPrints', () => {
                 json: () => Promise.resolve({ prints: [], total: 0 }),
             });
 
-            renderHook(() => useScryfallPrints('Sol Ring'));
+            // Use unique card name to avoid global cache collisions
+            renderHook(() => useScryfallPrints('Sol Ring API Test'));
 
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
             }, { timeout: 1000 });
 
             expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/api/scryfall/prints?name=Sol%20Ring'),
+                expect.stringContaining('/api/scryfall/prints?name=Sol%20Ring%20API%20Test'),
                 expect.anything()
             );
         });
@@ -78,7 +81,8 @@ describe('useScryfallPrints', () => {
                 json: () => Promise.resolve({ prints: [], total: 0 }),
             });
 
-            renderHook(() => useScryfallPrints('Sol Ring', { lang: 'ja' }));
+            // Use unique card name to avoid global cache collisions
+            renderHook(() => useScryfallPrints('Sol Ring Lang Test', { lang: 'ja' }));
 
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
@@ -93,7 +97,8 @@ describe('useScryfallPrints', () => {
 
     describe('autoFetch option', () => {
         it('should not fetch when autoFetch is false', async () => {
-            renderHook(() => useScryfallPrints('Sol Ring', { autoFetch: false }));
+            // Use unique card name to avoid global cache collisions
+            renderHook(() => useScryfallPrints('Sol Ring AutoFetch Test', { autoFetch: false }));
 
             await new Promise(r => setTimeout(r, 300));
 

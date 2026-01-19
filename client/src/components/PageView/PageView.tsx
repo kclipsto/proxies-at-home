@@ -478,7 +478,9 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
       await undoableReorderMultipleCards(adjustments);
 
       // Rebalance everything (applies the new orders to DB)
-      await rebalanceCardOrders(newLocalCards);
+      // Use projectId from first card or fall back (newLocalCards are filtered to same project)
+      const projectId = newLocalCards[0]?.projectId;
+      if (projectId) await rebalanceCardOrders(projectId);
 
       multiDragState.current = { isMultiDrag: false, draggedCards: [], originalLocalCards: [], activeId: null, ghostIds: new Set() };
       return;
@@ -504,7 +506,8 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
     }
 
     if (Math.abs(newOrder - (prevCard?.order || 0)) < 0.001 || Math.abs(newOrder - (nextCard?.order || 0)) < 0.001) {
-      await rebalanceCardOrders(localCardsRef.current);
+      const projectId = localCardsRef.current[0]?.projectId;
+      if (projectId) await rebalanceCardOrders(projectId);
       return;
     }
 

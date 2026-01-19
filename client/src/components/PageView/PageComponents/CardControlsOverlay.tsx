@@ -10,7 +10,8 @@ import { useSortable } from "@dnd-kit/sortable";
 import { Check, RefreshCw } from "lucide-react";
 import { useArtworkModalStore } from "@/store";
 import { useSelectionStore } from "@/store/selection";
-import type { CardOption } from "../../../../shared/types";
+import { PlaceholderCard } from "@/components/common";
+import type { CardOption } from "@/types";
 
 export interface CardControlLayout {
     card: CardOption;
@@ -208,11 +209,22 @@ const CardControl = memo(function CardControl({
             >
                 {/* Inner Overlay content - relative to unzoomed size */}
                 <div className="absolute inset-0">
-                    {/* Loading spinner - shown when image is not yet loaded */}
+                    {/* Loading spinner or error state - shown when image is not yet loaded */}
                     {!hasImage && (
-                        <div className="absolute inset-0 bg-black rounded-lg flex items-center justify-center z-5">
-                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-transparent" />
-                        </div>
+                        <PlaceholderCard
+                            name={card.name}
+                            error={card.lookupError}
+                            onErrorClick={(e) => {
+                                e.stopPropagation();
+                                openArtworkModal({
+                                    card,
+                                    index: globalIndex,
+                                    allCards,
+                                    initialTab: 'artwork',
+                                    initialOpenAdvancedSearch: true,
+                                });
+                            }}
+                        />
                     )}
 
                     {/* Selection Overlay - visible when card is selected */}

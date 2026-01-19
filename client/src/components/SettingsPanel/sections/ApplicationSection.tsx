@@ -1,4 +1,5 @@
 import { useSettingsStore } from "@/store/settings";
+import { useUserPreferencesStore } from "@/store/userPreferences";
 import { Button, Checkbox, Label, Select } from "flowbite-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -6,7 +7,8 @@ import { db } from "@/db";
 import { cancelAllProcessing } from "@/helpers/cancellationService";
 import { LANGUAGE_OPTIONS } from "@/constants";
 import { AutoTooltip, ArtSourceToggle, UpdateChannelSelector } from "../../common";
-import { HelpCircle, Coffee } from "lucide-react";
+import { HelpCircle, Coffee, Save, RefreshCw } from "lucide-react";
+import { useToastStore } from "@/store/toast";
 
 export function ApplicationSection() {
     const resetSettings = useSettingsStore((state) => state.resetSettings);
@@ -21,6 +23,39 @@ export function ApplicationSection() {
 
     const handleReset = () => {
         setShowResetConfirmModal(true);
+    };
+
+    const handleSaveAsDefaults = async () => {
+        await useUserPreferencesStore.getState().saveCurrentAsDefaults();
+        useToastStore.getState().addToast({
+            type: "success",
+            message: "Current settings saved as your global defaults",
+            dismissible: true,
+        });
+    };
+
+    const handleResetToDefaults = () => {
+        const prefs = useUserPreferencesStore.getState().preferences;
+        if (prefs?.settings) {
+            // Reset to clean slate first
+            useSettingsStore.getState().resetSettings();
+            // Then apply user prefs
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            useSettingsStore.getState().setAllSettings(prefs.settings as any);
+
+            useToastStore.getState().addToast({
+                type: "success",
+                message: "Settings reset to your defaults",
+                dismissible: true,
+            });
+        } else {
+            resetSettings();
+            useToastStore.getState().addToast({
+                type: "success",
+                message: "Settings reset to factory defaults",
+                dismissible: true,
+            });
+        }
     };
 
     const confirmReset = async () => {
@@ -41,6 +76,8 @@ export function ApplicationSection() {
             // Clear all tables except cardbacks (user-uploaded, should be preserved)
             await db.cards.clear();
             await db.images.clear();
+            await db.user_images.clear();  // Clear persistent custom uploads
+            await db.projects.clear();     // Clear all projects for fresh start
             await db.settings.clear();
             await db.cardMetadataCache.clear();
             await db.mpcSearchCache.clear();
@@ -119,13 +156,37 @@ export function ApplicationSection() {
                 </AutoTooltip>
             </div>
 
-            <Button
-                fullSized
-                onClick={resetSettings}
-                className="bg-gray-500 dark:bg-gray-600 text-white hover:bg-gray-600 dark:hover:bg-gray-500 border-0"
-            >
-                Reset Settings
-            </Button>
+            <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                <Label className="text-sm text-gray-500 dark:text-gray-400 uppercase font-bold">
+                    Defaults & Reset
+                </Label>
+
+                <Button
+                    fullSized
+                    color="blue"
+                    onClick={handleSaveAsDefaults}
+                >
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Current as My Defaults
+                </Button>
+
+                <Button
+                    fullSized
+                    onClick={handleResetToDefaults}
+                    className="bg-gray-500 dark:bg-gray-600 text-white hover:bg-gray-600 dark:hover:bg-gray-500 border-0"
+                >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Reset to My Defaults
+                </Button>
+
+                <Button
+                    fullSized
+                    onClick={resetSettings}
+                    className="bg-gray-500 dark:bg-gray-600 text-white hover:bg-gray-600 dark:hover:bg-gray-500 border-0"
+                >
+                    Restore Factory Settings
+                </Button>
+            </div>
 
             <Button color="red" fullSized onClick={handleReset}>
                 Reset App Data
@@ -137,7 +198,10 @@ export function ApplicationSection() {
                 rel="noopener noreferrer"
                 className="block"
             >
-                <Button className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-500 dark:hover:bg-yellow-600 w-full">
+                <Button
+                    fullSized
+                    className="bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-500 dark:hover:bg-yellow-600 border-0"
+                >
                     <Coffee className="mr-2 h-4 w-4" />
                     Buy Me a Coffee
                 </Button>

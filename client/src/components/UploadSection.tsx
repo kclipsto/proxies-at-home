@@ -1,4 +1,3 @@
-
 import fullLogo from "@/assets/fullLogo.png";
 import { logoSvg } from "@/assets";
 import { useSettingsStore } from "@/store/settings";

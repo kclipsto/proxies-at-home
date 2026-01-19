@@ -101,6 +101,8 @@ export interface CardOption {
   needsEnrichment?: boolean;
   enrichmentRetryCount?: number;
   enrichmentNextRetryAt?: number;
+  // Lookup error - tracks when a card couldn't be found during import
+  lookupError?: string;  // Error message (e.g., "Card not found on Scryfall.")
   // DFC / Linked card support
   linkedFrontId?: string;  // If set, this card IS a back (points to its front)
   linkedBackId?: string;   // If set, this card HAS a back (points to it)
@@ -113,6 +115,9 @@ export interface CardOption {
   // Token metadata
   token_parts?: TokenPart[];  // Associated tokens this card can create
   needs_token?: boolean;  // True if this card has associated tokens
+  isToken?: boolean;  // True if this card IS a token (for filtering)
+  // Project scope
+  projectId?: string;
 }
 
 export interface PrintInfo {
@@ -135,6 +140,7 @@ export interface ScryfallCard {
   cmc?: number;
   type_line?: string;
   rarity?: string;
+  layout?: string; // Card layout (e.g., 'transform', 'modal_dfc', 'normal')
   prints?: PrintInfo[];
   // DFC support: face information
   card_faces?: Array<{
@@ -155,6 +161,7 @@ export type CardInfo = {
   category?: string | undefined; // Archidekt deck category
   mpcIdentifier?: string | undefined; // MPC Autofill identifier for exact art matching
   isToken?: boolean | undefined; // True if this is explicitly a token card (e.g., from t: prefix)
+  overrides?: CardOverrides | undefined; // Per-card editor settings (for share import)
 };
 
 /**

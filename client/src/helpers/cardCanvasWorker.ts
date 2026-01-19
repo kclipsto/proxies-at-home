@@ -8,6 +8,145 @@ import { DEFAULT_RENDER_PARAMS } from '../components/CardCanvas/types';
 import type { CardOverrides } from '../../../shared/types';
 import { ADJUSTMENT_FRAGMENT, getWorkerAdjustmentShader } from '../shaders/adjustmentShader';
 import { hasActiveAdjustments } from './adjustmentUtils';
+import { debugLog } from './debug';
+
+// WebGL Debug Logging
+const WEBGL_DEBUG = true;
+let webglContextCount = 0;
+let webglContextsCreated = 0;
+
+function webglLog(message: string, ...args: unknown[]) {
+    if (WEBGL_DEBUG) {
+        debugLog(`[WebGL-CardCanvas] ${message}`, ...args);
+    }
+}
+
+function trackContextCreation(source: string): number {
+    webglContextCount++;
+    webglContextsCreated++;
+    const id = webglContextsCreated;
+    webglLog(`Context CREATED #${id} by ${source} (active: ${webglContextCount})`);
+    return id;
+}
+
+function trackContextRelease(id: number, source: string) {
+    webglContextCount--;
+    webglLog(`Context RELEASED #${id} by ${source} (active: ${webglContextCount})`);
+}
+
+/**
+ * Persistent WebGL context manager for effect rendering.
+ * Maintains a single context that is reused across renders.
+ * Only creates a new context on first use or if the previous one was lost.
+ */
+class WebGLContextManager {
+    private canvas: OffscreenCanvas | null = null;
+    private gl: WebGL2RenderingContext | null = null;
+    private isContextLost = false;
+    private contextId = 0;
+    private readonly purpose: string;
+
+    constructor(purpose: string) {
+        this.purpose = purpose;
+    }
+
+    /**
+     * Get or create a WebGL context at the specified size.
+     * Reuses existing context if available and not lost.
+     */
+    getContext(width: number, height: number): { canvas: OffscreenCanvas; gl: WebGL2RenderingContext; isNew: boolean } {
+        // Check if existing context is still valid (not lost by browser)
+        if (this.canvas && this.gl && !this.isContextLost) {
+            // Additional check: verify context wasn't silently lost by the browser
+            if (this.gl.isContextLost()) {
+                webglLog(`Context for ${this.purpose} was silently lost, recreating...`);
+                this.isContextLost = true;
+            } else {
+                // Context is valid, resize if needed
+                if (this.canvas.width !== width || this.canvas.height !== height) {
+                    this.canvas.width = width;
+                    this.canvas.height = height;
+                    this.gl.viewport(0, 0, width, height);
+                }
+                return { canvas: this.canvas, gl: this.gl, isNew: false };
+            }
+        }
+
+        // Need to create new context
+        this.canvas = new OffscreenCanvas(width, height);
+        this.gl = this.canvas.getContext("webgl2", {
+            premultipliedAlpha: false,
+            preserveDrawingBuffer: true,
+            antialias: false,
+        });
+
+        if (!this.gl) {
+            throw new Error("WebGL2 not supported");
+        }
+
+        // Set up context loss handler
+        this.canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            webglLog(`Context lost event for ${this.purpose}`);
+            this.isContextLost = true;
+        });
+
+        this.isContextLost = false;
+        this.contextId = trackContextCreation(this.purpose);
+        webglLog(`Context manager created new context for ${this.purpose}: ${width}x${height}`);
+
+        return { canvas: this.canvas, gl: this.gl, isNew: true };
+    }
+
+    /**
+     * Mark the context as lost. Next getContext() will create a new one.
+     */
+    handleContextLost() {
+        if (this.contextId > 0) {
+            trackContextRelease(this.contextId, this.purpose);
+        }
+        this.isContextLost = true;
+        this.gl = null;
+        this.canvas = null;
+        webglLog(`Context lost for ${this.purpose}`);
+    }
+
+    /**
+     * Explicitly release the context. Use only when done with all processing.
+     */
+    release() {
+        if (this.gl && !this.isContextLost) {
+            this.gl.getExtension("WEBGL_lose_context")?.loseContext();
+            trackContextRelease(this.contextId, this.purpose);
+        }
+        this.gl = null;
+        this.canvas = null;
+        this.isContextLost = false;
+        this.contextId = 0;
+    }
+
+    /**
+     * Reset the context manager state (for testing).
+     * Forces the next getContext call to create a new context.
+     */
+    reset() {
+        this.gl = null;
+        this.canvas = null;
+        this.isContextLost = false;
+        this.contextId = 0;
+    }
+}
+
+// Module-level context manager - reused across all PDF/effect renders in this worker
+const effectContextManager = new WebGLContextManager('effect-render');
+
+/**
+ * Reset the effect context manager (for testing purposes).
+ * Forces the next render to create a new WebGL context.
+ */
+export function resetEffectContextManager() {
+    effectContextManager.reset();
+}
 
 // Shader sources - exported for reuse by effect.worker.ts
 export const VS_CARD_CANVAS = `#version 300 es
@@ -357,17 +496,10 @@ export async function renderCardWithOverridesWorker(
     const width = imageBitmap.width;
     const height = imageBitmap.height;
 
-    // Create OffscreenCanvas with WebGL2
-    const canvas = new OffscreenCanvas(width, height);
-    const gl = canvas.getContext('webgl2', {
-        premultipliedAlpha: false,
-        preserveDrawingBuffer: true,
-        antialias: false,
-    });
+    // Get or create context using context manager (reuses if available)
+    const { canvas, gl, isNew } = effectContextManager.getContext(width, height);
 
-    if (!gl) {
-        throw new Error('WebGL2 not supported in worker');
-    }
+    webglLog(`Rendering: ${width}x${height}, reused=${!isNew}`);
 
     // Create shaders and program
     const vs = createShader(gl, gl.VERTEX_SHADER, VS_CARD_CANVAS);
@@ -454,9 +586,10 @@ export async function renderCardWithOverridesWorker(
 
     gl.bindVertexArray(null);
 
+    let baseTex: WebGLTexture | null = null;
     try {
         // Load texture from ImageBitmap
-        const baseTex = createTextureFromBitmap(gl, imageBitmap);
+        baseTex = createTextureFromBitmap(gl, imageBitmap);
 
         // Render
         gl.viewport(0, 0, width, height);
@@ -478,22 +611,21 @@ export async function renderCardWithOverridesWorker(
         // Get blob from OffscreenCanvas
         const blob = await canvas.convertToBlob({ type: 'image/png' });
 
-        // Cleanup
+        // Cleanup per-render resources only - keep context alive for next render
         gl.deleteTexture(baseTex);
         gl.deleteBuffer(positionBuffer);
         gl.deleteVertexArray(vao);
         gl.deleteProgram(program);
-
-        // Explicitly release WebGL context to avoid hitting browser context limits
-        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        // Do NOT release context - it will be reused for the next render
 
         return blob;
     } catch (err) {
-        // Cleanup on error - release all WebGL resources
+        // Cleanup on error - release per-render resources but keep context
+        if (baseTex) gl.deleteTexture(baseTex);
         gl.deleteBuffer(positionBuffer);
         gl.deleteVertexArray(vao);
         gl.deleteProgram(program);
-        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        // Do NOT release context on error - it can still be reused
         throw err;
     }
 }

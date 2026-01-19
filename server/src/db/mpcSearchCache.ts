@@ -64,15 +64,17 @@ export function getCachedMpcSearch(
 
         return JSON.parse(row.results_json) as MpcCard[];
     } catch (error) {
-        console.warn('[MPC Cache] Failed to get cached search:', (error as Error).message);
+        debugLog('[MPC Cache] Failed to get cached search:', (error as Error).message);
         return null;
     }
 }
 
 /**
  * Store MPC search results in cache.
- * Automatically trims oldest entries if over limit.
+ * Automatically trims oldest entries if over limit (every 100 inserts).
  */
+let insertsSinceCleanup = 0;
+
 export function cacheMpcSearch(
     query: string,
     cardType: string,
@@ -90,10 +92,14 @@ export function cacheMpcSearch(
 
         stmt.run(normalizedQuery, cardType, JSON.stringify(cards), now);
 
-        // Trim cache if over limit
-        trimMpcCacheIfNeeded();
+        // Batch trim - only every 100 inserts to reduce overhead
+        insertsSinceCleanup++;
+        if (insertsSinceCleanup >= 100) {
+            trimMpcCacheIfNeeded();
+            insertsSinceCleanup = 0;
+        }
     } catch (error) {
-        console.warn('[MPC Cache] Failed to cache search:', (error as Error).message);
+        debugLog('[MPC Cache] Failed to cache search:', (error as Error).message);
     }
 }
 
@@ -123,7 +129,7 @@ function trimMpcCacheIfNeeded(): void {
             debugLog(`[MPC Cache] Trimmed ${toDelete} oldest entries`);
         }
     } catch (error) {
-        console.warn('[MPC Cache] Failed to trim cache:', (error as Error).message);
+        debugLog('[MPC Cache] Failed to trim cache:', (error as Error).message);
     }
 }
 
@@ -158,7 +164,7 @@ export function clearExpiredMpcCache(): number {
         const result = db.prepare('DELETE FROM mpc_search_cache WHERE cached_at < ?').run(expiryTime);
         return result.changes;
     } catch (error) {
-        console.warn('[MPC Cache] Failed to clear expired entries:', (error as Error).message);
+        debugLog('[MPC Cache] Failed to clear expired entries:', (error as Error).message);
         return 0;
     }
 }

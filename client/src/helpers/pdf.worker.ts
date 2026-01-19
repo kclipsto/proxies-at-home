@@ -11,9 +11,39 @@ import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesW
 import { generatePerCardGuide, type GuideStyle } from "./cutGuideUtils";
 import { db, type EffectCacheEntry } from "../db";
 import type { CardOption, CardOverrides } from "../../../shared/types";
+import { debugLog } from "./debug";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
+
+// Limit concurrent bitmap creation to avoid memory exhaustion (especially in Firefox)
+const MAX_CONCURRENT_CARDS = 4;
+
+/**
+ * Process items with limited concurrency to avoid memory exhaustion.
+ * Processes at most `limit` items at a time.
+ */
+async function processWithConcurrency<T, R>(
+    items: T[],
+    processor: (item: T, index: number) => Promise<R>,
+    limit: number
+): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let currentIndex = 0;
+
+    async function processNext(): Promise<void> {
+        while (currentIndex < items.length) {
+            const idx = currentIndex++;
+            results[idx] = await processor(items[idx], idx);
+        }
+    }
+
+    // Start `limit` workers
+    const workers = Array.from({ length: Math.min(limit, items.length) }, () => processNext());
+    await Promise.all(workers);
+
+    return results;
+}
 
 function getLocalBleedImageUrl(originalUrl: string, apiBase: string) {
     return toProxied(originalUrl, apiBase);
@@ -371,8 +401,9 @@ self.onmessage = async (event: MessageEvent) => {
             isBlank: boolean;  // True for cardback_builtin_blank cards (no guides)
         };
 
-        // PHASE 1: Prepare all cards in PARALLEL
-        const preparedCards = await Promise.all(pageCards.map(async (card: CardOption, idx: number): Promise<PreparedCard> => {
+        // PHASE 1: Prepare cards with LIMITED CONCURRENCY to avoid memory exhaustion
+        debugLog(`[PDF Worker] Processing ${pageCards.length} cards with concurrency limit ${MAX_CONCURRENT_CARDS}`);
+        const preparedCards = await processWithConcurrency(pageCards, async (card: CardOption, idx: number): Promise<PreparedCard> => {
             const col = idx % columns;
             const row = Math.floor(idx / columns);
             const cardLayout = layouts[idx];
@@ -445,16 +476,20 @@ self.onmessage = async (event: MessageEvent) => {
 
             if (isCacheValid) {
                 // Fast path: use pre-processed blob directly
+                debugLog(`[PDF Worker] Card ${idx}: Using cached blob, size=${selectedExportBlob!.size}`);
                 let bitmap = await createImageBitmap(selectedExportBlob!);
+                debugLog(`[PDF Worker] Card ${idx}: Created bitmap ${bitmap.width}x${bitmap.height}`);
 
                 // If card has advanced overrides (brightness, contrast, etc.), apply them with WebGL
                 if (hasAdvancedOverrides(card.overrides)) {
                     // Check pre-rendered effect cache first
                     const cachedEffectBlob = effectCacheById?.get(card.uuid);
                     if (cachedEffectBlob) {
+                        debugLog(`[PDF Worker] Card ${idx}: Using effect cache`);
                         bitmap.close();
                         bitmap = await createImageBitmap(cachedEffectBlob);
                     } else {
+                        debugLog(`[PDF Worker] Card ${idx}: Applying WebGL overrides`);
                         const params = overridesToRenderParams(card.overrides!, effectiveDarkenMode as 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full');
                         const renderedBlob = await renderCardWithOverridesWorker(bitmap, params);
                         bitmap.close();
@@ -471,6 +506,7 @@ self.onmessage = async (event: MessageEvent) => {
                 // Check cache
                 const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${effectiveDarkenMode}` : null;
                 if (cacheKey && canvasCache.has(cacheKey)) {
+                    debugLog(`[PDF Worker] Card ${idx}: Using canvas cache`);
                     finalCardCanvas = canvasCache.get(cacheKey)!;
                 } else {
                     let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
@@ -486,21 +522,33 @@ self.onmessage = async (event: MessageEvent) => {
                     try {
                         if (card.imageId === 'cardback_builtin_blank') {
                             // Blank back card - clean white fill, no guides or placeholders
+                            debugLog(`[PDF Worker] Card ${idx}: Creating blank canvas`);
                             const cardBleedPx = cardLayout.bleedPx;
                             const cardWidthWithBleed = contentWidthInPx + 2 * cardBleedPx;
                             const cardHeightWithBleed = contentHeightInPx + 2 * cardBleedPx;
+                            debugLog(`[PDF Worker] Card ${idx}: Blank canvas dimensions: ${cardWidthWithBleed}x${cardHeightWithBleed}`);
                             const blankCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
-                            const cardCtx = blankCanvas.getContext('2d')!;
+                            debugLog(`[PDF Worker] Card ${idx}: Getting 2d context...`);
+                            const cardCtx = blankCanvas.getContext('2d');
+                            if (!cardCtx) {
+                                throw new Error(`Failed to get 2d context for blank canvas ${cardWidthWithBleed}x${cardHeightWithBleed}`);
+                            }
+                            debugLog(`[PDF Worker] Card ${idx}: Got 2d context, filling white`);
                             cardCtx.fillStyle = 'white';
                             cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
                             finalCardCanvas = blankCanvas;
+                            debugLog(`[PDF Worker] Card ${idx}: Blank canvas complete`);
                         } else if (!src) {
                             // Placeholder for missing images
+                            debugLog(`[PDF Worker] Card ${idx}: Creating placeholder (no source)`);
                             const cardBleedPx = cardLayout.bleedPx;
                             const cardWidthWithBleed = contentWidthInPx + 2 * cardBleedPx;
                             const cardHeightWithBleed = contentHeightInPx + 2 * cardBleedPx;
                             const placeholderCanvas = new OffscreenCanvas(cardWidthWithBleed, cardHeightWithBleed);
-                            const cardCtx = placeholderCanvas.getContext('2d')!;
+                            const cardCtx = placeholderCanvas.getContext('2d');
+                            if (!cardCtx) {
+                                throw new Error(`Failed to get 2d context for placeholder canvas`);
+                            }
                             cardCtx.fillStyle = 'white';
                             cardCtx.fillRect(0, 0, cardWidthWithBleed, cardHeightWithBleed);
                             cardCtx.strokeStyle = 'red';
@@ -513,6 +561,7 @@ self.onmessage = async (event: MessageEvent) => {
                             finalCardCanvas = placeholderCanvas;
                         } else {
                             // Fetch image
+                            debugLog(`[PDF Worker] Card ${idx}: Fetching image from ${src.substring(0, 50)}...`);
                             if (!card.isUserUpload) {
                                 src = getLocalBleedImageUrl(src, API_BASE);
                             }
@@ -587,7 +636,7 @@ self.onmessage = async (event: MessageEvent) => {
                 bleedPx: cardLayout.bleedPx,
                 isBlank: card.imageId === 'cardback_builtin_blank',
             };
-        }));
+        }, MAX_CONCURRENT_CARDS);
 
         // PHASE 2: Draw all cards SEQUENTIALLY (canvas context not thread-safe)
         let imagesProcessed = 0;

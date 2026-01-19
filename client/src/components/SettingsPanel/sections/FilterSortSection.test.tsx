@@ -26,9 +26,24 @@ const mockSetters = vi.hoisted(() => ({
 }));
 
 vi.mock('@/store/settings', () => ({
-    useSettingsStore: vi.fn((selector) => {
-        const state = { ...mockState, ...mockSetters };
-        return selector(state);
+    useSettingsStore: Object.assign(
+        vi.fn((selector) => {
+            const state = { ...mockState, ...mockSetters };
+            return selector(state);
+        }),
+        { subscribe: vi.fn(() => vi.fn()) }
+    ),
+}));
+
+vi.mock('@/store/userPreferences', () => ({
+    useUserPreferencesStore: vi.fn((selector) => {
+        const state = {
+            preferences: {
+                filterSectionCollapsed: mockState.filterSectionCollapsed,
+            },
+            setFilterSectionCollapsed: mockSetters.setFilterSectionCollapsed,
+        };
+        return typeof selector === 'function' ? selector(state) : state;
     }),
 }));
 
@@ -218,6 +233,55 @@ describe('FilterSortSection', () => {
             render(<FilterSortSection />);
             fireEvent.click(screen.getByText('Creature'));
             expect(mockSetters.setFilterTypes).toHaveBeenCalledWith(['Creature']);
+        });
+    });
+
+    describe('token type detection', () => {
+        // Store the default mock to restore after each test
+        const defaultMockData = [
+            { uuid: '1', type_line: 'Creature — Human', category: 'Mainboard' },
+            { uuid: '2', type_line: 'Instant', category: 'Commander' },
+            { uuid: '3', type_line: 'Artifact', category: null },
+            { uuid: '4', type_line: 'Land', linkedFrontId: 'some-id' }, // DFC
+        ];
+
+        afterEach(async () => {
+            // Restore default mock after each token test
+            const { useLiveQuery } = await import('dexie-react-hooks');
+            (useLiveQuery as ReturnType<typeof vi.fn>).mockReturnValue(defaultMockData);
+        });
+
+        it('should render Token type when tokens exist (using isToken field)', async () => {
+            const { useLiveQuery } = await import('dexie-react-hooks');
+            (useLiveQuery as ReturnType<typeof vi.fn>).mockReturnValue([
+                { uuid: '1', type_line: 'Creature', isToken: false },
+                { uuid: '2', type_line: 'Token Creature — Soldier', isToken: true },
+            ]);
+
+            render(<FilterSortSection />);
+            expect(screen.getByText('Token')).toBeDefined();
+        });
+
+        it('should not render Token type when no tokens exist', async () => {
+            const { useLiveQuery } = await import('dexie-react-hooks');
+            (useLiveQuery as ReturnType<typeof vi.fn>).mockReturnValue([
+                { uuid: '1', type_line: 'Creature' },
+                { uuid: '2', type_line: 'Instant' },
+            ]);
+
+            render(<FilterSortSection />);
+            expect(screen.queryByText('Token')).toBeNull();
+        });
+
+        it('should call setFilterTypes with Token when Token clicked', async () => {
+            const { useLiveQuery } = await import('dexie-react-hooks');
+            (useLiveQuery as ReturnType<typeof vi.fn>).mockReturnValue([
+                { uuid: '1', isToken: true },
+            ]);
+
+            render(<FilterSortSection />);
+            fireEvent.click(screen.getByText('Token'));
+            expect(mockSetters.setFilterTypes).toHaveBeenCalledWith(['Token']);
         });
     });
 

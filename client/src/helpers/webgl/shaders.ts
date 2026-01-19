@@ -292,3 +292,138 @@ void main() {
 }
 `;
 
+/**
+ * FS_DIRECT - Direct image rendering with darkening effects (no JFA)
+ * 
+ * Used for images that already have bleed built-in. Simply resizes and
+ * applies the same darkening effects as FS_FINAL without the expensive
+ * Jump Flood Algorithm pass.
+ */
+export const FS_DIRECT = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_image;
+uniform vec2 u_resolution;
+uniform int u_darkenMode;      // 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
+uniform float u_darknessFactor; // 0-1, from histogram analysis
+
+in vec2 v_uv;
+out vec4 outColor;
+
+// Adaptive edge contrast - darkens near-black pixels near edges with smooth falloff
+vec3 applyEdgeContrast(vec3 color, vec2 pixelCoord) {
+    // Edge detection zone - DPI-aware (64px at 300 DPI baseline)
+    float dpiScale = u_resolution.y / 1039.0;
+    float EDGE_PX = 64.0 * dpiScale;
+    
+    // Calculate distance from nearest edge
+    float edgeDist = min(
+        min(pixelCoord.x, pixelCoord.y),
+        min(u_resolution.x - pixelCoord.x - 1.0, u_resolution.y - pixelCoord.y - 1.0)
+    );
+    
+    if (edgeDist >= EDGE_PX) return color;
+    
+    float edgeFactor = 1.0 - edgeDist / EDGE_PX;
+    edgeFactor *= edgeFactor;
+    
+    float MAX_CONTRAST = 1.0 + 0.22 * u_darknessFactor;
+    float MAX_BRIGHTNESS = -8.0 / 255.0 * u_darknessFactor;
+    float HIGHLIGHT_SOFT = 230.0 / 255.0;
+    
+    vec3 result = color;
+    
+    for (int c = 0; c < 3; c++) {
+        float v = (c == 0) ? color.r : (c == 1) ? color.g : color.b;
+        
+        float toneThreshold = 140.0 / 255.0;
+        if (v > toneThreshold) continue;
+        
+        float toneFactor = min(1.0, (toneThreshold - v) / (110.0 / 255.0));
+        float strength = edgeFactor * toneFactor;
+        
+        if (strength <= 0.0) continue;
+        
+        float contrast = 1.0 + (MAX_CONTRAST - 1.0) * strength;
+        float brightness = MAX_BRIGHTNESS * strength;
+        
+        float nv = (v - 0.5) * contrast + 0.5 + brightness;
+        
+        if (nv > HIGHLIGHT_SOFT) {
+            nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
+        }
+        
+        nv = clamp(nv, 0.0, 1.0);
+        
+        if (c == 0) result.r = nv;
+        else if (c == 1) result.g = nv;
+        else result.b = nv;
+    }
+    
+    return result;
+}
+
+// Full-card contrast
+vec3 applyFullContrast(vec3 color) {
+    float MAX_CONTRAST = 1.0 + 0.22 * u_darknessFactor;
+    float MAX_BRIGHTNESS = -8.0 / 255.0 * u_darknessFactor;
+    float HIGHLIGHT_SOFT = 230.0 / 255.0;
+    
+    vec3 result = color;
+    
+    for (int c = 0; c < 3; c++) {
+        float v = (c == 0) ? color.r : (c == 1) ? color.g : color.b;
+        
+        float toneThreshold = 140.0 / 255.0;
+        if (v > toneThreshold) continue;
+        
+        float toneFactor = min(1.0, (toneThreshold - v) / (110.0 / 255.0));
+        if (toneFactor <= 0.0) continue;
+        
+        float contrast = 1.0 + (MAX_CONTRAST - 1.0) * toneFactor;
+        float brightness = MAX_BRIGHTNESS * toneFactor;
+        
+        float nv = (v - 0.5) * contrast + 0.5 + brightness;
+        
+        if (nv > HIGHLIGHT_SOFT) {
+            nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
+        }
+        
+        nv = clamp(nv, 0.0, 1.0);
+        
+        if (c == 0) result.r = nv;
+        else if (c == 1) result.g = nv;
+        else result.b = nv;
+    }
+    
+    return result;
+}
+
+// Legacy darken-all
+vec3 applyDarkenAll(vec3 color) {
+    float threshold = 30.0 / 255.0;
+    if (color.r < threshold && color.g < threshold && color.b < threshold) {
+        return vec3(0.0);
+    }
+    return color;
+}
+
+void main() {
+    vec2 pixelCoord = v_uv * u_resolution;
+    
+    // Sample image directly (flip Y for WebGL)
+    vec2 imageUV = vec2(v_uv.x, 1.0 - v_uv.y);
+    vec4 color = texture(u_image, imageUV);
+    
+    // Apply darkening based on mode
+    if (u_darkenMode == 1) {
+        color.rgb = applyDarkenAll(color.rgb);
+    } else if (u_darkenMode == 2) {
+        color.rgb = applyEdgeContrast(color.rgb, pixelCoord);
+    } else if (u_darkenMode == 3) {
+        color.rgb = applyFullContrast(color.rgb);
+    }
+    
+    outColor = vec4(color.rgb, 1.0);
+}
+`;

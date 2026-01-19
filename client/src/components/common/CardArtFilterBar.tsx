@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowUpNarrowWide, ArrowDownWideNarrow, Star, X } from "lucide-react";
 import { SelectDropdown, MultiSelectDropdown } from "./";
-import { useSettingsStore } from "@/store";
+import { useSettingsStore, useUserPreferencesStore } from "@/store";
 import type { MpcAutofillCard } from "@/helpers/mpcAutofillApi";
 import type { MpcFilterState } from "@/hooks/useMpcSearch";
 
@@ -54,14 +54,14 @@ export function CardArtFilterBar({
     setAllSourcesCollapsed,
 }: CardArtFilterBarProps) {
     // Settings store for favorites
-    const favoriteMpcSources = useSettingsStore(s => s.favoriteMpcSources);
-    const toggleFavoriteMpcSource = useSettingsStore(s => s.toggleFavoriteMpcSource);
-    const favoriteMpcTags = useSettingsStore(s => s.favoriteMpcTags);
-    const toggleFavoriteMpcTag = useSettingsStore(s => s.toggleFavoriteMpcTag);
-    const favoriteMpcDpi = useSettingsStore(s => s.favoriteMpcDpi);
-    const setFavoriteMpcDpi = useSettingsStore(s => s.setFavoriteMpcDpi);
-    const favoriteMpcSort = useSettingsStore(s => s.favoriteMpcSort);
-    const setFavoriteMpcSort = useSettingsStore(s => s.setFavoriteMpcSort);
+    const favoriteMpcSources = useUserPreferencesStore(s => s.preferences?.favoriteMpcSources || []);
+    const toggleFavoriteMpcSource = useUserPreferencesStore(s => s.toggleFavoriteMpcSource);
+    const favoriteMpcTags = useUserPreferencesStore(s => s.preferences?.favoriteMpcTags || []);
+    const toggleFavoriteMpcTag = useUserPreferencesStore(s => s.toggleFavoriteMpcTag);
+    const favoriteMpcDpi = useUserPreferencesStore(s => s.preferences?.favoriteMpcDpi ?? null);
+    const setFavoriteMpcDpi = useUserPreferencesStore(s => s.setFavoriteMpcDpi);
+    const favoriteMpcSort = useUserPreferencesStore(s => s.preferences?.favoriteMpcSort ?? null);
+    const setFavoriteMpcSort = useUserPreferencesStore(s => s.setFavoriteMpcSort);
     const mpcFuzzySearch = useSettingsStore(s => s.mpcFuzzySearch);
     const setMpcFuzzySearch = useSettingsStore(s => s.setMpcFuzzySearch);
 

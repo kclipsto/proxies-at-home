@@ -121,6 +121,53 @@ export function insertCardType(cardId: string, type: string, isToken: boolean): 
 }
 
 /**
+ * Batch insert card types using a transaction for efficiency.
+ * Use this during bulk import instead of individual insertCardType calls.
+ */
+export function batchInsertCardTypes(entries: Array<{ cardId: string; type: string; isToken: boolean }>): void {
+    if (entries.length === 0) return;
+
+    try {
+        const db = getDatabase();
+        const stmt = db.prepare(
+            'INSERT OR IGNORE INTO card_types (card_id, type, is_token) VALUES (?, ?, ?)'
+        );
+
+        const insertMany = db.transaction((items: typeof entries) => {
+            for (const { cardId, type, isToken } of items) {
+                stmt.run(cardId, type.toLowerCase(), isToken ? 1 : 0);
+            }
+        });
+
+        insertMany(entries);
+    } catch {
+        // Ignore errors (table might not exist yet)
+    }
+}
+
+/**
+ * Batch insert token names using a transaction for efficiency.
+ */
+export function batchInsertTokenNames(names: string[]): void {
+    if (names.length === 0) return;
+
+    try {
+        const db = getDatabase();
+        const stmt = db.prepare('INSERT OR IGNORE INTO token_names (name) VALUES (?)');
+
+        const insertMany = db.transaction((items: string[]) => {
+            for (const name of items) {
+                stmt.run(name.toLowerCase());
+            }
+        });
+
+        insertMany(names);
+    } catch {
+        // Ignore errors (table might not exist yet)
+    }
+}
+
+/**
  * Parse a type_line into individual types.
  * @param typeLine The full type line (e.g., "Legendary Artifact Creature — Human Soldier")
  * @returns Array of individual types (e.g., ["legendary", "artifact", "creature", "human", "soldier"])

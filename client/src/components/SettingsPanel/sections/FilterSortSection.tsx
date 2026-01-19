@@ -1,4 +1,6 @@
 import { useSettingsStore } from "@/store/settings";
+import { useUserPreferencesStore } from "@/store/userPreferences";
+import { useProjectStore } from "@/store/projectStore";
 import { Label, Select, Button } from "flowbite-react";
 import { ArrowDown, ArrowUp, X, ChevronDown } from "lucide-react";
 import { ManaIcon } from "@/components/common";
@@ -6,6 +8,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db";
 import { useMemo, useCallback } from "react";
 import { getCardTypes } from "@/hooks/useFilteredAndSortedCards";
+import type { CardOption } from "@/types";
 
 // Collapsible section component with persisted state
 interface FilterSectionProps {
@@ -18,13 +21,15 @@ interface FilterSectionProps {
 }
 
 function FilterSection({ id, title, children, defaultOpen = true, activeCount = 0, onClear }: FilterSectionProps) {
-    const collapsed = useSettingsStore((state) => state.filterSectionCollapsed[id] ?? !defaultOpen);
-    const setCollapsed = useSettingsStore((state) => state.setFilterSectionCollapsed);
+    const filterSectionCollapsed = useUserPreferencesStore((state) => state.preferences?.filterSectionCollapsed);
+    const allCollapsed = useMemo(() => filterSectionCollapsed ?? {}, [filterSectionCollapsed]);
+    const collapsed = allCollapsed[id] ?? !defaultOpen;
+    const setFilterSectionCollapsed = useUserPreferencesStore((state) => state.setFilterSectionCollapsed);
 
     const handleToggle = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
-        setCollapsed(id, !collapsed);
-    }, [id, collapsed, setCollapsed]);
+        setFilterSectionCollapsed({ ...allCollapsed, [id]: !collapsed });
+    }, [id, collapsed, allCollapsed, setFilterSectionCollapsed]);
 
     const handleClear = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
@@ -78,7 +83,7 @@ function FilterSection({ id, title, children, defaultOpen = true, activeCount = 
 }
 
 
-export function FilterSortSection() {
+export function FilterSortSection({ cards }: { cards?: CardOption[] }) {
     const sortBy = useSettingsStore((state) => state.sortBy);
     const setSortBy = useSettingsStore((state) => state.setSortBy);
     const sortOrder = useSettingsStore((state) => state.sortOrder);
@@ -94,22 +99,42 @@ export function FilterSortSection() {
     const setFilterCategories = useSettingsStore((state) => state.setFilterCategories);
     const filterMatchType = useSettingsStore((state) => state.filterMatchType);
     const setFilterMatchType = useSettingsStore((state) => state.setFilterMatchType);
+    // Get access to project ID for filtering
+    const currentProjectId = useProjectStore((state) => state.currentProjectId);
 
     // Get all cards to extract available types and categories
-    const cardsFromDb = useLiveQuery(() => db.cards.toArray());
+    // Use passed cards if available (preferred for sync), otherwise fallback to internal query
+    const cardsFromQuery = useLiveQuery(async () => {
+        if (cards) return [];
+        if (currentProjectId) {
+            return await db.cards.where('projectId').equals(currentProjectId).toArray();
+        }
+        return [];
+    }, [cards, currentProjectId]);
+
+    const cardsFromDb = useMemo(() => cards ?? cardsFromQuery ?? [], [cards, cardsFromQuery]);
 
     // Extract unique card types from loaded cards
     const availableTypes = useMemo(() => {
         if (!cardsFromDb) return [];
         const types = new Set<string>();
         let hasDfc = false;
+        let hasToken = false;
         for (const card of cardsFromDb) {
-            const primaryType = getCardTypes(card.type_line);
-            if (primaryType.length > 0) types.add(primaryType[0]);
+            // Check for tokens using the isToken field (set during import)
+            if (card.isToken === true) {
+                hasToken = true;
+            } else {
+                // Only check type_line for non-tokens - add ALL types, not just the primary
+                const cardTypes = getCardTypes(card.type_line);
+                for (const t of cardTypes) types.add(t);
+            }
             if (card.linkedFrontId || card.linkedBackId) hasDfc = true;
         }
-        const typeOrder = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Token", "Dual Faced"];
+        const typeOrder = ["Token", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Dual Faced"];
         const sortedTypes = Array.from(types).sort((a, b) => typeOrder.indexOf(a) - typeOrder.indexOf(b));
+        // Add Token at the beginning if any tokens exist
+        if (hasToken) sortedTypes.unshift("Token");
         if (hasDfc) sortedTypes.push("Dual Faced");
         return sortedTypes;
     }, [cardsFromDb]);

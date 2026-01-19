@@ -8,10 +8,24 @@ vi.mock("../db", () => ({
     transaction: vi.fn(),
     cards: {
       clear: vi.fn(),
+      where: vi.fn(() => ({
+        equals: vi.fn(() => ({
+          delete: vi.fn(),
+        })),
+      })),
     },
     images: {
       clear: vi.fn(),
     },
+  },
+}));
+
+// Mock useProjectStore
+vi.mock("./projectStore", () => ({
+  useProjectStore: {
+    getState: vi.fn(() => ({
+      currentProjectId: "test-project-id",
+    })),
   },
 }));
 
@@ -21,7 +35,7 @@ describe("useCardsStore", () => {
     vi.clearAllMocks();
   });
 
-  it("should clear all cards and all images", async () => {
+  it("should clear current project cards and images", async () => {
     const { clearAllCardsAndImages } = useCardsStore.getState();
 
     // Mock the transaction implementation
@@ -38,8 +52,8 @@ describe("useCardsStore", () => {
       db.images,
       expect.any(Function)
     );
-    expect(db.cards.clear).toHaveBeenCalledTimes(1);
-    // Now clears all images including cardbacks (they re-init on next use)
+    // Now clears by projectId, so we check where().equals().delete() chain
+    expect(db.cards.where).toHaveBeenCalledWith("projectId");
     expect(db.images.clear).toHaveBeenCalledTimes(1);
   });
 });

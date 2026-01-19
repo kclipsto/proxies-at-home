@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from "react";
 import { FileUp, Eye, Settings } from "lucide-react";
+
 import { useLiveQuery } from "dexie-react-hooks";
 import type { CardOption } from "../../../shared/types";
 
@@ -7,10 +8,12 @@ import { ResizeHandle } from "../components/CardEditorModal/ResizeHandle";
 import { ToastContainer } from "../components/common";
 import { PageView, PageSettingsControls } from "../components/PageView";
 import { UploadSection } from "../components/UploadSection";
+
 import { useImageProcessing } from "../hooks/useImageProcessing";
 import { useProcessingMonitor } from "../hooks/useProcessingMonitor";
 import { useCardEnrichment } from "../hooks/useCardEnrichment";
-import { useSettingsStore } from "../store";
+import { useSettingsStore, useProjectStore, useUserPreferencesStore } from "../store";
+import { useLoadingStore } from "../store/loading";
 import { db, type Image } from "../db";
 import { ImageProcessor, Priority } from "../helpers/imageProcessor";
 import { rebalanceCardOrders } from "@/helpers/dbUtils";
@@ -50,19 +53,24 @@ export default function ProxyBuilderPage() {
 
   // Convert to mm for processing (stored value may be in inches)
   const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
-  const settingsPanelWidth = useSettingsStore((state) => state.settingsPanelWidth);
-  const setSettingsPanelWidth = useSettingsStore((state) => state.setSettingsPanelWidth);
-  const isSettingsPanelCollapsed = useSettingsStore((state) => state.isSettingsPanelCollapsed);
-  const toggleSettingsPanel = useSettingsStore((state) => state.toggleSettingsPanel);
+
+  // UI Panels (Global User Preferences)
+  const settingsPanelWidth = useUserPreferencesStore((state) => state.preferences?.settingsPanelWidth ?? 320);
+  const setSettingsPanelWidth = useUserPreferencesStore((state) => state.setSettingsPanelWidth);
+  const isSettingsPanelCollapsed = useUserPreferencesStore((state) => state.preferences?.isSettingsPanelCollapsed ?? false);
+  const setIsSettingsPanelCollapsed = useUserPreferencesStore((state) => state.setIsSettingsPanelCollapsed);
+  const toggleSettingsPanel = useCallback(() => setIsSettingsPanelCollapsed(!isSettingsPanelCollapsed), [isSettingsPanelCollapsed, setIsSettingsPanelCollapsed]);
+
   const imageProcessor = useMemo(() => ImageProcessor.getInstance(), []);
 
   // Monitor worker activity to show/hide processing toast at the right time
   useProcessingMonitor(imageProcessor);
 
-  const isUploadPanelCollapsed = useSettingsStore((state) => state.isUploadPanelCollapsed);
-  const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
-  const uploadPanelWidth = useSettingsStore((state) => state.uploadPanelWidth);
-  const setUploadPanelWidth = useSettingsStore((state) => state.setUploadPanelWidth);
+  const isUploadPanelCollapsed = useUserPreferencesStore((state) => state.preferences?.isUploadPanelCollapsed ?? false);
+  const setIsUploadPanelCollapsed = useUserPreferencesStore((state) => state.setIsUploadPanelCollapsed);
+  const toggleUploadPanel = useCallback(() => setIsUploadPanelCollapsed(!isUploadPanelCollapsed), [isUploadPanelCollapsed, setIsUploadPanelCollapsed]);
+  const uploadPanelWidth = useUserPreferencesStore((state) => state.preferences?.uploadPanelWidth ?? 320);
+  const setUploadPanelWidth = useUserPreferencesStore((state) => state.setUploadPanelWidth);
 
   // Mobile detection and state
   const [isMobile, setIsMobile] = useState(false);
@@ -165,17 +173,12 @@ export default function ProxyBuilderPage() {
     void ensureBuiltinCardbacksInDb();
   }, []);
 
-  // On startup, rebalance card orders to prevent floating point issues.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void rebalanceCardOrders();
-    }, 200);
-    return () => clearTimeout(timer);
-  }, []);
-
+  // On startup, initialize flip state from local storage
   useEffect(() => {
     void initializeFlipState();
   }, []);
+
+
 
   // On startup, clean expired image cache entries (non-blocking)
   useEffect(() => {
@@ -189,10 +192,47 @@ export default function ProxyBuilderPage() {
   // Get current DPI for comparison in processUnprocessed
   const dpi = useSettingsStore((state) => state.dpi);
 
+  // Subscribe to imageVersion to trigger refresh when images are processed
+  // This works around a Dexie useLiveQuery reactivity issue where updates to
+  // displayBlob on existing image records don't always trigger re-renders
+  const imageVersion = useLoadingStore((state) => state.imageVersion);
+
   // PERFORMANCE: Centralized database queries (single source of truth)
   // This replaces multiple redundant useLiveQuery calls across child components
-  const allCardsQuery = useLiveQuery<CardOption[]>(() => db.cards.orderBy("order").toArray(), []);
-  const allImagesQuery = useLiveQuery(() => db.images.toArray(), []);
+  const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const activeProjectIdRef = useRef(currentProjectId);
+  useEffect(() => { activeProjectIdRef.current = currentProjectId; }, [currentProjectId]);
+
+  // Live query for cards - filtered by current project
+  // In unified architecture, db.cards contains ALL projects' cards
+  const allCardsQuery = useLiveQuery(async () => {
+    if (!currentProjectId) return [];
+    return db.cards
+      .where('projectId').equals(currentProjectId)
+      .sortBy('order');
+  }, [currentProjectId]);
+
+
+  // Rebalance card orders on project switch to prevent floating point issues
+  useEffect(() => {
+    if (currentProjectId) {
+      const timer = setTimeout(() => {
+        void rebalanceCardOrders(currentProjectId);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [currentProjectId]);
+
+  const allImagesQuery = useLiveQuery(async () => {
+    const images: Image[] = [];
+    await db.images.each((img) => {
+      // Exclude heavy originalBlob from UI state to prevent OOM
+      // We process one by one in ensureProcessed, so we don't need it here
+      const { originalBlob: _, ...rest } = img;
+      images.push(rest as Image);
+    });
+    return images;
+  }, [imageVersion, currentProjectId]);
   // Also query cardbacks - they share the same shape for useImageCache
   const allCardbacksQuery = useLiveQuery(() => db.cardbacks.toArray(), []);
 
@@ -265,8 +305,12 @@ export default function ProxyBuilderPage() {
     if (!allCards) return;
 
     const processUnprocessed = async () => {
-      const allImages = await db.images.toArray();
-      const imagesById = new Map(allImages.map((img) => [img.id, img]));
+      // Use efficient cursor iteration to avoid loading all huge blobs into memory at once
+      const imagesById = new Map<string, Image>();
+      await db.images.each((img) => {
+        const { originalBlob: _, ...rest } = img;
+        imagesById.set(img.id, rest as Image);
+      });
 
       // Deduplicate by imageId - only process each unique image once
       const imageIdToRepresentativeCard = new Map<string, CardOption>();
@@ -317,6 +361,7 @@ export default function ProxyBuilderPage() {
       const uniqueUnprocessedCount = imageIdToRepresentativeCard.size;
       if (uniqueUnprocessedCount > 0) {
         // Process once per unique imageId using representative card
+        // ImageProcessor's queue handles worker concurrency limiting
         for (const card of imageIdToRepresentativeCard.values()) {
           void ensureProcessed(card, Priority.LOW);
         }
@@ -369,6 +414,7 @@ export default function ProxyBuilderPage() {
 
     const timer = setTimeout(async () => {
       cancelProcessing();
+
       const allCards = await db.cards.toArray();
       // Only reprocess cards that have an image AND whose processed state doesn't match new settings
       const cardsWithImages = allCards.filter(c => c.imageId);
@@ -386,15 +432,16 @@ export default function ProxyBuilderPage() {
         noBleedTargetAmount: state.noBleedTargetAmount,
       };
 
-      const images = await db.images.toArray();
-      const imageMap = new Map(images.map(i => [i.id, i]));
+      const imageMap = new Map<string, Image>();
+      await db.images.each((img) => {
+        const { originalBlob: _, ...rest } = img;
+        imageMap.set(img.id, rest as Image);
+      });
 
       const cardsToReprocess = cardsWithImages.filter(card => {
         if (!card.imageId) return false;
         const img = imageMap.get(card.imageId);
         if (!img) return true; // Image record missing, reprocess
-
-
 
         // Check if image matches current settings
         const expectedBleedWidth = getExpectedBleedWidth(card, settings.bleedEdgeWidth, settings);
@@ -445,9 +492,10 @@ export default function ProxyBuilderPage() {
     return () => clearTimeout(timer);
   }, [
     allCards, ensureProcessed, dpi, bleedEdgeUnit,
-    bleedEdge, bleedEdgeWidthMm, reprocessSelectedImages, cancelProcessing,
     withBleedSourceAmount, withBleedTargetMode, withBleedTargetAmount,
-    noBleedTargetMode, noBleedTargetAmount
+    noBleedTargetMode, noBleedTargetAmount,
+    // Add missing deps
+    reprocessSelectedImages, cancelProcessing, bleedEdge, bleedEdgeWidthMm
   ]);
 
   // Mobile Layout
@@ -544,8 +592,8 @@ export default function ProxyBuilderPage() {
 
   // Desktop Layout
   return (
-    <>
-      <div className="flex flex-row h-dvh justify-between overflow-hidden">
+    <div className="flex flex-col h-dvh overflow-hidden">
+      <div className="flex flex-row flex-1 overflow-hidden relative">
         <div
           className="relative transition-all duration-200 ease-in-out z-30 h-full overflow-hidden"
           style={{
@@ -598,7 +646,6 @@ export default function ProxyBuilderPage() {
           style={{
             width: isSettingsPanelCollapsed ? 60 : settingsPanelWidth,
             minWidth: isSettingsPanelCollapsed ? 60 : 320,
-            transition: "width 0.2s ease-in-out",
           }}
         >
           <PageSettingsControls
@@ -608,9 +655,7 @@ export default function ProxyBuilderPage() {
           />
         </div>
       </div>
-
-
-    </>
+    </div>
   );
 }
 

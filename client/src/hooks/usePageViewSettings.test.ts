@@ -50,6 +50,39 @@ vi.mock("zustand/react/shallow", () => ({
     useShallow: (fn: (state: typeof mockSettingsState) => unknown) => fn,
 }));
 
+vi.mock("../store/projectStore", () => ({
+    useProjectStore: vi.fn((selector) => {
+        const state = {
+            currentProjectId: "test-project-id",
+        };
+        if (typeof selector === "function") {
+            return selector(state);
+        }
+        return state;
+    }),
+}));
+
+vi.mock("../store/userPreferences", () => ({
+    useUserPreferencesStore: vi.fn((selector) => {
+        const state = {
+            preferences: {
+                settingsPanelWidth: 320,
+                isSettingsPanelCollapsed: false,
+                uploadPanelWidth: 320,
+                isUploadPanelCollapsed: false,
+            },
+            setIsSettingsPanelCollapsed: vi.fn(),
+            setSettingsPanelWidth: vi.fn(),
+            setIsUploadPanelCollapsed: vi.fn(),
+            setUploadPanelWidth: vi.fn(),
+        };
+        if (typeof selector === "function") {
+            return selector(state);
+        }
+        return state;
+    }),
+}));
+
 import { usePageViewSettings } from "./usePageViewSettings";
 
 describe("usePageViewSettings", () => {
