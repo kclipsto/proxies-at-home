@@ -124,7 +124,19 @@ function runMigrations(database: Database.Database): void {
   const currentVersion = row ? parseInt(row.value, 10) : 0;
 
   if (currentVersion === 0) {
-    // Fresh database - set to current version (no migrations needed)
+    // Fresh database - run all migrations to create required tables
+    console.log(`[DB] Fresh database detected, running all migrations...`);
+    for (const migration of migrations) {
+      try {
+        for (const sql of migration.up) {
+          database.exec(sql);
+        }
+        console.log(`[DB] Applied migration ${migration.version}: ${migration.description}`);
+      } catch (error) {
+        console.error(`[DB] Migration ${migration.version} failed:`, error);
+        throw error;
+      }
+    }
     database.prepare('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)').run('schema_version', CURRENT_DB_VERSION.toString());
     console.log(`[DB] Initialized schema version ${CURRENT_DB_VERSION}`);
     return;

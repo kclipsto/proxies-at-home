@@ -1,0 +1,50 @@
+# Server runtime data (SQLite DB, caches - 12GB!)
+server/data
+
+# Node modules (each package installs its own in Docker)
+**/node_modules
+
+# Build outputs (rebuilt in Docker)
+client/dist
+server/dist
+
+# Development/test files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/coverage
+**/.nyc_output
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Test fixtures
+**/fixtures
+**/e2e
+
+# Gemini/AI artifacts
+.gemini
+.agent
