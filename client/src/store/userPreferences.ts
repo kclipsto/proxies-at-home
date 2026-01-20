@@ -125,8 +125,13 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
             if (prefs.isSettingsPanelCollapsed === undefined) prefs.isSettingsPanelCollapsed = false;
             if (prefs.isUploadPanelCollapsed === undefined) prefs.isUploadPanelCollapsed = false;
             if (prefs.uploadPanelWidth === undefined) prefs.uploadPanelWidth = 320;
-            if (!prefs.cardEditorSectionCollapsed) prefs.cardEditorSectionCollapsed = { "Crop & Positioning": false, "Image Adjustments": true, "Bleed Correction": true };
-            if (!prefs.cardEditorSectionOrder) prefs.cardEditorSectionOrder = ["Crop & Positioning", "Image Adjustments", "Bleed Correction"];
+            // Section IDs must match SECTION_CONFIG keys in CardEditorModal
+            const defaultEditorSectionOrder = ['basic', 'enhance', 'darkPixels', 'holographic', 'colorReplace', 'gamma', 'colorEffects', 'borderEffects'];
+            if (!prefs.cardEditorSectionCollapsed) prefs.cardEditorSectionCollapsed = {};
+            // Migrate legacy section order (old human-readable names -> new technical IDs)
+            if (!prefs.cardEditorSectionOrder || prefs.cardEditorSectionOrder.some(id => !defaultEditorSectionOrder.includes(id))) {
+                prefs.cardEditorSectionOrder = defaultEditorSectionOrder;
+            }
             if (!prefs.filterSectionCollapsed) prefs.filterSectionCollapsed = { "Source": false, "Quality": false };
 
             set({ preferences: prefs });
