@@ -1,3 +1,8 @@
+# Build settings
+[build]
+  command = "npm run build:prerender"
+  publish = "static-pages"
+
 # Removed Netlify proxy - now using direct connection via api.proxxied.com
 # This significantly reduces bandwidth costs by avoiding double proxying
 
