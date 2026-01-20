@@ -626,4 +626,36 @@ imageRouter.get("/mpc", async (req: Request, res: Response) => {
   return res.status(502).send("Could not fetch MPC image");
 });
 
+// -------------------- Builtin cardback images --------------------
+// Serves cardback images from the server to reduce client bundle size
+
+const CARDBACK_MAP: Record<string, string> = {
+  'mtg': 'mtg.png',
+  'proxxied': 'proxxied.png',
+  'classic-dots': 'classic-dots.png',
+};
+
+const cardbacksDir = path.join(__dirname, '../../cardbacks');
+
+imageRouter.get("/cardback/:id", (req: Request, res: Response) => {
+  const id = req.params.id;
+  const filename = CARDBACK_MAP[id];
+
+  if (!filename) {
+    return res.status(404).send("Unknown cardback ID");
+  }
+
+  const filePath = path.join(cardbacksDir, filename);
+
+  if (!fs.existsSync(filePath)) {
+    console.error(`Cardback file not found: ${filePath}`);
+    return res.status(404).send("Cardback image not found");
+  }
+
+  // Set aggressive cache headers - these images never change
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("Content-Type", "image/png");
+  return res.sendFile(filePath);
+});
+
 export { imageRouter };

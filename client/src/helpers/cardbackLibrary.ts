@@ -2,7 +2,7 @@
  * Cardback Library
  * 
  * Provides a unified source for all available cardback images:
- * - Built-in (from assets)
+ * - Built-in (from server API)
  * - User-uploaded
  * - MPC-imported
  * 
@@ -10,9 +10,7 @@
  * across card clearing operations. Only explicit deletion removes cardbacks.
  */
 
-import cardBack from '../assets/cardBack.png';
-import proxxiedBack from '../assets/proxxied-card-back.png';
-import classicDotsBack from '../assets/Classic Dots.png';
+import { API_BASE } from '../constants';
 import { db } from '../db';
 import { debugLog } from './debug';
 
@@ -25,27 +23,28 @@ export interface CardbackOption {
 }
 
 /**
- * Built-in cardbacks from assets
+ * Built-in cardbacks served from the API
+ * Images are hosted on the server to reduce client bundle size
  */
 export const BUILTIN_CARDBACKS: CardbackOption[] = [
     {
         id: 'cardback_builtin_mtg',
         name: 'Rose',
-        imageUrl: cardBack,
+        imageUrl: `${API_BASE}/api/cards/images/cardback/mtg`,
         source: 'builtin',
         hasBuiltInBleed: false,  // Standard MTG back, no bleed
     },
     {
         id: 'cardback_builtin_proxxied',
         name: 'Proxxied',
-        imageUrl: proxxiedBack,
+        imageUrl: `${API_BASE}/api/cards/images/cardback/proxxied`,
         source: 'builtin',
         hasBuiltInBleed: true,  // Has 1/8" bleed built in
     },
     {
         id: 'cardback_builtin_classic_dots',
         name: 'Classic Dots',
-        imageUrl: classicDotsBack,
+        imageUrl: `${API_BASE}/api/cards/images/cardback/classic-dots`,
         source: 'builtin',
         hasBuiltInBleed: true,  // Has 1/8" bleed built in
     },
