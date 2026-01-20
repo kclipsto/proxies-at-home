@@ -26,6 +26,16 @@ vi.mock('@/helpers/scryfallApi', () => ({
         if (card.card_faces) return card.card_faces.map((f: { image_uris?: { normal?: string } }) => f.image_uris?.normal).filter(Boolean);
         return [];
     }),
+    mapResponseToCards: vi.fn((data: { data?: Array<{ name: string; set: string; collector_number: string; lang: string; image_uris?: { normal?: string } }> }) => {
+        if (!data.data || data.data.length === 0) return [];
+        return data.data.map((card) => ({
+            name: card.name,
+            set: card.set,
+            number: card.collector_number,
+            imageUrls: card.image_uris?.normal ? [card.image_uris.normal] : [],
+            lang: card.lang,
+        }));
+    }),
 }));
 
 vi.mock('@/helpers/debug', () => ({
@@ -34,6 +44,13 @@ vi.mock('@/helpers/debug', () => ({
 
 vi.mock('@/constants', () => ({
     API_BASE: 'http://localhost:3001',
+}));
+
+vi.mock('@/helpers/scryfallSyntax', () => ({
+    containsScryfallSyntax: vi.fn((query: string) => {
+        // Return true for is: syntax to allow it to pass through
+        return query.includes(':') && !query.includes('http');
+    }),
 }));
 
 describe('useScryfallSearch', () => {
@@ -177,6 +194,64 @@ describe('useScryfallSearch', () => {
             }, { timeout: 1000 });
 
             expect(result.current.cards).toEqual([]);
+        });
+    });
+
+    describe('Scryfall syntax passthrough', () => {
+        it('should pass through is: syntax unchanged', async () => {
+            (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ data: [] }),
+            });
+
+            renderHook(() => useScryfallSearch('is:mdfc'));
+
+            await vi.waitFor(() => {
+                expect(global.fetch).toHaveBeenCalled();
+            }, { timeout: 1000 });
+
+            // Should pass through as-is, not wrapped in quotes
+            expect(global.fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/api/scryfall/search?q=is%3Amdfc'),
+                expect.anything()
+            );
+        });
+
+        it('should pass through complex syntax like is:legend set:ecc unchanged', async () => {
+            (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ data: [] }),
+            });
+
+            renderHook(() => useScryfallSearch('is:legend set:ecc'));
+
+            await vi.waitFor(() => {
+                expect(global.fetch).toHaveBeenCalled();
+            }, { timeout: 1000 });
+
+            // Should pass through as-is, NOT become !"is:legend" set:ecc
+            expect(global.fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/api/scryfall/search?q=is%3Alegend%20set%3Aecc'),
+                expect.anything()
+            );
+        });
+
+        it('should pass through c: color syntax unchanged', async () => {
+            (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ data: [] }),
+            });
+
+            renderHook(() => useScryfallSearch('c:r t:creature'));
+
+            await vi.waitFor(() => {
+                expect(global.fetch).toHaveBeenCalled();
+            }, { timeout: 1000 });
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/api/scryfall/search?q=c%3Ar%20t%3Acreature'),
+                expect.anything()
+            );
         });
     });
 });

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,7 +22,7 @@ test.describe('Clear Cards', () => {
         await page.getByRole('button', { name: 'Clear Cards' }).click();
 
         // 3. Expect Confirmation Modal
-        const modal = page.locator('text=Confirm Clear Cards');
+        const modal = page.locator('text=Are you sure you want to clear all cards?');
         await expect(modal).toBeVisible();
 
         // 4. Click "Yes, I'm sure"
@@ -48,6 +48,6 @@ test.describe('Clear Cards', () => {
         await expect(clearButton).toBeDisabled();
 
         // Modal should NOT appear (redundant but safe)
-        await expect(page.locator('text=Confirm Clear Cards')).not.toBeVisible();
+        await expect(page.locator('text=Are you sure you want to clear all cards?')).not.toBeVisible();
     });
 });

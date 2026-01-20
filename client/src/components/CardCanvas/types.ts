@@ -30,7 +30,7 @@ export interface RenderParams {
     darkenAutoDetect: boolean;
 
     // === Image Adjustments ===
-    /** Global brightness adjustment (-50 to +50) */
+    /** Global brightness adjustment (-100 to +100) */
     brightness: number;
     /** Global contrast multiplier (0.5-2.0) */
     contrast: number;

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { shouldImport, downloadAndImportBulkData, getLastImportTime } from './bulkDataService.js';
 import { getCardCount, getDbSizeBytes, formatBytes } from '../db/proxxiedCardLookup.js';
+import { initCatalogs } from '../utils/scryfallCatalog.js';
 
 let isImporting = false;
 
@@ -70,7 +71,8 @@ export function startImportScheduler(): void {
 }
 
 /**
- * Run the bulk data import (non-blocking).
+ * Run the bulk data import with retry logic.
+ * Uses exponential backoff: 5 min, 30 min, 2 hours between retries.
  */
 async function runImport(): Promise<void> {
     if (isImporting) {
@@ -80,16 +82,49 @@ async function runImport(): Promise<void> {
 
     isImporting = true;
 
-    try {
-        const result = await downloadAndImportBulkData();
-        const dbSize = formatBytes(getDbSizeBytes());
-        console.log(`[Scheduler] Import complete: ${result.cardsImported} cards in ${(result.durationMs / 1000 / 60).toFixed(1)} minutes. DB size: ${dbSize}`);
-    } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error('[Scheduler] Import failed:', msg);
-    } finally {
-        isImporting = false;
-    }
-}
+    const RETRY_DELAYS_MS = [
+        5 * 60 * 1000,    // 5 minutes
+        30 * 60 * 1000,   // 30 minutes
+        2 * 60 * 60 * 1000 // 2 hours
+    ];
+    const MAX_RETRIES = 3;
 
-// TODO: Add admin endpoint for manual re-import trigger
+    let attempt = 0;
+    let lastError: Error | null = null;
+
+    while (attempt <= MAX_RETRIES) {
+        try {
+            if (attempt > 0) {
+                console.log(`[Scheduler] Retry attempt ${attempt}/${MAX_RETRIES}...`);
+            }
+
+            const result = await downloadAndImportBulkData();
+            const dbSize = formatBytes(getDbSizeBytes());
+            console.log(`[Scheduler] Import complete: ${result.cardsImported} cards in ${(result.durationMs / 1000 / 60).toFixed(1)} minutes. DB size: ${dbSize}`);
+
+            // Refresh type catalogs from Scryfall API after successful import
+            await initCatalogs();
+
+            isImporting = false;
+            return; // Success - exit retry loop
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            const msg = lastError.message;
+
+            if (attempt < MAX_RETRIES) {
+                const delayMs = RETRY_DELAYS_MS[attempt];
+                const delayMinutes = Math.round(delayMs / 60000);
+                console.warn(`[Scheduler] Import failed: ${msg}. Retrying in ${delayMinutes} minutes...`);
+
+                // Wait before next retry (release isImporting temporarily to allow graceful cancellation)
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            } else {
+                console.error(`[Scheduler] Import failed after ${MAX_RETRIES} retries: ${msg}`);
+            }
+
+            attempt++;
+        }
+    }
+
+    isImporting = false;
+}

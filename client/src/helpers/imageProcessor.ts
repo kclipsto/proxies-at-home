@@ -3,17 +3,23 @@ type IdleWorker = {
   timeoutId: ReturnType<typeof setTimeout> | null;
 };
 
+import { IMAGE_PROCESSING } from '@/constants/imageProcessing';
+import { debugLog } from './debug';
+
+// Maximum total tasks in queue to prevent memory exhaustion on large imports
+const MAX_QUEUE_SIZE = 200;
+
 interface WorkerMessage {
   uuid: string;
   url: string;
   bleedEdgeWidth: number;
   unit: "mm" | "in";
   apiBase: string;
-  isUserUpload: boolean;
   hasBuiltInBleed?: boolean;
   bleedMode?: 'generate' | 'existing' | 'none';  // Per-card bleed override
   existingBleedMm?: number;  // Amount when bleedMode is 'existing'
   dpi: number;
+  darkenMode?: number;  // 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
 }
 
 interface WorkerSuccessResponse {
@@ -24,19 +30,19 @@ interface WorkerSuccessResponse {
   displayBlob: Blob;
   displayDpi: number;
   displayBleedWidth: number;
-  // Per-mode darkened blobs
-  exportBlobDarkenAll: Blob;
-  displayBlobDarkenAll: Blob;
-  exportBlobContrastEdges: Blob;
-  displayBlobContrastEdges: Blob;
-  exportBlobContrastFull: Blob;
-  displayBlobContrastFull: Blob;
-  // Legacy
-  exportBlobDarkened: Blob;
-  displayBlobDarkened: Blob;
+  // Per-mode darkened blobs (optional - only generated modes are present)
+  exportBlobDarkenAll?: Blob;
+  displayBlobDarkenAll?: Blob;
+  exportBlobContrastEdges?: Blob;
+  displayBlobContrastEdges?: Blob;
+  exportBlobContrastFull?: Blob;
+  displayBlobContrastFull?: Blob;
+  // Legacy (optional)
+  exportBlobDarkened?: Blob;
+  displayBlobDarkened?: Blob;
   // For Card Editor live preview (M1.5)
   baseDisplayBlob: Blob;  // Same as displayBlob - undarkened version for CardCanvas
-  baseExportBlob: Blob;   // Same as exportBlob - undarkened export version for CardCanvas
+  baseExportBlob?: Blob;   // Optional - undarkened export version for CardCanvas
   imageCacheHit?: boolean; // True if image was served from 7-day persistent cache
   error?: undefined;
 }
@@ -58,7 +64,7 @@ export type Priority = (typeof Priority)[keyof typeof Priority];
 interface Task {
   message: WorkerMessage;
   resolve: (value: WorkerResponse) => void;
-  reject: (reason?: ErrorEvent) => void;
+  reject: (reason?: Error | ErrorEvent) => void;
   priority: Priority;
 }
 
@@ -93,10 +99,32 @@ export class ImageProcessor {
 
 
   private constructor() {
-    // Cap at 8 workers to prevent network request storms and memory issues
+    // Detect Firefox - it has aggressive WebGL context limits and memory issues
+    const isFirefox = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
+    const maxWorkers = isFirefox ? IMAGE_PROCESSING.MAX_WORKERS_FIREFOX : IMAGE_PROCESSING.MAX_WORKERS;
+
+    // Cap workers based on hardware and browser limits
     const concurrency = navigator.hardwareConcurrency || 4;
-    this.baseMaxWorkers = Math.min(8, Math.max(1, concurrency - 1));
+    this.baseMaxWorkers = Math.min(maxWorkers, Math.max(1, concurrency - 1));
+
+    if (isFirefox) {
+      debugLog(`[ImageProcessor] Firefox detected - limiting to ${this.baseMaxWorkers} workers`);
+    }
+
     ImageProcessor.instances.add(this);
+  }
+
+  /**
+   * Pre-warm workers for faster first-use performance.
+   * Call this on app init to avoid cold-start latency.
+   */
+  prewarm(count: number = IMAGE_PROCESSING.PREWARM_WORKER_COUNT): void {
+    for (let i = 0; i < Math.min(count, this.baseMaxWorkers); i++) {
+      if (this.allWorkers.size < this.baseMaxWorkers) {
+        const worker = this.createWorker();
+        this.returnWorkerToPool(worker);
+      }
+    }
   }
 
   private createWorker(): Worker {
@@ -158,7 +186,7 @@ export class ImageProcessor {
   private returnWorkerToPool(worker: Worker) {
     const timeoutId = setTimeout(() => {
       this.terminateWorker(worker);
-    }, 20000); // Terminate after 20 seconds of inactivity
+    }, IMAGE_PROCESSING.WORKER_IDLE_TIMEOUT_MS); // Terminate after inactivity
 
     this.idleWorkers.push({ worker, timeoutId });
     this.processNextTask();
@@ -222,6 +250,13 @@ export class ImageProcessor {
 
   process(message: WorkerMessage, priority: Priority = Priority.LOW): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
+      // Check queue size limit to prevent memory exhaustion
+      const totalQueued = this.highPriorityQueue.length + this.lowPriorityQueue.length;
+      if (totalQueued >= MAX_QUEUE_SIZE) {
+        reject(new Error('Processing queue full, please wait for current tasks to complete'));
+        return;
+      }
+
       const task: Task = { message, resolve, reject, priority };
 
       // Optimization: If promoting to HIGH, remove any pending LOW task for the same UUID
@@ -230,7 +265,7 @@ export class ImageProcessor {
         if (existingLowIndex > -1) {
           const [existingTask] = this.lowPriorityQueue.splice(existingLowIndex, 1);
           // Reject the old task so it doesn't hang
-          existingTask.reject(new Error("Promoted to high priority") as unknown as ErrorEvent);
+          existingTask.reject(new Error("Promoted to high priority"));
         }
       }
 

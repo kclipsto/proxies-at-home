@@ -4,6 +4,7 @@ import { useSettingsStore } from "../store/settings";
 import type { CardOption } from "../../../shared/types";
 import { isCardbackId } from "../helpers/cardbackLibrary";
 import { useSelectionStore } from "../store/selection";
+import { useShallow } from "zustand/shallow";
 
 // Constants moved outside for reusability
 const COLOR_ORDER: string[] = ['g', 'u', 'r', 'w', 'b', 'c'];
@@ -58,7 +59,8 @@ const getRarityValue = (c: CardOption) => {
 };
 
 // Extract primary type from type_line (e.g., "Legendary Creature - Human Wizard" -> "Creature")
-const PRIMARY_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Token"];
+// Note: Token is handled separately via the isToken field, not type_line parsing
+const PRIMARY_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle"];
 
 export const getCardTypes = (typeLine: string | undefined): string[] => {
     if (!typeLine) return [];
@@ -115,8 +117,27 @@ const matchesFilters = (
         }
     }
 
-    // 2. Type Filter (exclude pseudo-types like "Dual Faced")
-    const actualTypes = filterTypes.filter(t => t !== "Dual Faced");
+    // 2. Type Filter (exclude pseudo-types like "Dual Faced" and "Token" which is handled separately)
+    const tokenFilter = filterTypes.includes("Token");
+    const actualTypes = filterTypes.filter(t => t !== "Dual Faced" && t !== "Token");
+
+    // Check Token filter using isToken field
+    if (tokenFilter) {
+        const isToken = c.isToken || otherFace?.isToken;
+        if (filterMatchType === "exact") {
+            // In exact mode, must be a token to match
+            if (!isToken) return false;
+        } else {
+            // In partial mode, token matches if card is a token
+            if (isToken) {
+                // Token matched, continue to other filters if any
+            } else if (actualTypes.length === 0) {
+                // No other types to check, and not a token
+                return false;
+            }
+        }
+    }
+
     if (actualTypes.length > 0) {
         const myTypes = getCardTypes(c.type_line);
         const otherTypes = otherFace ? getCardTypes(otherFace.type_line) : [];
@@ -126,8 +147,10 @@ const matchesFilters = (
             // Must match ALL selected types
             if (!actualTypes.every(t => combinedTypes.includes(t))) return false;
         } else {
-            // Must match ANY selected type
-            if (!actualTypes.some(t => combinedTypes.includes(t))) return false;
+            // Must match ANY selected type (or already matched Token above)
+            if (!tokenFilter || !c.isToken) {
+                if (!actualTypes.some(t => combinedTypes.includes(t))) return false;
+            }
         }
     }
 
@@ -135,26 +158,32 @@ const matchesFilters = (
 };
 
 export function useFilteredAndSortedCards(cards: CardOption[] = []) {
-    const sortBy = useSettingsStore((state) => state.sortBy);
-    const sortOrder = useSettingsStore((state) => state.sortOrder);
-    const filterManaCost = useSettingsStore((state) => state.filterManaCost);
-    const filterColors = useSettingsStore((state) => state.filterColors);
-    const filterTypes = useSettingsStore((state) => state.filterTypes);
-    const filterCategories = useSettingsStore((state) => state.filterCategories);
-    const filterMatchType = useSettingsStore((state) => state.filterMatchType);
+    // Use single combined selector with shallow comparison to reduce re-renders
+    const { sortBy, sortOrder, filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType } =
+        useSettingsStore(
+            useShallow((state) => ({
+                sortBy: state.sortBy,
+                sortOrder: state.sortOrder,
+                filterManaCost: state.filterManaCost,
+                filterColors: state.filterColors,
+                filterTypes: state.filterTypes,
+                filterCategories: state.filterCategories,
+                filterMatchType: state.filterMatchType,
+            }))
+        );
     const flippedCardsSet = useSelectionStore((state) => state.flippedCards);
 
+    // Memoize card lookup map separately - only changes when cards change, not when filters change
+    const cardMap = useMemo(() => {
+        const map = new Map<string, CardOption>();
+        for (const c of cards) {
+            map.set(c.uuid, c);
+        }
+        return map;
+    }, [cards]);
 
     // Step 1: Filter cards (separate memo for better granularity)
     const { result: filteredCards, idsToFlip } = useMemo(() => {
-        // Create a lookup map for DFC linking
-        const needsAutoFlip = filterColors.length > 0 || filterTypes.length > 0;
-        const cardMap = needsAutoFlip ? new Map<string, CardOption>() : null;
-        if (cardMap) {
-            for (const c of cards) {
-                cardMap.set(c.uuid, c);
-            }
-        }
 
         const result: CardOption[] = [];
         const idsToFlip: { uuid: string, targetState: boolean }[] = [];
@@ -248,7 +277,7 @@ export function useFilteredAndSortedCards(cards: CardOption[] = []) {
         }
 
         return { result, idsToFlip };
-    }, [cards, filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType, flippedCardsSet]);
+    }, [cards, cardMap, filterManaCost, filterColors, filterTypes, filterCategories, filterMatchType, flippedCardsSet]);
 
     // Step 2: Sort filtered cards (separate memo - only reruns when sort settings or filtered cards change)
     const filteredAndSortedCards = useMemo(() => {

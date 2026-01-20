@@ -98,6 +98,48 @@ export interface Setting {
 }
 
 // Persistent image cache for long-term storage (survives card clearing)
+export interface Project {
+  id: string;              // UUID (primary key)
+  name: string;            // User-editable name
+  createdAt: number;       // Creation timestamp
+  lastOpenedAt: number;    // For "Recent Projects" sorting
+  cardCount: number;       // Cached count for UI
+  settings: Json;          // Project-specific settings
+  shareId?: string;        // Server share ID (for auto-sync)
+  lastSharedAt?: number;   // Timestamp of last share (enables auto-sync)
+}
+
+// Persistent user uploads (content-addressed, shared across projects)
+// Orphan cleanup removes images not referenced by any card
+export interface UserImage {
+  hash: string;           // Primary key - SHA-256 hash for deduplication
+  data: Blob;             // The raw image file
+  type: string;           // MIME type
+  createdAt: number;
+}
+
+export interface UserPreferences {
+  id: 'default';           // Singleton record
+  settings: Json;          // User's default settings
+  favoriteCardbacks: string[];  // Default cardback selections
+  lastProjectId?: string;  // Resume last project on app open
+  // Global MPC Favorites
+  favoriteMpcSources?: string[];
+  favoriteMpcTags?: string[];
+  favoriteMpcDpi?: number | null;
+  favoriteMpcSort?: 'name' | 'dpi' | 'source' | null;
+
+  // Global UI State
+  settingsPanelState?: { order: string[], collapsed: Record<string, boolean> };
+  settingsPanelWidth?: number;
+  isSettingsPanelCollapsed?: boolean;
+  isUploadPanelCollapsed?: boolean;
+  uploadPanelWidth?: number;
+  cardEditorSectionCollapsed?: Record<string, boolean>;
+  cardEditorSectionOrder?: string[];
+  filterSectionCollapsed?: Record<string, boolean>;
+}
+
 export interface CachedImage {
   url: string;        // Primary key - the source URL
   blob: Blob;         // Original unprocessed image
@@ -139,7 +181,11 @@ class ProxxiedDexie extends Dexie {
 
   // MPC search cache - persists for 1 week
   mpcSearchCache!: Table<MpcSearchCacheEntry, [string, string]>;
+  projects!: Table<Project, string>;
+  userPreferences!: Table<UserPreferences, string>;
 
+  // Persistent custom image storage (content-addressed)
+  user_images!: Table<UserImage, string>;
 
   constructor() {
     super('ProxxiedDB');
@@ -298,9 +344,82 @@ class ProxxiedDexie extends Dexie {
         }
       });
     });
+    // Version 15: Clear cardMetadataCache to force re-enrichment with token_parts
+    // Previous cached data doesn't include token_parts, causing needs_token to not be set
+    this.version(15).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+    }).upgrade(tx => {
+      return tx.table('cardMetadataCache').clear();
+    });
 
+    // Version 16: Add projects and userPreferences tables
+    this.version(16).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId, projectId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+      projects: '&id, lastOpenedAt',
+      userPreferences: '&id',
+    }).upgrade(async tx => {
+      // Create default project
+      const defaultProjectId = crypto.randomUUID();
+      const cardCount = await tx.table('cards').count();
+
+      // Copy existing global settings
+      const settingRecord = await tx.table('settings').get('proxxied:layout-settings:v1');
+      const existingSettings = settingRecord?.value || {};
+
+      await tx.table('projects').add({
+        id: defaultProjectId,
+        name: 'My Project',
+        createdAt: Date.now(),
+        lastOpenedAt: Date.now(),
+        cardCount,
+        settings: existingSettings,
+      });
+
+      // Assign all existing cards to default project
+      await tx.table('userPreferences').add({
+        id: 'default',
+        settings: existingSettings,
+        favoriteCardbacks: [],
+        lastProjectId: defaultProjectId,
+      });
+    });
+
+    // Version 17: Unified Project Architecture
+    // - 'cards' table holds ALL cards, filtered by projectId on read
+    // - 'images' table is ephemeral cache (cleared on project switch)
+    // - 'user_images' stores persistent custom uploads (content-addressed by hash)
+    this.version(17).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId, projectId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+      projects: '&id, lastOpenedAt',
+      userPreferences: '&id',
+      user_images: '&hash', // Content-addressed by SHA-256 hash
+    });
   }
 }
+
+// Cache version for metadata - bump when adding new required fields
+export const METADATA_CACHE_VERSION = 2;
 
 export interface CachedMetadata {
   id: string;         // UUID
@@ -310,6 +429,7 @@ export interface CachedMetadata {
   data: Json;         // The metadata object
   cachedAt: number;   // Last accessed
   size: number;       // Estimated size in bytes
+  cacheVersion?: number;  // Schema version for targeted invalidation
 }
 
 // MPC search cache entry - for caching MPC Autofill search results

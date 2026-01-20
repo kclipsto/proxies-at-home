@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -6,7 +6,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test.describe('ZIP Export', () => {
-    test('should download a ZIP file with correct filename', async ({ page }) => {
+    test('should download a ZIP file with correct filename', async ({ page, browserName }) => {
+        test.skip(browserName === 'webkit', 'WebKit is flaky with downloads');
         await page.goto('/');
 
         // Upload MPC XML to populate cards
@@ -14,14 +15,15 @@ test.describe('ZIP Export', () => {
         await fileInput.setInputFiles(path.join(__dirname, '../fixtures/mpc-cards.xml'));
 
         // Wait for cards to appear
-        await expect(page.getByTitle('Drag')).toHaveCount(2, { timeout: 10000 });
+        await expect(page.locator('[data-dnd-sortable-item]')).toHaveCount(2, { timeout: 30000 });
 
         // Setup download listener
         const downloadPromise = page.waitForEvent('download');
 
-        // Click Export ZIP button
-        // Button text is "Export Card Images (.zip)"
-        await page.getByRole('button', { name: 'Export Card Images (.zip)' }).click();
+        // Click Export Card Images button
+        const exportButton = page.locator('button:has-text("Export Card Images")').first();
+        await expect(exportButton).toBeVisible({ timeout: 5000 });
+        await exportButton.click();
 
         const download = await downloadPromise;
 

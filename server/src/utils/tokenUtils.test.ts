@@ -107,6 +107,30 @@ describe('tokenUtils', () => {
             expect(result).toHaveLength(1);
             expect(result[0].name).toBe('Valid Token');
         });
+        it('should correctly extract Treasure token from Prosperous Innkeeper', () => {
+            const card: ScryfallApiCard = {
+                name: 'Prosperous Innkeeper',
+                all_parts: [
+                    {
+                        id: 'e96b3d8c-8d8a-44e9-9150-0648c668612f',
+                        component: 'combo_piece',
+                        name: 'Prosperous Innkeeper',
+                        type_line: 'Creature — Halfling Citizen',
+                        uri: 'https://api.scryfall.com/cards/097e4136-3a97-4ce8-af3c-f5b1e9861345'
+                    },
+                    {
+                        id: 'fe717af0-ae82-4467-93be-82305540ba7b',
+                        component: 'token',
+                        name: 'Treasure',
+                        type_line: 'Token Artifact — Treasure',
+                        uri: 'https://api.scryfall.com/cards/e6b4c100-348f-4d92-95f7-414f52f40441'
+                    }
+                ]
+            };
+            const result = extractTokenParts(card);
+            expect(result).toHaveLength(1);
+            expect(result[0].name).toBe('Treasure');
+        });
     });
 
     describe('cardNeedsToken', () => {

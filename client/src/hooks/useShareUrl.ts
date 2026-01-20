@@ -1,0 +1,234 @@
+/**
+ * useShareUrl Hook
+ * 
+ * Detects ?share=xxx query parameter on mount and loads the shared deck.
+ * Clears the parameter after successful load.
+ */
+
+import { useEffect, useState, useRef } from 'react';
+import { loadShare, deserializeForImport, type ShareData, type ShareSettings } from '../helpers/shareHelper';
+import { useSettingsStore } from '../store/settings';
+import { ImportOrchestrator } from '../helpers/ImportOrchestrator';
+import type { ImportIntent } from '../helpers/importParsers';
+import { useToastStore } from '../store/toast';
+import { useProjectStore } from '../store';
+
+export interface UseShareUrlResult {
+    isLoading: boolean;
+    error: string | null;
+    shareData: ShareData | null;
+}
+
+/**
+ * Get the share ID from the URL, if present
+ */
+function getShareIdFromUrl(): string | null {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('share');
+}
+
+/**
+ * Remove the share parameter from the URL without reloading
+ */
+function clearShareFromUrl(): void {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('share');
+    window.history.replaceState({}, '', url.toString());
+}
+
+/**
+ * Apply share settings to the settings store
+ */
+function applyShareSettings(settings: ShareSettings): void {
+    const store = useSettingsStore.getState();
+
+    // Layout
+    if (settings.pr) store.setPageSizePreset(settings.pr as Parameters<typeof store.setPageSizePreset>[0]);
+    if (settings.c !== undefined) store.setColumns(settings.c);
+    if (settings.r !== undefined) store.setRows(settings.r);
+    if (settings.dpi !== undefined) store.setDpi(settings.dpi);
+
+    // Bleed
+    if (settings.bl !== undefined) store.setBleedEdge(settings.bl);
+    if (settings.blMm !== undefined) store.setBleedEdgeWidth(settings.blMm);
+    if (settings.wbSrc !== undefined) store.setWithBleedSourceAmount(settings.wbSrc);
+    if (settings.wbTm) store.setWithBleedTargetMode(settings.wbTm as Parameters<typeof store.setWithBleedTargetMode>[0]);
+    if (settings.wbTa !== undefined) store.setWithBleedTargetAmount(settings.wbTa);
+    if (settings.nbTm) store.setNoBleedTargetMode(settings.nbTm as Parameters<typeof store.setNoBleedTargetMode>[0]);
+    if (settings.nbTa !== undefined) store.setNoBleedTargetAmount(settings.nbTa);
+
+    // Darken
+    if (settings.dk) store.setDarkenMode(settings.dk as Parameters<typeof store.setDarkenMode>[0]);
+    if (settings.dkC !== undefined) store.setDarkenContrast(settings.dkC);
+    if (settings.dkE !== undefined) store.setDarkenEdgeWidth(settings.dkE);
+    if (settings.dkA !== undefined) store.setDarkenAmount(settings.dkA);
+    if (settings.dkB !== undefined) store.setDarkenBrightness(settings.dkB);
+    if (settings.dkAd !== undefined) store.setDarkenAutoDetect(settings.dkAd);
+
+    // Guide/Cut lines
+    if (settings.gs) store.setPerCardGuideStyle(settings.gs as Parameters<typeof store.setPerCardGuideStyle>[0]);
+    if (settings.gc) store.setGuideColor(settings.gc);
+    if (settings.gw !== undefined) store.setGuideWidth(settings.gw);
+    if (settings.gp) store.setGuidePlacement(settings.gp as Parameters<typeof store.setGuidePlacement>[0]);
+    if (settings.cgL !== undefined) store.setCutGuideLengthMm(settings.cgL);
+    if (settings.cls) store.setCutLineStyle(settings.cls as Parameters<typeof store.setCutLineStyle>[0]);
+
+    // Spacing/Position
+    if (settings.spc !== undefined) store.setCardSpacingMm(settings.spc);
+    if (settings.pX !== undefined) store.setCardPositionX(settings.pX);
+    if (settings.pY !== undefined) store.setCardPositionY(settings.pY);
+    if (settings.ucbo !== undefined) store.setUseCustomBackOffset(settings.ucbo);
+    if (settings.bpX !== undefined) store.setCardBackPositionX(settings.bpX);
+    if (settings.bpY !== undefined) store.setCardBackPositionY(settings.bpY);
+
+    // User Preferences
+    if (settings.pas) store.setPreferredArtSource(settings.pas as Parameters<typeof store.setPreferredArtSource>[0]);
+    if (settings.gl) store.setGlobalLanguage(settings.gl);
+    if (settings.ait !== undefined) store.setAutoImportTokens(settings.ait);
+    if (settings.mfs !== undefined) store.setMpcFuzzySearch(settings.mfs);
+    if (settings.spt !== undefined) store.setShowProcessingToasts(settings.spt);
+
+    // Sort & Filter
+    if (settings.sb) store.setSortBy(settings.sb as Parameters<typeof store.setSortBy>[0]);
+    if (settings.so) store.setSortOrder(settings.so as Parameters<typeof store.setSortOrder>[0]);
+    if (settings.fmc) store.setFilterManaCost(settings.fmc);
+    if (settings.fcol) store.setFilterColors(settings.fcol);
+    if (settings.ftyp) store.setFilterTypes(settings.ftyp);
+    if (settings.fcat) store.setFilterCategories(settings.fcat);
+    if (settings.ffeat) store.setFilterFeatures(settings.ffeat);
+    if (settings.fmt) store.setFilterMatchType(settings.fmt as Parameters<typeof store.setFilterMatchType>[0]);
+
+    // Export
+    if (settings.em) store.setExportMode(settings.em as Parameters<typeof store.setExportMode>[0]);
+    if (settings.dsa !== undefined) store.setDecklistSortAlpha(settings.dsa);
+}
+
+/**
+ * Convert deserialized share data to ImportIntents
+ * Handles DFC links by filtering out back cards and attaching their MPC IDs to front card intents.
+ * For Scryfall-based backs, the SSE stream auto-detects DFCs so we don't need special handling.
+ */
+function convertToImportIntents(
+    cards: ReturnType<typeof deserializeForImport>['cards'],
+    dfcLinks: [number, number][]
+): ImportIntent[] {
+    // Build a set of back-card indices that should be excluded from direct import
+    const backIndices = new Set(dfcLinks.map(([, backIndex]) => backIndex));
+
+    // Build a map from front index to back card data
+    const frontToBackData = new Map<number, typeof cards[number]>();
+    for (const [frontIndex, backIndex] of dfcLinks) {
+        frontToBackData.set(frontIndex, cards[backIndex]);
+    }
+
+    const intents: ImportIntent[] = [];
+
+    for (let i = 0; i < cards.length; i++) {
+        // Skip back cards - they'll be created as linked backs via linkedBackImageId
+        if (backIndices.has(i)) continue;
+
+        const card = cards[i];
+        const backData = frontToBackData.get(i);
+
+        const intent: ImportIntent = {
+            name: card.name || '',
+            quantity: 1,
+            isToken: false,
+            set: card.set,
+            number: card.number,
+            mpcId: card.mpcIdentifier,
+            category: card.category,
+            cardOverrides: card.overrides,
+            sourcePreference: card.mpcIdentifier ? 'mpc' as const : 'scryfall' as const,
+        };
+
+        // For MPC-based back cards, use linkedBackImageId with the MPC identifier
+        // executeDirect already handles this by calling getMpcAutofillImageUrl
+        if (backData?.mpcIdentifier) {
+            intent.linkedBackImageId = backData.mpcIdentifier;
+            intent.linkedBackName = backData.name || 'Back';
+        }
+        // For Scryfall-based backs, the SSE path auto-detects DFCs from card_faces
+        // so we don't need to set anything special here
+
+        intents.push(intent);
+    }
+
+    return intents;
+}
+
+/**
+ * Hook to detect and load shared decks from URL.
+ * Automatically imports cards using ImportOrchestrator.
+ */
+export function useShareUrl(): UseShareUrlResult {
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [shareData, setShareData] = useState<ShareData | null>(null);
+    const hasTriedLoading = useRef(false);
+    const isProjectLoading = useProjectStore(state => state.isLoading);
+    const currentProjectId = useProjectStore(state => state.currentProjectId);
+
+    useEffect(() => {
+        // Only run once and wait for project
+        if (isProjectLoading || !currentProjectId) return;
+        if (hasTriedLoading.current) return;
+
+        const shareId = getShareIdFromUrl();
+        if (!shareId) return;
+
+        hasTriedLoading.current = true;
+
+        const loadSharedDeck = async () => {
+            setIsLoading(true);
+            setError(null);
+
+            try {
+                const data = await loadShare(shareId);
+                setShareData(data);
+
+                // Deserialize for import
+                const { cards, dfcLinks, settings } = deserializeForImport(data);
+
+                // Apply settings first
+                if (settings) {
+                    applyShareSettings(settings);
+                }
+
+                // Convert to ImportIntents and import
+                if (cards.length > 0) {
+                    const intents = convertToImportIntents(cards, dfcLinks);
+
+                    await ImportOrchestrator.process(intents, {
+                        onComplete: () => {
+                            useToastStore.getState().showSuccessToast(`Imported ${intents.length} cards from shared deck`);
+                        }
+                    });
+                } else {
+                    useToastStore.getState().showErrorToast('Shared deck contains no cards');
+                }
+
+                // Clear the share parameter from URL
+                clearShareFromUrl();
+
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to load shared deck';
+                setError(message);
+                useToastStore.getState().showErrorToast(message);
+                console.error('[Share] Error loading share:', err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadSharedDeck();
+    }, [isProjectLoading, currentProjectId]);
+
+    return {
+        isLoading,
+        error,
+        shareData,
+    };
+}
+
+export default useShareUrl;

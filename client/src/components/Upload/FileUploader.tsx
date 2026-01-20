@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { inferCardNameFromFilename } from "@/helpers/mpc";
-import { undoableAddCards } from "@/helpers/undoableActions";
 import { addCustomImage } from "@/helpers/dbUtils";
+import type { ImportIntent } from "@/helpers/importParsers";
 import { useLoadingStore } from "@/store/loading";
 import { useToastStore } from "@/store/toast";
+import { useCardImport } from "@/hooks/useCardImport";
 import { Upload } from "lucide-react";
 import { db } from "@/db";
 import { SplitButton, type SplitButtonOption } from "../common";
-import type { CardOption } from "../../../../shared/types";
 
 type UploadMode = "standard" | "withBleed" | "cardback";
 
@@ -26,6 +26,9 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
     const [uploadMode, setUploadMode] = useState<UploadMode>("standard");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const { processCards } = useCardImport({
+        onComplete: () => onUploadComplete?.()
+    });
 
     async function addUploadedFiles(
         files: FileList,
@@ -33,24 +36,18 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
     ) {
         const fileArray = Array.from(files);
 
-        // For cardbacks, add to the cardbacks table (not images)
         if (opts.isCardback) {
             for (const file of fileArray) {
-                // Generate a unique ID for the cardback
                 const imageId = `cardback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const cardbackName = file.name.replace(/\.[^/.]+$/, "");
 
-                // Get the cardback name from filename
-                const cardbackName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-
-                // Add to cardbacks table
                 await db.cardbacks.add({
                     id: imageId,
                     originalBlob: file,
                     displayName: cardbackName,
-                    hasBuiltInBleed: true, // User uploads are assumed to have bleed
+                    hasBuiltInBleed: true,
                 });
             }
-            // Show toast
             const count = fileArray.length;
             useToastStore.getState().showSuccessToast(
                 count === 1 ? "cardback to library" : `${count} cardbacks to library`
@@ -58,32 +55,31 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
             return;
         }
 
-        // Regular card uploads
-        const cardsToAdd: Array<
-            Omit<CardOption, "uuid" | "order"> & { imageId: string }
-        > = [];
+        const intents: ImportIntent[] = [];
 
         for (const file of fileArray) {
             const suffix = opts.hasBuiltInBleed ? "-mpc" : "-std";
             const imageId = await addCustomImage(file, suffix);
 
-            // Custom image uploads default to no darken pixels (already optimized for print)
-            cardsToAdd.push({
+            const intent: ImportIntent = {
                 name: inferCardNameFromFilename(file.name) || `Custom Art`,
-                imageId: imageId,
-                isUserUpload: true,
-                hasBuiltInBleed: opts.hasBuiltInBleed,
-                needsEnrichment: true,
-                overrides: {
+                quantity: 1,
+                isToken: false,
+                localImageId: imageId,
+                preloadedData: {
+                    hasBuiltInBleed: opts.hasBuiltInBleed,
+                },
+                cardOverrides: {
                     darkenMode: 'none',
                     darkenUseGlobalSettings: false,
                 },
-            });
+                sourcePreference: 'manual'
+            };
+            intents.push(intent);
         }
 
-        if (cardsToAdd.length > 0) {
-            await undoableAddCards(cardsToAdd);
-            onUploadComplete?.();
+        if (intents.length > 0) {
+            await processCards(intents);
         }
     }
 
@@ -92,7 +88,6 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
             const hasBuiltInBleed = uploadMode === "withBleed" || uploadMode === "cardback";
             const isCardback = uploadMode === "cardback";
 
-            // Only show loading for non-cardback uploads (cardbacks are fast - no card creation)
             if (!isCardback) {
                 setLoadingTask("Processing Images");
             }

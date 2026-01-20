@@ -12,7 +12,7 @@ import { filterPrintsByFace, getFaceNamesFromPrints, type PrintInfo } from "@/he
 import { type MpcAutofillCard, getMpcAutofillImageUrl, extractMpcIdentifierFromImageId } from "@/helpers/mpcAutofillApi";
 import { inferImageSource } from "@/helpers/imageSourceUtils";
 import type { ScryfallCard } from "../../../../shared/types";
-import { useSettingsStore } from "@/store";
+import { useUserPreferencesStore } from "@/store";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 
 type ArtSource = 'scryfall' | 'mpc';
@@ -239,8 +239,9 @@ export function CardArtContent({
     const [allSourcesCollapsed, setAllSourcesCollapsed] = useState(false);
 
     // Get favorites from settings for source group headers
-    const favoriteMpcSources = useSettingsStore(s => s.favoriteMpcSources);
-    const toggleFavoriteMpcSource = useSettingsStore(s => s.toggleFavoriteMpcSource);
+    // Get favorites from user preferences store
+    const favoriteMpcSources = useUserPreferencesStore(s => s.preferences?.favoriteMpcSources || []);
+    const toggleFavoriteMpcSource = useUserPreferencesStore(s => s.toggleFavoriteMpcSource);
 
     // Check if a source should be collapsed (either explicitly or via allCollapsed mode)
     const isSourceCollapsed = useCallback((sourceName: string) => {
@@ -292,6 +293,7 @@ export function CardArtContent({
             <div
                 key={`${card.name}-${index}`}
                 className="relative group cursor-pointer"
+                data-testid="artwork-card"
                 onClick={() => onSelectCard(card.name, imageUrl, { set: card.set || '', number: card.number || '' })}
             >
                 {/* Container enforces 63:88mm ratio for consistent sizing */}
@@ -322,6 +324,7 @@ export function CardArtContent({
             <div
                 key={`${print.set}-${print.number}-${print.faceName || ''}-${index}`}
                 className="relative group cursor-pointer"
+                data-testid="artwork-card"
                 onClick={() => {
 
                     onSelectCard(query, print.imageUrl);
@@ -356,6 +359,7 @@ export function CardArtContent({
             <div
                 key={`mpc-${index}`}
                 className="relative group cursor-pointer"
+                data-testid="artwork-card"
                 onClick={() => handleMpcCardSelect(card)}
             >
                 {/* MPC image with bleed cropping via custom SVG component */}

@@ -330,6 +330,77 @@ describe('CardInfoHelper', () => {
         isToken: true,
       });
     });
+
+    // Scryfall syntax tests - ensure keywords are not parsed as set codes
+    describe('Scryfall syntax keywords', () => {
+      // is: keywords (most common to conflict with s:)
+      it('should preserve is:mdfc', () => {
+        expect(extractCardInfo('is:mdfc')).toMatchObject({ name: 'is:mdfc', set: undefined });
+      });
+      it('should preserve is:dfc', () => {
+        expect(extractCardInfo('is:dfc')).toMatchObject({ name: 'is:dfc', set: undefined });
+      });
+      it('should preserve is:commander', () => {
+        expect(extractCardInfo('is:commander')).toMatchObject({ name: 'is:commander', set: undefined });
+      });
+      it('should preserve is:fetchland', () => {
+        expect(extractCardInfo('is:fetchland')).toMatchObject({ name: 'is:fetchland', set: undefined });
+      });
+      it('should preserve is:dual', () => {
+        expect(extractCardInfo('is:dual')).toMatchObject({ name: 'is:dual', set: undefined });
+      });
+
+      // c: colors (should not conflict with cn:)
+      it('should preserve c:r', () => {
+        expect(extractCardInfo('c:r')).toMatchObject({ name: 'c:r', set: undefined, number: undefined });
+      });
+      it('should preserve c:uw', () => {
+        expect(extractCardInfo('c:uw')).toMatchObject({ name: 'c:uw', set: undefined });
+      });
+
+      // o: oracle text
+      it('should preserve o:draw', () => {
+        expect(extractCardInfo('o:draw')).toMatchObject({ name: 'o:draw', set: undefined });
+      });
+
+      // m: mana cost
+      it('should preserve m:2WW', () => {
+        expect(extractCardInfo('m:2WW')).toMatchObject({ name: 'm:2WW', set: undefined });
+      });
+
+      // pow/tou
+      it('should preserve pow>=8', () => {
+        expect(extractCardInfo('pow>=8')).toMatchObject({ name: 'pow>=8', set: undefined });
+      });
+
+      // r: rarity
+      it('should preserve r:mythic', () => {
+        expect(extractCardInfo('r:mythic')).toMatchObject({ name: 'r:mythic', set: undefined });
+      });
+
+      // e: edition/set (this is similar to set:)
+      it('should preserve e:cmd', () => {
+        expect(extractCardInfo('e:cmd')).toMatchObject({ name: 'e:cmd', set: undefined });
+      });
+
+      // f: format
+      it('should preserve f:modern', () => {
+        expect(extractCardInfo('f:modern')).toMatchObject({ name: 'f:modern', set: undefined });
+      });
+
+      // Complex queries with multiple keywords
+      it('should preserve c:r t:creature', () => {
+        expect(extractCardInfo('c:r t:creature')).toMatchObject({ name: 'c:r t:creature', set: undefined });
+      });
+      it('should preserve is:fetchland o:search', () => {
+        expect(extractCardInfo('is:fetchland o:search')).toMatchObject({ name: 'is:fetchland o:search', set: undefined });
+      });
+
+      // Standalone s: at word boundary SHOULD work as set code
+      it('should still parse standalone s: as set code', () => {
+        expect(extractCardInfo('Sol Ring s:cmm')).toMatchObject({ name: 'Sol Ring', set: 'cmm' });
+      });
+    });
   });
 
   describe('parseDeckToInfos', () => {

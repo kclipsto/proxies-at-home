@@ -18,6 +18,7 @@ import {
     modifyImageRefCount,
 } from "./dbUtils";
 import { useUndoRedoStore } from "@/store/undoRedo";
+import { useProjectStore } from "@/store/projectStore";
 import { useSettingsStore } from "@/store/settings";
 import { BUILTIN_CARDBACKS, isCardbackId } from "./cardbackLibrary";
 
@@ -437,10 +438,8 @@ export async function undoableDuplicateCardsBatch(uuids: string[]): Promise<stri
                     if (imagesToDelete.length > 0) await db.images.bulkDelete(imagesToDelete);
                 }
 
-                await rebalanceCardOrders();
+                await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
             });
-
-            await rebalanceCardOrders();
         },
         redo: async () => {
             // Re-run the bulk duplicate
@@ -582,15 +581,24 @@ export async function undoableAddCards(
                 await db.images.bulkUpdate(imageUpdates);
             }
 
-            // Recreate missing images using their original source URLs
+            // Recreate missing images using their original source URLs (with retry for transient failures)
             for (const imageId of missingImageIds) {
                 const sourceUrl = imageSourceUrls.get(imageId);
-                if (sourceUrl) {
-                    // Use the captured source URL to properly re-fetch the image
-                    await addRemoteImage([sourceUrl], 1);
-                } else {
-                    // Fallback: try using imageId as URL (works for Scryfall images)
-                    await addRemoteImage([imageId], 1);
+                const urlToFetch = sourceUrl || imageId; // Fallback to imageId as URL
+
+                // Retry up to 3 times with exponential backoff
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        await addRemoteImage([urlToFetch], 1);
+                        break; // Success - exit retry loop
+                    } catch (e) {
+                        if (attempt === 2) {
+                            console.error(`[Redo] Failed to re-fetch image after 3 attempts: ${urlToFetch}`, e);
+                            // Continue with other images rather than failing entire redo
+                        } else {
+                            await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+                        }
+                    }
                 }
             }
 
@@ -628,12 +636,12 @@ export async function undoableReorderCards(
             // Restore the original order
             await db.cards.update(cardUuid, { order: oldOrder });
             // Rebalance to clean up
-            await rebalanceCardOrders();
+            await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
         },
         redo: async () => {
             // Apply the new order again
             await db.cards.update(cardUuid, { order: newOrder });
-            await rebalanceCardOrders();
+            await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
         },
     });
 }
@@ -659,7 +667,7 @@ export async function undoableReorderMultipleCards(
                 }
             });
             // Rebalance to clean up
-            await rebalanceCardOrders();
+            await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
         },
         redo: async () => {
             // Apply the new order for each card
@@ -668,7 +676,7 @@ export async function undoableReorderMultipleCards(
                     await db.cards.update(adj.uuid, { order: adj.newOrder });
                 }
             });
-            await rebalanceCardOrders();
+            await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
         },
     });
 }

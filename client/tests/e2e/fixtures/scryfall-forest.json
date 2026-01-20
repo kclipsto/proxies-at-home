@@ -1,0 +1,19 @@
+{
+    "data": [
+        {
+            "name": "Forest",
+            "set": "leb",
+            "number": "296",
+            "imageUrls": [
+                "https://cards.scryfall.io/png/front/b/4/b460f5f7-c7c9-400c-8419-23d614f45bf9.png"
+            ],
+            "type_line": "Basic Land — Forest",
+            "mana_cost": "",
+            "colors": [
+                "G"
+            ],
+            "cmc": 0
+        }
+    ],
+    "has_more": false
+}

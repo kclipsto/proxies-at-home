@@ -184,14 +184,15 @@ describe('DecklistHelper', () => {
       expect(decklist).toContain('1x t:Clue');
     });
 
-    it('should detect tokens from set codes starting with t', () => {
+    it('should NOT detect tokens just from set codes starting with t', () => {
       const cardsWithTokens: CardOption[] = [
-        { uuid: '1', name: 'Human Soldier', order: 1, isUserUpload: false, set: 't2x2' },
+        { uuid: '1', name: 'Human Soldier', order: 1, isUserUpload: false, set: 'ths' },
       ];
 
       const decklist = buildDecklist(cardsWithTokens);
 
-      expect(decklist).toContain('1x t:Human Soldier');
+      expect(decklist).toContain('1x Human Soldier');
+      expect(decklist).not.toContain('t:Human Soldier');
     });
   });
 

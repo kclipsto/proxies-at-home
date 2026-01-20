@@ -11,7 +11,7 @@ const mockSettingsState = vi.hoisted(() => ({
     filterColors: [] as string[],
     filterTypes: [] as string[],
     filterCategories: [] as string[],
-    filterMatchType: "any" as "any" | "exact",
+    filterMatchType: "partial" as "partial" | "exact",
 }));
 
 vi.mock("../store/settings", () => ({
@@ -47,7 +47,7 @@ describe("useFilteredAndSortedCards", () => {
         mockSettingsState.filterColors = [];
         mockSettingsState.filterTypes = [];
         mockSettingsState.filterCategories = [];
-        mockSettingsState.filterMatchType = "any";
+        mockSettingsState.filterMatchType = "partial";
         // Reset flipped cards
         mockFlippedCards.clear();
     });
@@ -212,6 +212,88 @@ describe("useFilteredAndSortedCards", () => {
             const names = result.current.filteredAndSortedCards.map(c => c.name);
             expect(names).toContain("DFC Front");
             expect(names).not.toContain("DFC Back");
+        });
+
+        describe("Token filtering", () => {
+            it("should filter by Token using isToken field", () => {
+                const cards = [
+                    createCard({ name: "Sol Ring", type_line: "Artifact", isToken: false }),
+                    createCard({ name: "Soldier Token", type_line: "Token Creature — Soldier", isToken: true }),
+                    createCard({ name: "Treasure", type_line: "Token Artifact — Treasure", isToken: true }),
+                ];
+                mockSettingsState.filterTypes = ["Token"];
+
+                const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+                expect(result.current.filteredAndSortedCards).toHaveLength(2);
+                const names = result.current.filteredAndSortedCards.map(c => c.name);
+                expect(names).toContain("Soldier Token");
+                expect(names).toContain("Treasure");
+                expect(names).not.toContain("Sol Ring");
+            });
+
+            it("should filter tokens even without type_line containing Token", () => {
+                // Tokens imported from deck builders may have isToken but unclear type_line
+                const cards = [
+                    createCard({ name: "Beast", isToken: true }),  // No type_line set
+                    createCard({ name: "Lightning Bolt", type_line: "Instant" }),
+                ];
+                mockSettingsState.filterTypes = ["Token"];
+
+                const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+                expect(result.current.filteredAndSortedCards).toHaveLength(1);
+                expect(result.current.filteredAndSortedCards[0].name).toBe("Beast");
+            });
+
+            it("should combine Token filter with other type filters in partial mode", () => {
+                const cards = [
+                    createCard({ name: "Soldier Token", isToken: true }),
+                    createCard({ name: "Lightning Bolt", type_line: "Instant" }),
+                    createCard({ name: "Sol Ring", type_line: "Artifact" }),
+                ];
+                mockSettingsState.filterTypes = ["Token", "Instant"];
+                mockSettingsState.filterMatchType = "partial";
+
+                const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+                expect(result.current.filteredAndSortedCards).toHaveLength(2);
+                const names = result.current.filteredAndSortedCards.map(c => c.name);
+                expect(names).toContain("Soldier Token");
+                expect(names).toContain("Lightning Bolt");
+                expect(names).not.toContain("Sol Ring");
+            });
+
+            it("should require token AND other types in exact mode", () => {
+                const cards = [
+                    // This should NOT match because a token creature is still just a token
+                    createCard({ name: "Soldier Token", type_line: "Token Creature", isToken: true }),
+                    createCard({ name: "Regular Creature", type_line: "Creature" }),
+                ];
+                mockSettingsState.filterTypes = ["Token", "Creature"];
+                mockSettingsState.filterMatchType = "exact";
+
+                const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+                // Token filter AND Creature filter must both match
+                // Soldier Token is a token AND has creature in type_line
+                expect(result.current.filteredAndSortedCards).toHaveLength(1);
+                expect(result.current.filteredAndSortedCards[0].name).toBe("Soldier Token");
+            });
+
+            it("should not match non-tokens when Token filter is selected in exact mode", () => {
+                const cards = [
+                    createCard({ name: "Creature", type_line: "Creature", isToken: false }),
+                    createCard({ name: "Token Creature", isToken: true }),
+                ];
+                mockSettingsState.filterTypes = ["Token"];
+                mockSettingsState.filterMatchType = "exact";
+
+                const { result } = renderHook(() => useFilteredAndSortedCards(cards));
+
+                expect(result.current.filteredAndSortedCards).toHaveLength(1);
+                expect(result.current.filteredAndSortedCards[0].name).toBe("Token Creature");
+            });
         });
 
         it("should auto-flip card if hidden face matches filter", () => {

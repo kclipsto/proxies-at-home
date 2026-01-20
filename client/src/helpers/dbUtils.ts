@@ -33,9 +33,21 @@ export async function addCustomImage(
   const hash = await hashBlob(blob);
   const imageId = suffix ? `${hash}${suffix}` : hash;
 
-  await db.transaction("rw", db.images, async () => {
-    const existingImage = await db.images.get(imageId);
+  await db.transaction("rw", db.images, db.user_images, async () => {
+    // 1. Store original blob in persistent user_images table
+    // This survives project switches and image cache clears
+    const existingUserImage = await db.user_images.get(imageId);
+    if (!existingUserImage) {
+      await db.user_images.add({
+        hash: imageId,
+        data: blob,
+        type: blob.type || 'image/png',
+        createdAt: Date.now(),
+      });
+    }
 
+    // 2. Also create/update entry in images cache for processing
+    const existingImage = await db.images.get(imageId);
     if (existingImage) {
       await db.images.update(imageId, {
         refCount: existingImage.refCount + 1,
@@ -218,8 +230,6 @@ export async function removeImageRef(imageId: string): Promise<void> {
   });
 }
 
-// --- Card Management ---
-
 /**
  * Adds a new card to the database, linking it to an image.
  * This function assumes the image reference has already been accounted for.
@@ -238,8 +248,7 @@ export async function addCards(
   const newCards: CardOption[] = cardsData.map((cardData, i) => ({
     ...cardData,
     uuid: crypto.randomUUID(),
-    // When startOrder is provided, use it directly; otherwise use traditional incremental ordering
-    order: options?.startOrder !== undefined ? baseOrder + i * 10 : baseOrder + i * 10 - 10 + 10,
+    order: baseOrder + i * 10,
   }));
 
   if (newCards.length > 0) {
@@ -248,6 +257,35 @@ export async function addCards(
   return newCards;
 }
 
+/**
+ * Rebalances the 'order' property of cards within a given project to be sequential (10, 20, 30...).
+ * This helps prevent floating point precision issues and keeps orders tidy.
+ * @param projectId The ID of the project whose cards should be rebalanced.
+ */
+export async function rebalanceCardOrders(projectId?: string): Promise<void> {
+  if (!projectId) return;
+
+  await db.transaction("rw", db.cards, async () => {
+    const cards = await db.cards
+      .where('projectId').equals(projectId)
+      .sortBy('order');
+    const updates: { key: string; changes: { order: number } }[] = [];
+
+    cards.forEach((card, index) => {
+      const newOrder = (index + 1) * 10;
+      if (Math.abs(card.order - newOrder) > 0.001) {
+        updates.push({
+          key: card.uuid,
+          changes: { order: newOrder },
+        });
+      }
+    });
+
+    if (updates.length > 0) {
+      await db.cards.bulkUpdate(updates);
+    }
+  });
+}
 /**
  * Deletes a card from the database and decrements the reference count of its image.
  * If the card has a linkedBackId, the back card will also be deleted (cascade).
@@ -321,6 +359,7 @@ export async function createLinkedBackCard(
       needsEnrichment: false,  // Back cards never need Scryfall metadata
       hasBuiltInBleed: options?.hasBuiltInBleed,
       usesDefaultCardback: options?.usesDefaultCardback,
+      projectId: frontCard.projectId,
     };
 
     await db.cards.add(backCard);
@@ -381,9 +420,11 @@ export async function createLinkedBackCardsBulk(
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      // SAFETY: Dexie's bulkGet preserves order and returns undefined for missing items.
+      // Index alignment is guaranteed: frontCards[i] corresponds to items[i].frontUuid.
       const front = frontCards[i];
 
-      if (!front) continue; // Should not happen in valid flow
+      if (!front) continue; // Front card was deleted before transaction started - skip gracefully
 
       // If front already has a linked back (e.g., from default cardback creation),
       // update the existing back's imageId instead of creating a new one
@@ -412,6 +453,7 @@ export async function createLinkedBackCardsBulk(
         needsEnrichment: false,  // Back cards never need Scryfall metadata
         hasBuiltInBleed: item.options?.hasBuiltInBleed,
         usesDefaultCardback: item.options?.usesDefaultCardback,
+        projectId: front.projectId,
       });
 
       // Prepare front update
@@ -567,7 +609,11 @@ export async function duplicateCard(uuid: string): Promise<void> {
     const cardToCopy = await db.cards.get(uuid);
     if (!cardToCopy) return;
 
-    const allCards = await db.cards.orderBy("order").toArray();
+    // Get cards only from the same project
+    const projectId = cardToCopy.projectId;
+    const allCards = projectId
+      ? await db.cards.where('projectId').equals(projectId).sortBy('order')
+      : await db.cards.orderBy("order").toArray();
     const currentIndex = allCards.findIndex((c) => c.uuid === uuid);
     const nextCard = allCards[currentIndex + 1];
 
@@ -659,7 +705,7 @@ export async function changeCardArtwork(
   applyToAll: boolean,
   newName?: string,
   newImageUrls?: string[],
-  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang'>>,
+  cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang' | 'token_parts' | 'needs_token' | 'isToken'>>,
   hasBuiltInBleed?: boolean
 ): Promise<void> {
   await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
@@ -699,10 +745,7 @@ export async function changeCardArtwork(
     const changes: Partial<CardOption> = {
       imageId: newImageId,
       isUserUpload: newImageIsCustom,
-      // Use provided hasBuiltInBleed if specified, otherwise default to false
-      // (Scryfall images don't have built-in bleed, but cardbacks might)
       hasBuiltInBleed: hasBuiltInBleed ?? false,
-      // Reset enrichment flags since user manually selected this
       needsEnrichment: false,
       enrichmentRetryCount: undefined,
       enrichmentNextRetryAt: undefined,
@@ -734,14 +777,7 @@ export async function changeCardArtwork(
         if (newImageUrls && newImageUrls.length > 0) {
           updates.imageUrls = newImageUrls;
         }
-        // If this is a cardback selection (hasBuiltInBleed specified) and the image changes,
-        // clear displayBlob to force reprocessing with correct bleed settings
-        // Also clear generation parameters to invalidate fast path cache
-        // If this is a cardback selection (hasBuiltInBleed specified) or MPC art selection with explicit bleed setting,
-        // check if we need to invalidate blobs.
-        // Only clear blobs if the existing blobs were generated with a different bleed setting.
         if (hasBuiltInBleed !== undefined && oldImageId !== newImageId) {
-          // If the cached blobs exist but were generated with a different bleed setting, invalidate them
           if (newImage.generatedHasBuiltInBleed !== hasBuiltInBleed) {
             updates.displayBlob = undefined;
             updates.displayBlobDarkened = undefined;
@@ -753,11 +789,7 @@ export async function changeCardArtwork(
         }
         await db.images.update(newImageId, updates);
       } else {
-        // This case handles a new remote image
         const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
-
-        // For MPC images (bare Drive ID), construct the proper sourceUrl
-        // The imageId is just the Drive ID, but we need the full URL for loading
         const isMpcImage = extractMpcIdentifierFromImageId(newImageId) !== null;
         let sourceUrl: string;
         if (isMpcImage) {
@@ -766,9 +798,6 @@ export async function changeCardArtwork(
           sourceUrl = newImageId;
         }
 
-        // Use provided newImageUrls if available.
-        // If not provided, and we are NOT renaming, fallback to oldImage.imageUrls.
-        // If renaming, we assume it's a different card, so we default to just the sourceUrl.
         const imageUrls = newImageUrls || (newName ? [sourceUrl] : (oldImage?.imageUrls || [sourceUrl]));
 
         await db.images.add({
@@ -784,58 +813,42 @@ export async function changeCardArtwork(
     // 4. Decrement the old images' refCounts, only if the image is actually changing
     // Skip cardbacks - they're in db.cardbacks and don't need ref counting
     if (oldImageId !== newImageId) {
-      for (const [id, count] of oldImageIdCounts.entries()) {
-        // Skip cardback IDs - they're in a separate table and don't need ref counting
-        if (isCardbackId(id)) continue;
+      // Filter out cardback IDs and collect image IDs to check
+      const imageIdsToCheck = Array.from(oldImageIdCounts.keys()).filter(id => !isCardbackId(id));
 
-        const oldImage = await db.images.get(id);
-        if (oldImage) {
-          const newRefCount = oldImage.refCount - count;
-          if (newRefCount > 0) {
-            await db.images.update(id, { refCount: newRefCount });
-          } else {
-            await db.images.delete(id);
+      if (imageIdsToCheck.length > 0) {
+        // Bulk fetch all old images at once instead of sequential awaits
+        const oldImages = await db.images.bulkGet(imageIdsToCheck);
+
+        const imageUpdates: { key: string; changes: { refCount: number } }[] = [];
+        const imagesToDelete: string[] = [];
+
+        for (let i = 0; i < imageIdsToCheck.length; i++) {
+          const id = imageIdsToCheck[i];
+          const oldImage = oldImages[i];
+          if (oldImage) {
+            const count = oldImageIdCounts.get(id) || 0;
+            const newRefCount = oldImage.refCount - count;
+            if (newRefCount > 0) {
+              imageUpdates.push({ key: id, changes: { refCount: newRefCount } });
+            } else {
+              imagesToDelete.push(id);
+            }
           }
+        }
+
+        // Bulk update and delete
+        if (imageUpdates.length > 0) {
+          await db.images.bulkUpdate(imageUpdates);
+        }
+        if (imagesToDelete.length > 0) {
+          await db.images.bulkDelete(imagesToDelete);
         }
       }
     }
   });
 }
 
-/**
- * Updates the per-card bleed settings for one or more cards.
- * @param cardUuids Array of card UUIDs to update.
- * @param bleedSettings The bleed settings to apply.
- */
-
-
-/**
- * Re-balances the 'order' property of all cards to be integers,
- * preventing floating point precision issues. This should be
- * called periodically or on application startup.
- */
-export async function rebalanceCardOrders(cards?: CardOption[]): Promise<void> {
-  await db.transaction("rw", db.cards, async () => {
-    let sortedCards = cards;
-    if (!sortedCards) {
-      sortedCards = await db.cards.orderBy("order").toArray();
-    }
-
-    // A re-balance is needed if any card has a non-integer order value OR if we were passed a specific list (forcing rebalance)
-    const needsRebalance = cards || sortedCards.some(
-      (card) => !Number.isInteger(card.order)
-    );
-
-    if (needsRebalance) {
-      const rebalancedCards = sortedCards.map((card, index) => ({
-        ...card,
-        order: (index + 1) * 10, // Space out by 10 for future inserts
-      }));
-
-      await db.cards.bulkPut(rebalancedCards);
-    }
-  });
-}
 
 /**
  * Helper to safely increment/decrement image reference counts.

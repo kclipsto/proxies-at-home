@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'proxxied-cards.db');
 
 // Current schema version - increment when adding migrations
-const CURRENT_DB_VERSION = 4;
+const CURRENT_DB_VERSION = 5;
 
 // Migration definitions - each entry upgrades from (version-1) to (version)
 // Add new migrations to the end of this array
@@ -97,6 +97,20 @@ const migrations: Migration[] = [
       );`,
     ],
   },
+  {
+    version: 5,
+    description: 'Add shares table for deck sharing feature',
+    up: [
+      // Shares table stores gzipped deck data with rolling TTL
+      `CREATE TABLE IF NOT EXISTS shares (
+        id TEXT PRIMARY KEY,           -- 8-char alphanumeric ID
+        data BLOB NOT NULL,            -- gzipped JSON
+        created_at INTEGER NOT NULL,   -- Unix timestamp
+        expires_at INTEGER NOT NULL    -- Updated on each access (rolling 30-day TTL)
+      );`,
+      'CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires_at);',
+    ],
+  },
 ];
 
 let db: Database.Database | null = null;
@@ -160,6 +174,10 @@ export function initDatabase(): Database.Database {
 
   // Enable WAL mode for better concurrent read/write performance
   db.pragma('journal_mode = WAL');
+  // Performance optimizations
+  db.pragma('synchronous = NORMAL');  // Faster writes, still durable with WAL
+  db.pragma('temp_store = MEMORY');   // Keep temp tables in RAM
+  db.pragma('mmap_size = 268435456'); // 256MB memory-mapped I/O
 
   // Create cards table
   db.exec(`
@@ -222,6 +240,7 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_cards_name_lang ON cards(name COLLATE NOCASE, lang);
     CREATE INDEX IF NOT EXISTS idx_mpc_cache_time ON mpc_search_cache(cached_at);
     CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_scryfall_cache_endpoint_expires ON scryfall_cache(endpoint, expires_at);
   `);
 
   // Run any pending migrations

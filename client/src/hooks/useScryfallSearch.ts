@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { extractCardInfo, hasIncompleteTagSyntax } from "@/helpers/cardInfoHelper";
-import { getImages, type RawScryfallCard } from "@/helpers/scryfallApi";
+import { getImages, mapResponseToCards } from "@/helpers/scryfallApi";
+import { containsScryfallSyntax } from "@/helpers/scryfallSyntax";
 import { debugLog } from "@/helpers/debug";
 import { API_BASE } from "@/constants";
 import type { ScryfallCard } from "../../../shared/types";
@@ -24,23 +25,7 @@ export interface UseScryfallSearchOptions {
 // Global cache shared across all instances - persists across mode switches
 const globalSearchCache: Record<string, ScryfallCard[]> = {};
 
-/**
- * Helper to map Scryfall API response to ScryfallCard objects
- */
-function mapResponseToCards(data: { data?: RawScryfallCard[] }): ScryfallCard[] {
-    if (!data.data || data.data.length === 0) return [];
-    return data.data.map((card: RawScryfallCard) => ({
-        name: card.name,
-        set: card.set,
-        setName: card.set_name,
-        number: card.collector_number,
-        imageUrls: getImages(card),
-        lang: card.lang,
-        cmc: card.cmc,
-        type_line: card.type_line,
-        rarity: card.rarity,
-    } as ScryfallCard));
-}
+
 
 /**
  * Hook for searching Scryfall cards with standardized return interface.
@@ -168,10 +153,17 @@ export function useScryfallSearch(
                 } else {
                     // Search query
                     let searchQuery: string;
-                    if (set && cleanedName) {
-                        searchQuery = `!"${cleanedName}" set:${set} unique:prints`;
-                    } else if (trimmedQuery.includes(':')) {
+
+                    // Check if query contains Scryfall syntax (like is:mdfc, c:r, o:draw, etc.)
+                    // Uses explicit keyword list to detect syntax - if found, pass through unchanged
+                    const hasScryfallSyntax = containsScryfallSyntax(trimmedQuery);
+
+                    if (hasScryfallSyntax) {
+                        // Scryfall syntax query - pass through unchanged
                         searchQuery = trimmedQuery;
+                    } else if (set && cleanedName) {
+                        // Card name with explicit set - use exact name match
+                        searchQuery = `!"${cleanedName}" set:${set} unique:prints`;
                     } else {
                         searchQuery = cleanedName || trimmedQuery;
                     }

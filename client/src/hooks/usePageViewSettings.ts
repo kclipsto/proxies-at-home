@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "../store/settings";
+import { useUserPreferencesStore } from "../store/userPreferences";
 import type { SourceTypeSettings } from "../helpers/layout";
 
 export function usePageViewSettings() {
@@ -16,10 +17,6 @@ export function usePageViewSettings() {
             bleedEdgeUnit: state.bleedEdgeUnit,
             zoom: state.zoom,
             setZoom: state.setZoom,
-            settingsPanelWidth: state.settingsPanelWidth,
-            isSettingsPanelCollapsed: state.isSettingsPanelCollapsed,
-            uploadPanelWidth: state.uploadPanelWidth,
-            isUploadPanelCollapsed: state.isUploadPanelCollapsed,
             darkenMode: state.darkenMode,
             sortBy: state.sortBy,
             filterManaCost: state.filterManaCost,
@@ -38,6 +35,15 @@ export function usePageViewSettings() {
             perCardGuideStyle: state.perCardGuideStyle,
             guideColor: state.guideColor,
             guidePlacement: state.guidePlacement,
+        }))
+    );
+
+    const userPrefs = useUserPreferencesStore(
+        useShallow((state) => ({
+            settingsPanelWidth: state.preferences?.settingsPanelWidth ?? 320,
+            isSettingsPanelCollapsed: state.preferences?.isSettingsPanelCollapsed ?? false,
+            uploadPanelWidth: state.preferences?.uploadPanelWidth ?? 320,
+            isUploadPanelCollapsed: state.preferences?.isUploadPanelCollapsed ?? false,
         }))
     );
 
@@ -71,8 +77,24 @@ export function usePageViewSettings() {
     const dndDisabled =
         sortBy !== "manual" || filterManaCost.length > 0 || filterColors.length > 0 || filterTypes.length > 0 || filterCategories.length > 0;
 
+    const {
+        setIsSettingsPanelCollapsed,
+        setSettingsPanelWidth,
+        setIsUploadPanelCollapsed,
+        setUploadPanelWidth
+    } = useUserPreferencesStore();
+
     return {
         ...settings,
+        ...userPrefs,
+        // Expose setters
+        setIsSettingsPanelCollapsed,
+        setSettingsPanelWidth,
+        setIsUploadPanelCollapsed,
+        setUploadPanelWidth,
+        toggleSettingsPanel: () => setIsSettingsPanelCollapsed(!userPrefs.isSettingsPanelCollapsed),
+        toggleUploadPanel: () => setIsUploadPanelCollapsed(!userPrefs.isUploadPanelCollapsed),
+
         sourceSettings,
         effectiveBleedWidth,
         dndDisabled,

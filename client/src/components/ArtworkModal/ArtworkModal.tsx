@@ -2,7 +2,6 @@ import { changeCardArtwork, createLinkedBackCard } from "@/helpers/dbUtils";
 import { parseImageIdFromUrl } from "@/helpers/imageHelper";
 import { getMpcAutofillImageUrl, type MpcAutofillCard } from "@/helpers/mpcAutofillApi";
 import { getImageSourceSync, isMpcSource, isCustomSource } from "@/helpers/imageSourceUtils";
-import { parseMpcCardLogic } from "@/helpers/mpcImportIntegration";
 import { getFaceNamesFromPrints, computeTabLabels, getCurrentCardFace, filterPrintsByFace } from "@/helpers/dfcHelpers";
 import { undoableChangeCardback } from "@/helpers/undoableActions";
 import { ArtworkBleedSettings } from '../CardEditorModal/ArtworkBleedSettings';
@@ -23,9 +22,14 @@ import { db } from "@/db";
 import { AdvancedSearch } from "./AdvancedSearch";
 import { getAllCardbacks, isCardbackId, type CardbackOption } from "@/helpers/cardbackLibrary";
 import { useSettingsStore } from "@/store/settings";
+import { useProjectStore } from "@/store";
 import { useSelectionStore } from "@/store/selection";
 import { useToastStore } from "@/store/toast";
 import { useZoomShortcuts } from "@/hooks/useZoomShortcuts";
+import { ImportOrchestrator } from "@/helpers/ImportOrchestrator";
+import type { ImportIntent } from "@/helpers/importParsers";
+import { handleAutoImportTokens } from "@/helpers/tokenImportHelper";
+import { debugLog } from "@/helpers/debug";
 
 
 export function ArtworkModal() {
@@ -42,13 +46,8 @@ export function ArtworkModal() {
     const [dontShowAgain, setDontShowAgain] = useState(false);
     const [artSource, setArtSource] = useState<'scryfall' | 'mpc'>('scryfall');
     const [mpcFiltersCollapsed, setMpcFiltersCollapsed] = useState(true);
-
-    // Card name editing state (for custom uploads)
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
-
-    // User's art selection - includes cardUuid to detect stale selections
-    // When selection is for a different card, it's ignored and we fall back to cardImageId
     const [selectedArtState, setSelectedArtState] = useState<{ cardUuid: string; artId: string } | null>(null);
     const [lastOpenCardUuid, setLastOpenCardUuid] = useState<string | undefined>(undefined);
 
@@ -59,44 +58,34 @@ export function ArtworkModal() {
     const initialTab = useArtworkModalStore((state) => state.initialTab);
     const initialFace = useArtworkModalStore((state) => state.initialFace);
     const initialArtSource = useArtworkModalStore((state) => state.initialArtSource);
+    const initialOpenAdvancedSearch = useArtworkModalStore((state) => state.initialOpenAdvancedSearch);
     const closeModal = useArtworkModalStore((state) => state.closeModal);
     const goToNextCard = useArtworkModalStore((state) => state.goToNextCard);
     const goToPrevCard = useArtworkModalStore((state) => state.goToPrevCard);
 
-    // With circular navigation, prev/next are available when there are multiple cards
     const canGoPrev = modalIndex !== null && allCards.length > 1;
     const canGoNext = modalIndex !== null && allCards.length > 1;
 
     const defaultCardbackId = useSettingsStore((state) => state.defaultCardbackId);
     const setDefaultCardbackId = useSettingsStore((state) => state.setDefaultCardbackId);
 
-    // --- ATOMIC STATE RESET ON NAVIGATION ---
     if (isModalOpen && modalCard?.uuid !== lastOpenCardUuid) {
         setLastOpenCardUuid(modalCard?.uuid);
 
-        // Reset ALL transient states for the new card:
         setPreviewCardData(null);
         setApplyToAll(false);
-        setIsSearchOpen(false);
+        setIsSearchOpen(initialOpenAdvancedSearch); // Auto-open for failed lookups
         setShowCardbackLibrary(false);
-        // Note: Don't reset selectedArtState here - we use cardUuid matching to ignore stale selections
-        // This avoids intermediate render states that cause visual flicker
-
-        // Re-initialize view preferences
         setActiveTab(initialTab);
         setSelectedFace(initialFace);
-        // Determine initial art source from card's imageId
         let newSource = useSettingsStore.getState().preferredArtSource;
         if (initialArtSource) {
             newSource = initialArtSource;
         } else if (modalCard?.imageId) {
-            // Use explicit source tracking with fallback to inference
             const detectedSource = getImageSourceSync(modalCard.imageId);
-            // For MPC source, use MPC. For custom uploads, respect user preference. For Scryfall, use Scryfall.
             if (isMpcSource(detectedSource)) {
                 newSource = 'mpc';
             } else if (isCustomSource(detectedSource)) {
-                // Custom uploads should respect user's preferred art source
                 newSource = useSettingsStore.getState().preferredArtSource;
             } else {
                 newSource = 'scryfall';
@@ -105,14 +94,12 @@ export function ArtworkModal() {
         setArtSource(newSource);
     }
 
-    // Reset lastOpenCardUuid when modal closes
     useEffect(() => {
         if (!isModalOpen) {
             setLastOpenCardUuid(undefined);
         }
     }, [isModalOpen]);
 
-    // Helper to set selected art with current card's UUID
     const setSelectedArtId = (artId: string) => {
         if (modalCard?.uuid) {
             setSelectedArtState({ cardUuid: modalCard.uuid, artId });
@@ -120,42 +107,40 @@ export function ArtworkModal() {
     };
     const setAppliedImageUrl = setSelectedArtId;
     const setAppliedMpcCardId = (mpcId: string) => {
-        // Convert MPC ID to full URL for consistent storage
         const url = getMpcAutofillImageUrl(mpcId);
         if (url) setSelectedArtId(url);
     };
 
-    // Auto-search for placeholder cards (no imageId)
     useEffect(() => {
         if (isModalOpen && modalCard && !modalCard.imageId && !previewCardData && !isSearching) {
             void handleSearch(modalCard.name, false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isModalOpen, modalCard?.imageId]);
-
-    // Fetch cardback options when Back tab is selected
     useEffect(() => {
         if (selectedFace === 'back') {
-            console.log("[ArtworkModal] 'back' face selected. Fetching cardback options...");
             getAllCardbacks().then(options => {
-                console.log(`[ArtworkModal] Fetched ${options.length} cardback options.`);
                 setCardbackOptions(options);
             });
         }
-        // No cleanup needed - caching is global in cardbackLibrary.ts
     }, [selectedFace]);
+
+    // Auto-apply first print when previewCardData changes (from search)
+    // This runs AFTER state has updated, avoiding race condition
+    useEffect(() => {
+        if (previewCardData?.imageUrls?.[0] && activeCard) {
+            debugLog('[ArtworkModal] auto-apply: previewCardData changed, applying first print:', previewCardData.imageUrls[0]?.substring(0, 80));
+            void handleSelectArtwork(previewCardData.imageUrls[0]);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [previewCardData]);
 
     const linkedBackCard = useLiveQuery(
         () => (modalCard?.linkedBackId ? db.cards.get(modalCard.linkedBackId) : undefined),
         [modalCard?.linkedBackId]
     );
-
-    // Track which back card we've auto-set MPC source for (prevents bouncing back when user changes source)
     const autoMpcSetForBackCardId = useRef<string | undefined>(undefined);
-
-    // Update art source when switching to back face (or when linkedBackCard loads) - ONLY ONCE
     useEffect(() => {
-        // Only auto-set if we're viewing back face with MPC art AND haven't already set for this card
         if (selectedFace === 'back' && linkedBackCard?.imageId) {
             if (autoMpcSetForBackCardId.current !== linkedBackCard.imageId) {
                 const detectedSource = getImageSourceSync(linkedBackCard.imageId);
@@ -168,27 +153,21 @@ export function ArtworkModal() {
     }, [selectedFace, linkedBackCard?.imageId]);
 
     const activeCard = selectedFace === 'back' && linkedBackCard ? linkedBackCard : modalCard;
-
-    // Save the edited card name and update the store
     const handleSaveName = useCallback(async () => {
         if (!editedName.trim() || !activeCard) return;
 
         const newName = editedName.trim();
         await db.cards.update(activeCard.uuid, { name: newName });
 
-        // If we edited the front card (modalCard), update the store so UI refreshes
         if (activeCard.uuid === modalCard?.uuid) {
             const updated = await db.cards.get(activeCard.uuid);
             if (updated) {
                 useArtworkModalStore.getState().updateCard(updated);
             }
         }
-        // Note: linkedBackCard updates automatically via useLiveQuery
-
         setIsEditingName(false);
     }, [editedName, activeCard, modalCard]);
 
-    // Determine which table to query based on imageId prefix
     const imageObject =
         useLiveQuery(
             async () => {
@@ -212,15 +191,11 @@ export function ArtworkModal() {
         }
     }, [imageObject?.displayBlob]);
 
-    // SIMPLE: Get the card's image source directly from activeCard.imageId (works for both front and back)
     const cardImageId = activeCard?.imageId;
-
-    // Derive selectedArtId: only use if it belongs to current activeCard (avoids stale selections)
     const selectedArtId = (selectedArtState && selectedArtState.cardUuid === activeCard?.uuid)
         ? selectedArtState.artId
         : null;
 
-    // The effective art is either user's explicit click or the card's current image
     const effectiveArtId = selectedArtId ?? cardImageId;
 
     const displayData = useMemo(() => {
@@ -229,7 +204,6 @@ export function ArtworkModal() {
             imageUrls: previewCardData?.imageUrls || (imageObject && 'imageUrls' in imageObject ? imageObject.imageUrls : undefined),
             prints: previewCardData?.prints || (imageObject && 'prints' in imageObject ? imageObject.prints : undefined),
             id: previewCardData?.imageUrls?.[0] || imageObject?.id,
-            // Single selectedArtId replaces initialScryfallId + selectedId
             selectedArtId: previewCardData?.imageUrls?.[0] || effectiveArtId,
             processedDisplayUrl: (!previewCardData && effectiveArtId === cardImageId) ? processedDisplayUrl : null,
         };
@@ -240,11 +214,9 @@ export function ArtworkModal() {
     const dfcFrontFaceName = faceNames[0] || null;
     const dfcBackFaceName = faceNames[1] || null;
 
-    // Determine whether to show the "Use Cardback" button (for non-DFC back face with custom art)
     const isUsingCardbackLibrary = linkedBackCard?.imageId ? isCardbackId(linkedBackCard.imageId) : false;
     const showCardbackButton = selectedFace === 'back' && !isDFC && linkedBackCard && !isUsingCardbackLibrary && !showCardbackLibrary;
 
-    // Determine if current card is a custom upload (allows name editing)
     const isCustomUpload = isCustomSource(getImageSourceSync(activeCard?.imageId));
 
     const tabLabels = useMemo(
@@ -259,9 +231,6 @@ export function ArtworkModal() {
         [isDFC, dfcBackFaceName, modalCard?.name]
     );
 
-    // Auto-select the correct face tab when modal opens for DFC cards ONLY
-    // (Non-DFC cards with linked backs use initialFace from the store, set by PageView)
-    // Skip auto-selection if user explicitly opened modal on the back face (initialFace='back')
     useEffect(() => {
         if (isModalOpen && isDFC && !hasAutoSelectedFace.current && initialFace !== 'back') {
             setSelectedFace(currentCardFace);
@@ -282,7 +251,6 @@ export function ArtworkModal() {
 
     const filteredImageUrls = useMemo(() => {
         if (!isDFC) return displayData.imageUrls;
-        // Get imageUrls that match the filtered prints
         const printUrls = new Set(filteredPrints?.map(p => p.imageUrl));
         return displayData.imageUrls?.filter(url => printUrls.has(url));
     }, [isDFC, displayData.imageUrls, filteredPrints]);
@@ -314,7 +282,7 @@ export function ArtworkModal() {
                         cardToUpdate.imageId,
                         targetImageId,
                         cardToUpdate,
-                        false, // Don't use applyToAll by name for individual updates in loop
+                        false,
                         cardName,
                         previewImageUrls,
                         cardMetadata,
@@ -326,13 +294,11 @@ export function ArtworkModal() {
                     }
                 }
             }
-            // Sync current card if it was part of the update
             if (modalCard && selectedCards.has(modalCard.uuid)) {
                 const updated = await db.cards.get(modalCard.uuid);
                 if (updated) useArtworkModalStore.getState().updateCard(updated);
             }
         } else {
-            // Single card or back face
             await changeCardArtwork(
                 targetCard.imageId,
                 targetImageId,
@@ -348,116 +314,181 @@ export function ArtworkModal() {
                 await db.cards.update(targetCard.uuid, { needsEnrichment: true });
             }
 
-            // Sync store only if we updated the front card (not the linkedBackCard)
-            // When selectedFace === 'back', targetCard is linkedBackCard, not modalCard
             if (selectedFace === 'front' || !linkedBackCard) {
                 const updated = await db.cards.get(targetCard.uuid);
                 if (updated) useArtworkModalStore.getState().updateCard(updated);
             }
         }
 
-        // Auto-flip card to show the face that was just edited
         if (modalCard?.uuid) {
             useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
         }
 
-        // Show success toast
+        // Check for missing tokens after applying new art/identity
+        handleAutoImportTokens({ silent: true });
+
+        // Clear preview state so the modal reflects the updated card
+        setPreviewCardData(null);
+
         const toastId = useToastStore.getState().addToast({
             type: 'success',
             message: 'Art applied successfully',
             dismissible: false,
         });
-        // Auto-dismiss after 2 seconds
         setTimeout(() => useToastStore.getState().removeToast(toastId), 2000);
     }, [activeCard, modalCard, selectedFace, applyToAll, linkedBackCard]);
 
     async function handleSelectArtwork(newImageUrl: string) {
         if (!activeCard) return;
 
+        debugLog('[ArtworkModal] handleSelectArtwork:', {
+            newImageUrl: newImageUrl?.substring(0, 80),
+            activeCardName: activeCard.name,
+            previewCardDataName: previewCardData?.name,
+            displayDataPrints: displayData.prints?.length,
+            artSource,
+        });
+
         setAppliedImageUrl(newImageUrl);
 
         const isReplacing = !!previewCardData;
         const newImageId = parseImageIdFromUrl(newImageUrl);
 
-        // Look up per-print metadata from the selected URL
         const selectedPrint = displayData.prints?.find(p => p.imageUrl === newImageUrl);
 
         const newFaceName = selectedPrint?.faceName;
         const shouldUpdateName = isDFC && newFaceName && newFaceName !== activeCard.name;
 
-        // Build metadata from print info or from previewCardData (if replacing card entirely)
-        let cardMetadata: Parameters<typeof changeCardArtwork>[6];
+        let intent: ImportIntent;
+
         if (selectedPrint) {
-            cardMetadata = {
+            intent = {
+                name: activeCard.name,
                 set: selectedPrint.set,
                 number: selectedPrint.number,
-                rarity: selectedPrint.rarity,
-                lang: selectedPrint.lang,
-                // Colors, cmc, type_line, mana_cost are the same across all prints, so use from previewCardData if available
-                ...(previewCardData ? {
-                    colors: previewCardData.colors,
-                    cmc: previewCardData.cmc,
-                    type_line: previewCardData.type_line,
-                    mana_cost: previewCardData.mana_cost,
-                } : {}),
+                quantity: 1,
+                isToken: activeCard.isToken || false
             };
-
-        } else if (isReplacing && previewCardData) {
-            cardMetadata = {
+        } else if (previewCardData) {
+            intent = {
+                name: previewCardData.name,
                 set: previewCardData.set,
                 number: previewCardData.number,
-                colors: previewCardData.colors,
-                cmc: previewCardData.cmc,
-                type_line: previewCardData.type_line,
-                rarity: previewCardData.rarity,
-                mana_cost: previewCardData.mana_cost,
-                lang: previewCardData.lang,
+                quantity: 1,
+                isToken: activeCard.isToken || false
             };
+        } else {
+            intent = { name: activeCard.name, quantity: 1, isToken: activeCard.isToken || false };
         }
 
-        const newName = shouldUpdateName ? newFaceName : (isReplacing ? previewCardData?.name : undefined);
+        try {
+            const projectId = activeCard.projectId || useProjectStore.getState().currentProjectId!;
+            const { cardsToAdd } = await ImportOrchestrator.resolve(intent, projectId);
+            const resolved = cardsToAdd[0];
 
-        await applyArtworkToCards({
-            targetImageId: newImageId,
-            cardName: newName,
-            cardMetadata,
-            previewImageUrls: isReplacing ? previewCardData?.imageUrls : undefined
-        });
+            if (resolved) {
+                const cardMetadata: Parameters<typeof changeCardArtwork>[6] = {
+                    set: resolved.set,
+                    number: resolved.number,
+                    rarity: resolved.rarity,
+                    lang: resolved.lang,
+                    colors: resolved.colors,
+                    cmc: resolved.cmc,
+                    type_line: resolved.type_line,
+                    mana_cost: resolved.mana_cost,
+                    token_parts: resolved.token_parts,
+                    needs_token: resolved.needs_token,
+                    isToken: resolved.isToken
+                };
 
-        // Exit preview mode since we've applied the selection
+                const newName = shouldUpdateName ? newFaceName : resolved.name;
+
+                await applyArtworkToCards({
+                    targetImageId: newImageId,
+                    cardName: newName,
+                    cardMetadata,
+                    previewImageUrls: isReplacing && resolved.imageId ? [resolved.imageId] : undefined
+                });
+            }
+
+        } catch (e) {
+            console.error("Failed to resolve artwork selection:", e);
+        }
     }
 
     /**
      * Handle MPC Autofill art selection
-     * Sets needsEnrichment: true to fetch metadata from Scryfall after
+     * Uses ImportOrchestrator to resolve details/enrichment needs
      */
     async function handleSelectMpcArt(card: MpcAutofillCard) {
-        if (!activeCard) return;
+        debugLog('[ArtworkModal] handleSelectMpcArt:', {
+            cardIdentifier: card.identifier,
+            cardName: card.name,
+            activeCardName: activeCard?.name,
+            activeCardUuid: activeCard?.uuid,
+        });
+
+        if (!activeCard) {
+            debugLog('[ArtworkModal] handleSelectMpcArt: no activeCard, returning early');
+            return;
+        }
 
         setAppliedMpcCardId(card.identifier);
 
-        const mpcImageUrl = getMpcAutofillImageUrl(card.identifier);
-        if (!mpcImageUrl) return;
+        const intent: ImportIntent = {
+            name: card.name,  // Use the NEW card name from search, not activeCard.name
+            mpcId: card.identifier,
+            sourcePreference: 'mpc',
+            quantity: 1,
+            isToken: activeCard.isToken || false
+        };
 
-        // Parse URL to get bare Drive ID (consistent with MPC XML imports)
-        // This ensures image deduplication and ref counting work correctly
-        const imageId = parseImageIdFromUrl(mpcImageUrl);
+        debugLog('[ArtworkModal] handleSelectMpcArt intent:', intent);
 
-        // Extract base card name from MPC name (e.g., "Forest (Unstable Adam Paquette)" -> "Forest")
-        // If the name contains parentheses, take only the part before them
-        const { name: cardName, hasBuiltInBleed, needsEnrichment } = parseMpcCardLogic(card, activeCard.name);
+        try {
+            const projectId = activeCard.projectId || useProjectStore.getState().currentProjectId!;
+            const { cardsToAdd } = await ImportOrchestrator.resolve(intent, projectId);
+            const resolved = cardsToAdd[0];
 
-        await applyArtworkToCards({
-            targetImageId: imageId,
-            cardName,
-            hasBuiltInBleed,
-            needsEnrichment
-        });
+            debugLog('[ArtworkModal] handleSelectMpcArt resolved:', {
+                resolvedName: resolved?.name,
+                resolvedImageId: resolved?.imageId,
+                cardsToAddLength: cardsToAdd.length,
+            });
+
+            if (resolved && resolved.imageId) {
+                await applyArtworkToCards({
+                    targetImageId: resolved.imageId,
+                    cardName: resolved.name,
+                    hasBuiltInBleed: resolved.hasBuiltInBleed,
+                    needsEnrichment: resolved.needsEnrichment,
+                    cardMetadata: {
+                        isToken: resolved.isToken,
+                        token_parts: resolved.token_parts,
+                        needs_token: resolved.needs_token,
+                        set: resolved.set,
+                        number: resolved.number,
+                        rarity: resolved.rarity,
+                        lang: resolved.lang,
+                        colors: resolved.colors,
+                        cmc: resolved.cmc,
+                        type_line: resolved.type_line,
+                        mana_cost: resolved.mana_cost,
+                    }
+                });
+                debugLog('[ArtworkModal] handleSelectMpcArt: applyArtworkToCards completed');
+            } else {
+                debugLog('[ArtworkModal] handleSelectMpcArt: no resolved card or imageId');
+            }
+        } catch (e) {
+            console.error("Failed to resolve MPC selection:", e);
+        }
     }
 
     async function handleSearch(name: string, exact: boolean = false, specificPrint?: { set: string; number: string }) {
-        // Prevent clearing if name is empty but we have a specific print (unlikely, but robust)
         if (!name && !specificPrint) return;
+
+        debugLog('[ArtworkModal] handleSearch:', { name, exact, specificPrint, artSource });
 
         setIsSearching(true);
         try {
@@ -465,11 +496,20 @@ export function ArtworkModal() {
             if (specificPrint) {
                 cardWithPrints = await fetchCardBySetAndNumber(specificPrint.set, specificPrint.number);
             } else {
-                cardWithPrints = await fetchCardWithPrints(name, exact, false);
+                cardWithPrints = await fetchCardWithPrints(name, exact, true);
             }
+
+            debugLog('[ArtworkModal] handleSearch result:', {
+                name: cardWithPrints?.name,
+                imageUrlsCount: cardWithPrints?.imageUrls?.length,
+                printsCount: cardWithPrints?.prints?.length,
+                firstImageUrl: cardWithPrints?.imageUrls?.[0]?.substring(0, 80),
+            });
 
             if (cardWithPrints) {
                 setPreviewCardData(cardWithPrints);
+                // Note: Don't auto-apply here - state race condition causes displayData to be stale
+                // User will select a print from the modal, or we need to apply via a separate mechanism
             } else {
                 console.warn("No cards found for query:", name);
             }
@@ -493,13 +533,11 @@ export function ArtworkModal() {
         let frontCardUuids: string[];
 
         if (applyToAll) {
-            // Get all front cards (cards without linkedFrontId)
             const allFrontCards = await db.cards
                 .filter(c => !c.linkedFrontId)
                 .toArray();
             frontCardUuids = allFrontCards.map(c => c.uuid);
         } else if (isMultiSelect) {
-            // Get selected front cards
             const selectedUuids = Array.from(selectedCards);
             const cardsToUpdate = await db.cards.bulkGet(selectedUuids);
             frontCardUuids = cardsToUpdate
@@ -510,7 +548,6 @@ export function ArtworkModal() {
         }
         await undoableChangeCardback(frontCardUuids, cardbackId, cardbackName, hasBleed);
 
-        // Auto-flip card to show the face that was just edited
         if (modalCard?.uuid) {
             useSelectionStore.getState().setFlipped([modalCard.uuid], selectedFace === 'back');
         }
@@ -525,7 +562,6 @@ export function ArtworkModal() {
         const oldDefaultCardbackId = defaultCardbackId;
         setDefaultCardbackId(cardbackId);
 
-        // 3. Find the new cardback to get its bleed info
         const cardback = cardbackOptions.find(cb => cb.id === cardbackId);
         const hasBleed = cardback?.hasBuiltInBleed ?? false;
 
@@ -642,8 +678,6 @@ export function ArtworkModal() {
     }
 
     const contentRef = useRef<HTMLDivElement>(null);
-    // Note: headerRef removed - no longer needed since we removed the click-outside handler
-    // ResponsiveModal handles backdrop clicks correctly
 
     const [zoomLevel, setZoomLevel] = useState(1);
 
@@ -702,19 +736,14 @@ export function ArtworkModal() {
         };
     }, []);
 
-    // Wrapper navigation functions that reset local state atomically with navigation
-    // This prevents visible intermediate render states during card transitions
     const handleGoToNextCard = useCallback(() => {
-        // Navigate to next card (highlight reset handled by useLayoutEffect)
         goToNextCard();
     }, [goToNextCard]);
 
     const handleGoToPrevCard = useCallback(() => {
-        // Navigate to previous card
         goToPrevCard();
     }, [goToPrevCard]);
 
-    // Keyboard navigation: Ctrl+Left/Right arrows to navigate between cards
     useEffect(() => {
         if (!isModalOpen) return;
 
@@ -764,22 +793,14 @@ export function ArtworkModal() {
                 onClose={pendingDeleteId ? () => { } : closeModal}
                 mobileLandscapeSidebar
                 header={
-                    // Header container:
-                    // - Hidden on Mobile Portrait (uses inline controls in body)
-                    // - Sidebar on Mobile Landscape
-                    // - Visible on Desktop
                     <div className="landscape-sidebar-header border-b border-gray-200 dark:border-gray-600 max-lg:portrait:hidden">
-                        {/* Close button - Top on mobile landscape, Right on desktop */}
                         <button
                             onClick={closeModal}
                             className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors lg:order-last"
                         >
                             <X className="w-5 h-5" />
                         </button>
-
-                        {/* Row 1: Title and back button */}
                         <div className="landscape-sidebar-row">
-                            {/* Back button for preview/cardback modes */}
                             {(previewCardData || showCardbackLibrary) && (
                                 <Button
                                     size="sm"
@@ -848,11 +869,8 @@ export function ArtworkModal() {
                                 }
                             </h3>
                         </div>
-                        {/* Spacer push to bottom */}
                         <div className="landscape-spacer" />
 
-                        {/* Source Toggle (Scryfall/MPC) - Mobile landscape sidebar */}
-                        {/* Order reversed for vertical mode since sideways-lr reads bottom-to-top */}
                         {activeTab === 'artwork' && !showCardbackLibrary && (
                             <div className="hidden max-lg:landscape:block">
                                 <ArtSourceToggle
@@ -869,10 +887,8 @@ export function ArtworkModal() {
                 }
             >
                 <div ref={contentRef} className="flex-1 flex flex-col overflow-hidden max-lg:landscape:overflow-auto min-h-0">
-                    {/* TabBars - Desktop OR Mobile Portrait (hidden only on mobile landscape) */}
                     {!showCardbackLibrary && (
                         <div className="hidden lg:block max-lg:portrait:block">
-                            {/* Flex container for TabBar and Close Button (Mobile Portrait) */}
                             <div className="flex items-start justify-between">
                                 <div className="flex-1 overflow-hidden">
                                     <TabBar
@@ -885,7 +901,6 @@ export function ArtworkModal() {
                                         variant="primary"
                                     />
                                 </div>
-                                {/* Close button - Mobile Portrait only (inline with tabs) */}
                                 <div className="lg:hidden p-2">
                                     <button
                                         onClick={closeModal}
@@ -895,12 +910,10 @@ export function ArtworkModal() {
                                     </button>
                                 </div>
                             </div>
-
                             <TabBar
                                 tabs={[
                                     { id: 'artwork' as const, label: 'Artwork', icon: <Image className="w-5 h-5" /> },
                                     { id: 'settings' as const, label: 'Settings', icon: <Settings className="w-5 h-5" /> },
-                                    // Add Cardback tab when conditions are met
                                     ...(showCardbackButton ? [{
                                         id: 'cardback' as const,
                                         label: 'Use Cardback',
@@ -927,10 +940,8 @@ export function ArtworkModal() {
                         </div>
                     )}
 
-                    {/* Content area */}
                     {activeTab === 'artwork' && (
                         <ArtworkTabContent
-                            // key={modalCard?.uuid ?? 'empty'}
                             modalCard={modalCard}
                             linkedBackCard={linkedBackCard}
                             selectedFace={selectedFace}
@@ -978,8 +989,10 @@ export function ArtworkModal() {
                 isOpen={isSearchOpen}
                 onClose={() => setIsSearchOpen(false)}
                 onSelectCard={(name, mpcImageUrl, specificPrint) => {
+                    debugLog('[ArtworkModal] onSelectCard:', { name, mpcImageUrl: mpcImageUrl?.substring(0, 80), specificPrint, currentArtSource: artSource });
                     if (mpcImageUrl) {
-                        // Extract identifier from MPC URL and use handleSelectMpcArt
+                        // MPC path: apply MPC art directly
+                        debugLog('[ArtworkModal] onSelectCard: MPC path - calling handleSelectMpcArt');
                         const identifier = mpcImageUrl.split('id=')[1] || '';
                         setArtSource('mpc');
                         handleSelectMpcArt({
@@ -995,13 +1008,14 @@ export function ArtworkModal() {
                             size: 0,
                         });
                     } else {
+                        // Scryfall path: fetch card data and update modal preview
+                        debugLog('[ArtworkModal] onSelectCard: Scryfall path - calling handleSearch');
                         setArtSource('scryfall');
                         handleSearch(name, true, specificPrint);
                     }
                 }}
                 initialSource={artSource}
             />
-            {/* Delete Cardback Confirmation Dialog - rendered outside Modal */}
             {pendingDeleteId && (
                 <div
                     className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center"

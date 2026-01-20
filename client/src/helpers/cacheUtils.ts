@@ -1,12 +1,11 @@
 import { db } from "../db";
 import type { Table } from "dexie";
+import { debugLog } from "./debug";
 
-// Cache TTL:// 5GB Cap for Images (Raw bytes)
-const IMAGE_CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024;
-// 100MB Cap for Metadata (Approx)
-const METADATA_CACHE_CAP_BYTES = 100 * 1024 * 1024;
-// 2GB Cap for Effect Cache (pre-rendered exports)
-const EFFECT_CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024; // 5GB for high-DPI effect caching
+// Cache Caps
+const IMAGE_CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024;    // 5GB
+const METADATA_CACHE_CAP_BYTES = 100 * 1024 * 1024;       // 100MB
+const EFFECT_CACHE_CAP_BYTES = 5 * 1024 * 1024 * 1024;   // 5GB
 
 /**
  * Generic LRU Enforcer for a Dexie Table.
@@ -98,5 +97,39 @@ export async function getImageCacheStats(): Promise<{ count: number; sizeBytes: 
         };
     } catch {
         return { count: 0, sizeBytes: 0, oldestMs: null };
+    }
+}
+
+/**
+ * Emergency cleanup for QuotaExceededError.
+ * Aggressively clears oldest 90% of entries from all caches.
+ * Returns true if cleanup was performed.
+ */
+export async function emergencyCleanup(): Promise<boolean> {
+    try {
+        console.warn('[Cache] Emergency cleanup triggered - clearing 90% of old entries');
+
+        // Clear oldest 90% of image cache
+        const imageCount = await db.imageCache.count();
+        if (imageCount > 0) {
+            const toDelete = Math.ceil(imageCount * 0.9);
+            const oldestImages = await db.imageCache.orderBy("cachedAt").limit(toDelete).primaryKeys();
+            await db.imageCache.bulkDelete(oldestImages);
+            debugLog(`[Cache] Cleared ${oldestImages.length} image cache entries`);
+        }
+
+        // Clear oldest 90% of effect cache  
+        const effectCount = await db.effectCache.count();
+        if (effectCount > 0) {
+            const toDelete = Math.ceil(effectCount * 0.9);
+            const oldestEffects = await db.effectCache.orderBy("cachedAt").limit(toDelete).primaryKeys();
+            await db.effectCache.bulkDelete(oldestEffects);
+            debugLog(`[Cache] Cleared ${oldestEffects.length} effect cache entries`);
+        }
+
+        return true;
+    } catch (e) {
+        console.error('[Cache] Emergency cleanup failed:', e);
+        return false;
     }
 }

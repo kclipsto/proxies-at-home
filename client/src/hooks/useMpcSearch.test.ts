@@ -10,11 +10,18 @@ vi.mock('@/helpers/mpcAutofillApi', () => ({
 vi.mock('@/store', () => ({
     useSettingsStore: vi.fn((selector) => {
         const state = {
-            favoriteMpcSources: [],
-            favoriteMpcTags: [],
-            favoriteMpcDpi: 800,
-            favoriteMpcSort: 'dpi',
             mpcFuzzySearch: true,
+        };
+        return selector(state);
+    }),
+    useUserPreferencesStore: vi.fn((selector) => {
+        const state = {
+            preferences: {
+                favoriteMpcSources: [],
+                favoriteMpcTags: [],
+                favoriteMpcDpi: 800,
+                favoriteMpcSort: 'dpi',
+            },
         };
         return selector(state);
     }),

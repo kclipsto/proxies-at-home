@@ -45,7 +45,7 @@ export function useScryfallPrints(
     // Refs for request management
     const abortControllerRef = useRef<AbortController | null>(null);
     const currentCardNameRef = useRef<string>("");
-    const lastFetchedCardNameRef = useRef<string>("");
+    const lastFetchedCacheKeyRef = useRef<string>("");
 
     // Compute cache key for the current card name
     const getCacheKey = useCallback((name: string, language: string): string | null => {
@@ -93,11 +93,11 @@ export function useScryfallPrints(
                 return;
             }
 
-            // Skip if we already fetched this card
-            if (lastFetchedCardNameRef.current === trimmedName) return;
-
             const cacheKey = getCacheKey(cardName, lang);
             if (!cacheKey) return;
+
+            // Skip if we already fetched this exact query (name + lang)
+            if (lastFetchedCacheKeyRef.current === cacheKey) return;
 
             // Create abort controller
             const controller = new AbortController();
@@ -119,7 +119,7 @@ export function useScryfallPrints(
 
                     // Cache and update state
                     globalPrintsCache[cacheKey] = resultPrints;
-                    lastFetchedCardNameRef.current = trimmedName;
+                    lastFetchedCacheKeyRef.current = cacheKey;
                     setPrints(resultPrints);
                     setHasSearched(true);
                 } else {

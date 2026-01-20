@@ -1,6 +1,8 @@
 import React from "react";
-import { processMpcImport } from "@/helpers/mpc";
+import { parseMpcXml } from "@/helpers/importParsers";
 import { useSettingsStore } from "@/store/settings";
+import { useToastStore } from "@/store/toast";
+import { useCardImport } from "@/hooks/useCardImport";
 import { FileText } from "lucide-react";
 
 type Props = {
@@ -17,6 +19,12 @@ async function readText(file: File): Promise<string> {
 }
 
 export function MpcImportSection({ mobile, onUploadComplete }: Props) {
+    const { processCards } = useCardImport({
+        onComplete: () => {
+            useSettingsStore.getState().setSortBy("manual");
+            onUploadComplete?.();
+        }
+    });
 
     const handleImportMpcXml = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -25,23 +33,20 @@ export function MpcImportSection({ mobile, onUploadComplete }: Props) {
         // No loading modal needed - the processing toast shows progress
         try {
             const text = await readText(file);
+            const intents = parseMpcXml(text);
 
-            const result = await processMpcImport(text);
-
-            if (result.success) {
-                onUploadComplete?.();
+            if (intents.length === 0) {
+                useToastStore.getState().showErrorToast("No cards found in the file.");
+                return;
             }
 
-            if (result.success && result.count > 0) {
-                useSettingsStore.getState().setSortBy("manual");
-                onUploadComplete?.();
-            } else if (result.error) {
-                alert(result.error);
-            } else {
-                alert("No cards found in the file.");
-            }
-        } catch {
-            alert("Failed to parse file.");
+            await processCards(intents);
+
+        } catch (err) {
+            console.error(err);
+            useToastStore.getState().showErrorToast(
+                err instanceof Error ? err.message : "Failed to parse file or import cards."
+            );
         } finally {
             if (e.target) e.target.value = "";
         }

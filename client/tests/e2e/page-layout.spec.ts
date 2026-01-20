@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Page Layout Logic', () => {
     test('should update dimensions when preset and orientation change', async ({ page }) => {
@@ -12,12 +12,6 @@ test.describe('Page Layout Logic', () => {
         await presetSelect.selectOption({ value: 'A4' });
 
         // Verify dimensions for A4 Portrait (210mm x 297mm)
-        // The PageSizeControl displays width and height in disabled TextInputs.
-        // We can check for the values in the inputs.
-        // Since A4 is mm, the unit should be mm.
-        // We need to find the inputs corresponding to width and height.
-        // They are labeled "Page width (mm)" and "Page height (mm)"
-
         const widthInput = page.getByLabel('Page width (mm)');
         const heightInput = page.getByLabel('Page height (mm)');
 
@@ -25,7 +19,6 @@ test.describe('Page Layout Logic', () => {
         await expect(heightInput).toHaveValue('297.00');
 
         // Toggle Orientation to Landscape
-        // Button text is "Swap Orientation"
         const swapButton = page.getByRole('button', { name: 'Swap Orientation' });
         await swapButton.click();
 
@@ -49,23 +42,17 @@ test.describe('Page Layout Logic', () => {
         await expect(heightInput).toBeEnabled();
 
         // Enter custom values
-        // Note: Using fill instead of type to ensure clean input
         await widthInput.fill('12.5');
-        await widthInput.blur(); // Trigger commit
+        await widthInput.blur();
 
         await heightInput.fill('18.5');
-        await heightInput.blur(); // Trigger commit
+        await heightInput.blur();
 
         // Verify values persisted in inputs
         await expect(widthInput).toHaveValue('12.50');
         await expect(heightInput).toHaveValue('18.50');
 
         // Toggle unit to mm
-        // The ToggleSwitch uses a checkbox input with id "unit-toggle"
-        // We'll click the label associated with it
-
-        // Wait for toggle to be visible and verify labels
-        // Use specific locator to avoid strict mode violation with other "mm" text on page
         const unitContainer = page.locator('.flex.items-center.gap-2', { has: page.locator('#unit-toggle') });
         await expect(unitContainer.getByText('inches')).toBeVisible();
         await expect(unitContainer.getByText('mm')).toBeVisible();
@@ -83,22 +70,27 @@ test.describe('Page Layout Logic', () => {
         // Reload page to test persistence
         await page.reload();
 
+        // Re-locate elements after reload (important for Firefox!)
+        const presetSelectAfterReload = page.getByLabel('Page size', { exact: true });
+        const widthInputMmAfterReload = page.getByLabel('Page width (mm)');
+        const heightInputMmAfterReload = page.getByLabel('Page height (mm)');
+
         // Verify Custom preset is still selected
-        await expect(presetSelect).toHaveValue('Custom');
+        await expect(presetSelectAfterReload).toHaveValue('Custom');
 
         // Verify custom values persisted (in mm since that was last state)
-        await expect(widthInputMm).toHaveValue('317.50');
-        await expect(heightInputMm).toHaveValue('469.90');
+        await expect(widthInputMmAfterReload).toHaveValue('317.50');
+        await expect(heightInputMmAfterReload).toHaveValue('469.90');
 
         // Switch to Letter
-        await presetSelect.selectOption({ value: 'Letter' });
+        await presetSelectAfterReload.selectOption({ value: 'Letter' });
         await expect(page.getByLabel('Page width (in)')).toHaveValue('8.50');
 
         // Switch back to Custom
-        await presetSelect.selectOption({ value: 'Custom' });
+        await presetSelectAfterReload.selectOption({ value: 'Custom' });
 
         // Verify custom values restored (in mm)
-        await expect(widthInputMm).toHaveValue('317.50');
-        await expect(heightInputMm).toHaveValue('469.90');
+        await expect(widthInputMmAfterReload).toHaveValue('317.50');
+        await expect(heightInputMmAfterReload).toHaveValue('469.90');
     });
 });

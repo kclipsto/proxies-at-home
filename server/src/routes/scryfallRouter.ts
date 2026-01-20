@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { getDatabase } from "../db/db.js";
 import { debugLog } from "../utils/debug.js";
 import { isValidScryfallType, isKnownToken } from "../utils/scryfallCatalog.js";
+import { getCardsWithImagesForCardInfo } from "../utils/getCardImagesPaged.js";
 
 const router = Router();
 
@@ -209,23 +210,17 @@ function parseTypePrefix(query: string): { query: string; isToken: boolean } {
     if (tPrefixMatch) {
         const fullValue = tPrefixMatch[1].trim();
 
-        // Check for explicit "t:token <name>" syntax
+        // Check for explicit "t:token <name>" syntax - definitely a token search
         if (fullValue.toLowerCase().startsWith('token ')) {
             const tokenName = fullValue.slice(6).trim();
             return { query: tokenName, isToken: true };
-        }
-
-        // Check if the FULL phrase is a known token (e.g., "human soldier")
-        if (isKnownToken(fullValue)) {
-            // Known token - use include:extras to show both tokens and regular cards
-            return { query: `${fullValue} include:extras`, isToken: false };
         }
 
         // Check first word only
         const firstWord = fullValue.split(/\s+/)[0].toLowerCase();
         const restOfQuery = fullValue.slice(firstWord.length).trim();
 
-        // If first word is a valid Scryfall type, pass through unchanged
+        // Priority 1: If first word is a valid Scryfall type, pass through as type filter
         if (isValidScryfallType(firstWord)) {
             // Ambiguous case: check if full phrase is also a known token
             if (restOfQuery && isKnownToken(fullValue)) {
@@ -235,7 +230,21 @@ function parseTypePrefix(query: string): { query: string; isToken: boolean } {
             return { query, isToken: false };
         }
 
-        // Not a valid type - treat as token search
+        // Priority 2: Check if the FULL phrase is a known token (e.g., "human soldier", "treasure")
+        if (isKnownToken(fullValue)) {
+            // Known token - use include:extras to show both tokens and regular cards
+            return { query: `${fullValue} include:extras`, isToken: false };
+        }
+
+        // Priority 3: If first word is NOT a known token, assume it's a type filter
+        // This handles cases like t:legend where "legend" is not in our types catalog
+        // but Scryfall understands it as an abbreviation for "legendary"
+        if (!isKnownToken(firstWord)) {
+            // Pass through to Scryfall - let Scryfall handle type abbreviations
+            return { query, isToken: false };
+        }
+
+        // Not a valid type and first word IS a known token - treat as token search
         return { query: fullValue, isToken: true };
     }
 
@@ -353,9 +362,6 @@ router.get("/prints", async (req: Request, res: Response) => {
     }
 
     try {
-        // Import the utility function
-        const { getCardsWithImagesForCardInfo } = await import("../utils/getCardImagesPaged.js");
-
         // Fetch all prints using unique:prints mode
         const allPrints = await getCardsWithImagesForCardInfo(
             { name },

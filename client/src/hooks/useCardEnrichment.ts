@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { db } from "../db";
+import { db, METADATA_CACHE_VERSION, type CachedMetadata } from "../db";
 import type { CardOption } from "@/types";
 import { API_BASE } from "../constants";
 import { getCurrentSession } from "../helpers/importSession";
@@ -63,6 +63,26 @@ interface EnrichedCardData {
             png?: string;
         };
     }>;
+    // Token Support
+    token_parts?: Array<{
+        id?: string;
+        name: string;
+        type_line?: string;
+        uri?: string;
+    }>;
+}
+
+/**
+ * Type guard to validate enriched card data from API response.
+ * Ensures the response has the required fields before using it.
+ */
+function isEnrichedCardData(data: unknown): data is EnrichedCardData {
+    return (
+        typeof data === 'object' &&
+        data !== null &&
+        'name' in data &&
+        typeof (data as { name: unknown }).name === 'string'
+    );
 }
 
 export function useCardEnrichment() {
@@ -142,9 +162,16 @@ export function useCardEnrichment() {
                                 .first();
 
                             if (cached) {
-                                // Touch cachedAt
-                                db.cardMetadataCache.update(cached.id, { cachedAt: Date.now() });
-                                cachedDataMap.set(card.uuid, cached.data as unknown as EnrichedCardData);
+                                // Validate cache version - if stale, fetch fresh data
+                                if ((cached.cacheVersion ?? 0) < METADATA_CACHE_VERSION) {
+                                    // Stale cache entry - fetch fresh
+                                    cardsToFetch.push(card);
+                                } else {
+                                    // Touch cachedAt
+                                    const cachedData = cached.data as unknown as EnrichedCardData;
+                                    db.cardMetadataCache.update(cached.id, { cachedAt: Date.now() });
+                                    cachedDataMap.set(card.uuid, cachedData);
+                                }
                             } else {
                                 cardsToFetch.push(card);
                             }
@@ -174,11 +201,15 @@ export function useCardEnrichment() {
                             throw new Error(`HTTP ${response.status}`);
                         }
 
-                        validResponses = await response.json();
+                        const rawResponses = await response.json();
+                        // Validate responses to filter out malformed data
+                        validResponses = Array.isArray(rawResponses)
+                            ? rawResponses.filter(isEnrichedCardData)
+                            : [];
 
                         // Cache the new results
                         try {
-                            const entriesToCache: { id: string, name: string, set: string, number: string, data: unknown, cachedAt: number, size: number }[] = [];
+                            const entriesToCache: { id: string, name: string, set: string, number: string, data: unknown, cachedAt: number, size: number, cacheVersion: number }[] = [];
 
                             validResponses.forEach((data) => {
                                 if (data) {
@@ -192,14 +223,14 @@ export function useCardEnrichment() {
                                         number: data.number || '',
                                         data: data as unknown,
                                         cachedAt: Date.now(),
-                                        size: size
+                                        size: size,
+                                        cacheVersion: METADATA_CACHE_VERSION
                                     });
                                 }
                             });
 
                             if (entriesToCache.length > 0) {
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                await db.cardMetadataCache.bulkPut(entriesToCache as any[]);
+                                await db.cardMetadataCache.bulkPut(entriesToCache as CachedMetadata[]);
                             }
                         } catch (e) {
                             console.warn("[Metadata] Failed to cache results:", e);
@@ -234,6 +265,14 @@ export function useCardEnrichment() {
                     });
 
                     // Perform DFC art lookups (respecting preferred source)
+                    // Capture settings snapshot BEFORE entering parallel processing
+                    // to ensure consistent behavior if settings change during operation
+                    const settingsSnapshot = {
+                        preferredArtSource: useSettingsStore.getState().preferredArtSource,
+                        favoriteMpcSources: useSettingsStore.getState().favoriteMpcSources || [],
+                        favoriteMpcTags: useSettingsStore.getState().favoriteMpcTags || [],
+                    };
+
                     await Promise.all(batch.map(async (card) => {
                         const data = responseMap.get(card.uuid);
                         if (!data) return;
@@ -257,9 +296,8 @@ export function useCardEnrichment() {
                             // We need to fetch the FRONT face art.
                             const isBackFaceImport = card.name.trim().toLowerCase() === back.name.trim().toLowerCase();
 
-                            // Get preferred art source
-                            const settings = useSettingsStore.getState();
-                            const preferredSource = settings.preferredArtSource;
+                            // Use captured settings snapshot for consistent behavior
+                            const preferredSource = settingsSnapshot.preferredArtSource;
 
                             // Process Back Art (for front-face imports that need back art)
                             if (needsBackArt) {
@@ -268,8 +306,8 @@ export function useCardEnrichment() {
                                         // MPC art fetching
                                         const mpcResults = await searchMpcAutofill(back.name);
                                         if (mpcResults && mpcResults.length > 0) {
-                                            const favSources = new Set(settings.favoriteMpcSources || []);
-                                            const favTags = new Set(settings.favoriteMpcTags || []);
+                                            const favSources = new Set(settingsSnapshot.favoriteMpcSources);
+                                            const favTags = new Set(settingsSnapshot.favoriteMpcTags);
                                             const bestBack = pickBestMpcCard(mpcResults, favSources, favTags);
 
                                             if (bestBack) {
@@ -298,8 +336,8 @@ export function useCardEnrichment() {
                                         // MPC art fetching
                                         const mpcResults = await searchMpcAutofill(front.name);
                                         if (mpcResults && mpcResults.length > 0) {
-                                            const favSources = new Set(settings.favoriteMpcSources || []);
-                                            const favTags = new Set(settings.favoriteMpcTags || []);
+                                            const favSources = new Set(settingsSnapshot.favoriteMpcSources);
+                                            const favTags = new Set(settingsSnapshot.favoriteMpcTags);
                                             const bestFront = pickBestMpcCard(mpcResults, favSources, favTags);
 
                                             if (bestFront) {
@@ -349,6 +387,14 @@ export function useCardEnrichment() {
                                     needsEnrichment: false,
                                     enrichmentRetryCount: undefined,
                                     enrichmentNextRetryAt: undefined,
+                                    // Token support - only update if server returned token data
+                                    // (don't overwrite existing needs_token: true with false)
+                                    ...(data.token_parts !== undefined ? {
+                                        token_parts: data.token_parts,
+                                        needs_token: data.token_parts.length > 0,
+                                    } : {}),
+                                    // Detect if this card IS a token based on type_line
+                                    isToken: data.type_line?.toLowerCase().includes('token') || undefined,
                                 };
 
                                 // DFC Handling - skip for user uploads (they want standalone custom cards)
@@ -520,9 +566,15 @@ export function useCardEnrichment() {
 
     // Listen for database changes.
     useEffect(() => {
+        // Track timeout ID for cleanup
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
         // Trigger enrichment after short delay.
         const handler = () => {
-            setTimeout(() => {
+            // Clear any existing timeout to avoid multiple triggers
+            if (timeoutId) clearTimeout(timeoutId);
+
+            timeoutId = setTimeout(() => {
                 if (!isEnrichingRef.current) {
                     void enrichCards();
                 }
@@ -533,6 +585,8 @@ export function useCardEnrichment() {
         db.cards.hook("creating", handler);
 
         return () => {
+            // Clean up timeout to prevent calls after unmount
+            if (timeoutId) clearTimeout(timeoutId);
             db.cards.hook("creating").unsubscribe(handler);
         };
     }, [enrichCards]);

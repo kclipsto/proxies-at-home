@@ -6,6 +6,7 @@
  */
 
 import { API_BASE } from "@/constants";
+import { debugLog } from "./debug";
 
 // ----- Types based on Moxfield API response -----
 
@@ -94,10 +95,10 @@ export async function fetchMoxfieldDeck(deckId: string): Promise<MoxfieldDeck> {
 
     // Try Electron's native fetch first (uses Chromium's network stack)
     if (electronAPI?.fetchMoxfieldDeck) {
-        console.log(`[moxfieldApi] Using Electron IPC for deck: ${deckId}`);
+        debugLog(`[moxfieldApi] Using Electron IPC for deck: ${deckId}`);
         try {
             const result = await electronAPI.fetchMoxfieldDeck(deckId);
-            console.log(`[moxfieldApi] Electron IPC success: ${result.name}`);
+            debugLog(`[moxfieldApi] Electron IPC success: ${result.name}`);
             return result;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -107,7 +108,7 @@ export async function fetchMoxfieldDeck(deckId: string): Promise<MoxfieldDeck> {
     }
 
     // Fall back to server proxy for web
-    console.log(`[moxfieldApi] Using server proxy for deck: ${deckId}`);
+    debugLog(`[moxfieldApi] Using server proxy for deck: ${deckId}`);
     const response = await fetch(`${API_BASE}/api/moxfield/decks/${deckId}`);
 
     if (!response.ok) {
@@ -119,7 +120,7 @@ export async function fetchMoxfieldDeck(deckId: string): Promise<MoxfieldDeck> {
     }
 
     const result = await response.json();
-    console.log(`[moxfieldApi] Server proxy success: ${result.name}`);
+    debugLog(`[moxfieldApi] Server proxy success: ${result.name}`);
     return result;
 }
 

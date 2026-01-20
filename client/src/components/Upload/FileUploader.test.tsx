@@ -6,8 +6,10 @@ vi.mock('@/helpers/mpc', () => ({
     inferCardNameFromFilename: vi.fn((name) => name),
 }));
 
-vi.mock('@/helpers/undoableActions', () => ({
-    undoableAddCards: vi.fn(),
+vi.mock('@/helpers/ImportOrchestrator', () => ({
+    ImportOrchestrator: {
+        process: vi.fn(),
+    },
 }));
 
 vi.mock('@/helpers/dbUtils', () => ({

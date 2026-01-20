@@ -1,22 +1,22 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { TextInput } from "flowbite-react";
-import { streamCards, type CardInfo } from "@/helpers/streamCards";
+import type { ImportIntent } from "@/helpers/importParsers";
 import { useSettingsStore } from "@/store";
 import { useLoadingStore } from "@/store/loading";
+import { useToastStore } from "@/store/toast";
+import { useCardImport } from "@/hooks/useCardImport";
 import { AutoTooltip } from "../common";
 import {
     extractArchidektDeckId,
     isArchidektUrl,
     fetchArchidektDeck,
     extractCardsFromDeck as extractArchidektCards,
-    getDeckSummary as getArchidektSummary,
 } from "@/helpers/archidektApi";
 import {
     extractMoxfieldDeckId,
     isMoxfieldUrl,
     fetchMoxfieldDeck,
     extractCardsFromDeck as extractMoxfieldCards,
-    getDeckSummary as getMoxfieldSummary,
 } from "@/helpers/moxfieldApi";
 
 type DeckSource = "archidekt" | "moxfield" | null;
@@ -48,11 +48,11 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
     const [deckUrl, setDeckUrl] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const fetchController = useRef<AbortController | null>(null);
 
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
-    const setLoadingMessage = useLoadingStore((state) => state.setLoadingMessage);
-    const globalLanguage = useSettingsStore((s) => s.globalLanguage ?? "en");
+    const showToast = useToastStore((state) => state.showSuccessToast);
+    const preferredArtSource = useSettingsStore((s) => s.preferredArtSource);
+    const { processCards } = useCardImport();
 
     const source = detectSource(deckUrl);
     const isValidUrl = source !== null;
@@ -63,7 +63,7 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
         setLoadingTask("Fetching cards");
 
         try {
-            let cardInfos: CardInfo[] = [];
+            let intents: ImportIntent[] = [];
 
             if (source === "archidekt") {
                 const deckId = extractArchidektDeckId(deckUrl);
@@ -72,19 +72,17 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
                     return;
                 }
 
-                setLoadingMessage("Connecting to Archidekt...");
                 const deck = await fetchArchidektDeck(deckId);
-                const summary = getArchidektSummary(deck);
-                setLoadingMessage(`Found "${summary.name}" with ${summary.cardCount} cards`);
 
                 const cards = extractArchidektCards(deck);
-                cardInfos = cards.map((c) => ({
+                intents = cards.map((c) => ({
                     name: c.name,
                     set: c.set,
                     number: c.number,
                     quantity: c.quantity,
                     category: normalizeCategory(c.category),
-                    isToken: c.isToken,
+                    isToken: c.isToken ?? false,
+                    sourcePreference: preferredArtSource,
                 }));
             } else if (source === "moxfield") {
                 const deckId = extractMoxfieldDeckId(deckUrl);
@@ -93,33 +91,36 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
                     return;
                 }
 
-                setLoadingMessage("Connecting to Moxfield...");
                 const deck = await fetchMoxfieldDeck(deckId);
-                const summary = getMoxfieldSummary(deck);
-                setLoadingMessage(`Found "${summary.name}" with ${summary.cardCount} cards`);
 
                 const cards = extractMoxfieldCards(deck);
-                cardInfos = cards.map((c) => ({
+                intents = cards.map((c) => ({
                     name: c.name,
                     set: c.set,
                     number: c.number,
                     quantity: c.quantity,
                     category: normalizeCategory(c.category),
-                    isToken: c.isToken,
+                    isToken: c.isToken ?? false,
+                    sourcePreference: preferredArtSource,
                 }));
             } else {
                 setError("Invalid URL. Please paste an Archidekt or Moxfield deck link.");
                 return;
             }
 
-            if (cardInfos.length === 0) {
+            if (intents.length === 0) {
                 setError("No cards found in deck. The deck may be empty.");
                 setIsLoading(false);
                 setLoadingTask(null);
                 return;
             }
 
-            await processCardFetch(cardInfos, source);
+            // Clear blocking modal - card processing is non-blocking
+            setLoadingTask(null);
+            showToast(`Importing ${intents.length} cards from deck...`);
+
+            // Process cards and trigger token import on completion
+            await processCards(intents);
             setDeckUrl("");
             onUploadComplete?.();
         } catch (err) {
@@ -128,37 +129,6 @@ export function DeckBuilderImporter({ mobile, onUploadComplete }: Props) {
             setLoadingTask(null);
         } finally {
             setIsLoading(false);
-        }
-    };
-
-    const processCardFetch = async (infos: CardInfo[], importSource: DeckSource) => {
-        setLoadingTask("Fetching cards");
-        setLoadingMessage("Connecting to Scryfall...");
-
-        if (fetchController.current) {
-            fetchController.current.abort();
-        }
-        fetchController.current = new AbortController();
-
-        try {
-            await streamCards({
-                cardInfos: infos,
-                language: globalLanguage,
-                importType: importSource || 'scryfall',
-                signal: fetchController.current.signal,
-                onProgress: (processed, total) => setLoadingMessage(`(${processed} / ${total})`),
-                onFirstCard: () => setLoadingTask(null),
-            });
-        } catch (err: unknown) {
-            if (err instanceof Error && err.name !== "AbortError") {
-                setLoadingTask(null);
-                setError(err.message || "Something went wrong while fetching cards.");
-            } else if (!(err instanceof Error)) {
-                setLoadingTask(null);
-                setError("An unknown error occurred while fetching cards.");
-            }
-        } finally {
-            fetchController.current = null;
         }
     };
 

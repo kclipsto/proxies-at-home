@@ -84,6 +84,7 @@ vi.mock("@/store/settings", () => ({
         getState: vi.fn(() => ({
             defaultCardbackId: "__builtin_mtg__",
         })),
+        subscribe: vi.fn(() => () => { }), // Returns unsubscribe function
     },
 }));
 

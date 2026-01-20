@@ -1,32 +1,80 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MpcImportSection } from './MpcImportSection';
+import { ImportOrchestrator } from '@/helpers/ImportOrchestrator';
+import { handleAutoImportTokens } from '@/helpers/tokenImportHelper';
 
 // Mock dependencies
-vi.mock('@/helpers/mpc', () => ({
-    processMpcImport: vi.fn().mockResolvedValue({ success: true, count: 0 }),
+vi.mock('@/helpers/ImportOrchestrator', () => ({
+    ImportOrchestrator: {
+        process: vi.fn(),
+    },
+}));
+
+vi.mock('@/helpers/tokenImportHelper', () => ({
+    handleAutoImportTokens: vi.fn(),
+}));
+
+vi.mock('@/helpers/importParsers', () => ({
+    parseMpcXml: vi.fn(() => [{ name: 'Test Card', quantity: 1, mpcId: '123' }]),
+}));
+
+const mockSetSortBy = vi.fn();
+const mockGetState = vi.fn(() => ({
+    setSortBy: mockSetSortBy,
+    // The component doesn't read this anymore, the helper does.
+    autoImportTokens: false,
 }));
 
 vi.mock('@/store/settings', () => ({
     useSettingsStore: {
-        getState: vi.fn(() => ({
-            setSortBy: vi.fn(),
-        })),
+        getState: () => mockGetState(),
     },
 }));
 
-import { MpcImportSection } from './MpcImportSection';
-
 describe('MpcImportSection', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+
+        // Mock process to verify onComplete behavior
+        vi.mocked(ImportOrchestrator.process).mockImplementation(async (_intents, options) => {
+            if (options?.onComplete) {
+                await options.onComplete();
+            }
+        });
+    });
+
     it('should render import button', () => {
         render(<MpcImportSection />);
         const button = screen.getByText('Import MPC XML');
         expect(button).toBeDefined();
     });
 
-    it('should render hidden file input', () => {
+    it('should trigger import on file selection', async () => {
         render(<MpcImportSection />);
-        const input = document.getElementById('import-mpc-xml');
-        expect(input).not.toBeNull();
-        expect(input?.className).toContain('hidden');
+        const input = document.getElementById('import-mpc-xml') as HTMLInputElement;
+
+        const file = new File(['<xml>test</xml>'], 'test.xml', { type: 'text/xml' });
+        fireEvent.change(input, { target: { files: [file] } });
+
+        await waitFor(() => {
+            expect(ImportOrchestrator.process).toHaveBeenCalled();
+        });
+    });
+
+    it('should call handleAutoImportTokens on complete', async () => {
+        render(<MpcImportSection />);
+        const input = document.getElementById('import-mpc-xml') as HTMLInputElement;
+
+        const file = new File(['<xml>test</xml>'], 'test.xml', { type: 'text/xml' });
+        fireEvent.change(input, { target: { files: [file] } });
+
+        await waitFor(() => {
+            expect(ImportOrchestrator.process).toHaveBeenCalled();
+            // The component now blindly calls the helper, which handles the conditional check internally
+            expect(handleAutoImportTokens).toHaveBeenCalledWith(expect.objectContaining({
+                silent: true
+            }));
+        });
     });
 });

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { searchMpcAutofill, type MpcAutofillCard } from "@/helpers/mpcAutofillApi";
 import { buildMpcSearchParams, TOKEN_TYPE_COLLISIONS, type MpcCardType } from "@/helpers/tokenQueryUtils";
-import { useSettingsStore } from "@/store";
+import { useSettingsStore, useUserPreferencesStore } from "@/store";
 
 export interface MpcFilterState {
     minDpi: number;
@@ -64,11 +64,14 @@ export function useMpcSearch(
 ): MpcSearchResult {
     const { autoSearch = true, cardData, cardType: overrideCardType } = options;
 
-    // Settings store for favorites
-    const favoriteMpcSources = useSettingsStore(s => s.favoriteMpcSources);
-    const favoriteMpcTags = useSettingsStore(s => s.favoriteMpcTags);
-    const favoriteMpcDpi = useSettingsStore(s => s.favoriteMpcDpi);
-    const favoriteMpcSort = useSettingsStore(s => s.favoriteMpcSort);
+    // User Preferences store for favorites
+    const preferences = useUserPreferencesStore(s => s.preferences);
+    const favoriteMpcSources = useMemo(() => preferences?.favoriteMpcSources ?? [], [preferences?.favoriteMpcSources]);
+    const favoriteMpcTags = useMemo(() => preferences?.favoriteMpcTags ?? [], [preferences?.favoriteMpcTags]);
+    const favoriteMpcDpi = preferences?.favoriteMpcDpi ?? null;
+    const favoriteMpcSort = preferences?.favoriteMpcSort ?? null;
+
+    // Settings for fuzzy search
     const mpcFuzzySearch = useSettingsStore(s => s.mpcFuzzySearch);
 
     // Search state

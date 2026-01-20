@@ -56,38 +56,60 @@ interface CardsResponse {
     }>;
 }
 
-// Helper to fetch cards in batches
+// Helper to fetch cards in batches with retry on 5xx errors
 async function fetchCardsData(identifiers: string[]): Promise<Record<string, MpcCard>> {
     const BATCH_SIZE = 1000;
+    const MAX_RETRIES = 3;
     const cardMap: Record<string, MpcCard> = {};
 
     for (let i = 0; i < identifiers.length; i += BATCH_SIZE) {
         const batch = identifiers.slice(i, i + BATCH_SIZE);
-        const cardsResponse = await axios.post<CardsResponse>(
-            `${MPC_AUTOFILL_BASE}/2/cards/`,
-            { cardIdentifiers: batch },
-            {
-                headers: { "Content-Type": "application/json" },
-                timeout: 30000,
-            }
-        );
+        let lastError: Error | null = null;
 
-        Object.values(cardsResponse.data.results || {}).forEach(card => {
-            if (card) {
-                cardMap[card.identifier] = {
-                    identifier: card.identifier,
-                    name: card.name,
-                    smallThumbnailUrl: card.smallThumbnailUrl,
-                    mediumThumbnailUrl: card.mediumThumbnailUrl,
-                    dpi: card.dpi,
-                    tags: card.tags || [],
-                    sourceName: card.sourceName,
-                    source: card.source,
-                    extension: card.extension,
-                    size: card.size,
-                };
+        // Retry with exponential backoff for 5xx errors
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const cardsResponse = await axios.post<CardsResponse>(
+                    `${MPC_AUTOFILL_BASE}/2/cards/`,
+                    { cardIdentifiers: batch },
+                    {
+                        headers: { "Content-Type": "application/json" },
+                        timeout: 30000,
+                    }
+                );
+
+                Object.values(cardsResponse.data.results || {}).forEach(card => {
+                    if (card) {
+                        cardMap[card.identifier] = {
+                            identifier: card.identifier,
+                            name: card.name,
+                            smallThumbnailUrl: card.smallThumbnailUrl,
+                            mediumThumbnailUrl: card.mediumThumbnailUrl,
+                            dpi: card.dpi,
+                            tags: card.tags || [],
+                            sourceName: card.sourceName,
+                            source: card.source,
+                            extension: card.extension,
+                            size: card.size,
+                        };
+                    }
+                });
+                break; // Success - exit retry loop
+            } catch (err: unknown) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                const axiosError = err as { response?: { status?: number } };
+                const status = axiosError?.response?.status || 0;
+
+                // Only retry on 5xx server errors
+                if (status >= 500 && attempt < MAX_RETRIES) {
+                    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                    console.warn(`[MPC] 5xx error (${status}), retrying in ${delay}ms...`);
+                    await new Promise(r => setTimeout(r, delay));
+                } else {
+                    throw lastError;
+                }
             }
-        });
+        }
     }
     return cardMap;
 }

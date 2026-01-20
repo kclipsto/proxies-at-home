@@ -70,6 +70,8 @@ vi.mock('@/db', () => ({
         }),
         cards: { clear: vi.fn() },
         images: { clear: vi.fn() },
+        user_images: { clear: vi.fn() },
+        projects: { clear: vi.fn() },
         settings: { clear: vi.fn() },
         cardMetadataCache: { clear: vi.fn() },
         mpcSearchCache: { clear: vi.fn() },
@@ -230,9 +232,9 @@ describe('ApplicationSection', () => {
     });
 
     describe('reset settings', () => {
-        it('should call resetSettings when Reset Settings button is clicked', () => {
+        it('should call resetSettings when Restore Factory Settings button is clicked', () => {
             render(<ApplicationSection />);
-            fireEvent.click(screen.getByText('Reset Settings'));
+            fireEvent.click(screen.getByText('Restore Factory Settings'));
             expect(mockSetters.resetSettings).toHaveBeenCalled();
         });
     });

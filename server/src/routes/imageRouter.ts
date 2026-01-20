@@ -104,6 +104,13 @@ if (!fs.existsSync(cacheDir)) {
 const MAX_CACHE_SIZE_BYTES = 12 * 1024 * 1024 * 1024; // 12GB (leaves 8GB for system/logs)
 let lastCacheCleanup = 0;
 
+// Track in-progress writes to prevent concurrent file corruption
+const writeInProgress = new Set<string>();
+
+// In-memory cache of URL→path mappings to avoid fs.existsSync syscalls
+import { LRUCache } from "../utils/lruCache.js";
+const urlPathCache = new LRUCache<string, string>(5000); // Cache 5000 hot URLs
+
 async function checkAndCleanCache() {
   const now = Date.now();
   // Only check every 5 minutes to avoid excessive disk I/O
@@ -111,14 +118,15 @@ async function checkAndCleanCache() {
   lastCacheCleanup = now;
 
   try {
-    const files = fs.readdirSync(cacheDir);
+    // Use async filesystem operations to avoid blocking event loop
+    const files = await fs.promises.readdir(cacheDir);
     const fileStats: { path: string; atime: number; size: number }[] = [];
     let totalSize = 0;
 
     for (const file of files) {
       const filePath = path.join(cacheDir, file);
       try {
-        const stats = fs.statSync(filePath);
+        const stats = await fs.promises.stat(filePath);
         if (stats.isFile()) {
           fileStats.push({ path: filePath, atime: stats.atimeMs, size: stats.size });
           totalSize += stats.size;
@@ -142,7 +150,7 @@ async function checkAndCleanCache() {
       for (const file of fileStats) {
         if (totalSize - removedSize < targetSize) break;
         try {
-          fs.unlinkSync(file.path);
+          await fs.promises.unlink(file.path);
           removedSize += file.size;
           removedCount++;
         } catch (err: unknown) {
@@ -202,6 +210,12 @@ interface EnrichedCard {
       png?: string;
     };
   }>;
+  token_parts?: Array<{
+    id?: string;
+    name: string;
+    type_line?: string;
+    uri?: string;
+  }>;
 }
 
 /**
@@ -219,6 +233,9 @@ function extractEnrichedCard(
     if (!colors) colors = data.card_faces[0].colors;
     if (!mana_cost) mana_cost = data.card_faces[0].mana_cost;
   }
+
+  // Extract token parts
+  const token_parts = extractTokenParts(data);
 
   return {
     name: data.name ?? card.name, // Use canonical Scryfall name, fall back to query name
@@ -238,6 +255,7 @@ function extractEnrichedCard(
       colors: f.colors,
       image_uris: f.image_uris,
     })),
+    token_parts, // Include token parts in enrichment response
   };
 }
 
@@ -440,40 +458,69 @@ imageRouter.get("/proxy", async (req: Request, res: Response) => {
   checkAndCleanCache().catch((err: unknown) => console.error("[CACHE] Cleanup failed:", err));
 
   try {
+    // Fast path: check in-memory cache first to avoid fs.existsSync syscall
+    const cachedPath = urlPathCache.get(originalUrl);
+    if (cachedPath && fs.existsSync(cachedPath)) {
+      const now = new Date();
+      fs.promises.utimes(cachedPath, now, now).catch(() => { /* ignore */ });
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.sendFile(cachedPath);
+    }
+
+    // Fallback to disk check
     if (fs.existsSync(localPath)) {
       // Update access time for LRU (fire-and-forget, don't block response)
       const now = new Date();
       fs.promises.utimes(localPath, now, now).catch(() => { /* ignore */ });
+      urlPathCache.set(originalUrl, localPath); // Add to in-memory cache
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       return res.sendFile(localPath);
     }
 
-    // Fix for relative URLs (e.g. from client proxying to itself)
-    const fetchUrl = originalUrl.startsWith("/")
-      ? `http://127.0.0.1:${process.env.PORT || 3001}${originalUrl}`
-      : originalUrl;
-
-    // Use imageFetchLimit to prevent overwhelming server with concurrent fetches
-    const response = await imageFetchLimit(() => getWithRetry(fetchUrl, { responseType: "arraybuffer" }));
-
-    if (response.status >= 400 || !response.data) {
-      return res.status(502).json({ error: "Upstream error", status: response.status });
-    }
-    if (response.data.length === 0) {
-      return res.status(502).json({ error: "Upstream is a 0-byte image" });
+    // Wait for any in-progress write to the same path to complete
+    if (writeInProgress.has(localPath)) {
+      await new Promise(r => setTimeout(r, 100));
+      if (fs.existsSync(localPath)) {
+        urlPathCache.set(originalUrl, localPath);
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return res.sendFile(localPath);
+      }
     }
 
-    const ct = String(response.headers["content-type"] || "").toLowerCase();
-    if (!ct.startsWith("image/")) {
-      return res.status(502).json({ error: "Upstream not image", ct });
+    // Mark path as being written to prevent concurrent corruption
+    writeInProgress.add(localPath);
+
+    try {
+      // Fix for relative URLs (e.g. from client proxying to itself)
+      const fetchUrl = originalUrl.startsWith("/")
+        ? `http://127.0.0.1:${process.env.PORT || 3001}${originalUrl}`
+        : originalUrl;
+
+      // Use imageFetchLimit to prevent overwhelming server with concurrent fetches
+      const response = await imageFetchLimit(() => getWithRetry(fetchUrl, { responseType: "arraybuffer" }));
+
+      if (response.status >= 400 || !response.data) {
+        return res.status(502).json({ error: "Upstream error", status: response.status });
+      }
+      if (response.data.length === 0) {
+        return res.status(502).json({ error: "Upstream is a 0-byte image" });
+      }
+
+      const ct = String(response.headers["content-type"] || "").toLowerCase();
+      if (!ct.startsWith("image/")) {
+        return res.status(502).json({ error: "Upstream not image", ct });
+      }
+
+      // Write to cache
+      await fs.promises.writeFile(localPath, Buffer.from(response.data));
+      urlPathCache.set(originalUrl, localPath); // Update in-memory cache
+
+      res.setHeader("Content-Type", ct);
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.sendFile(localPath);
+    } finally {
+      writeInProgress.delete(localPath);
     }
-
-    // Write to cache asynchronously (non-blocking)
-    await fs.promises.writeFile(localPath, Buffer.from(response.data));
-
-    res.setHeader("Content-Type", ct);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    return res.sendFile(localPath);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Proxy error:", { message: msg, from: originalUrl });

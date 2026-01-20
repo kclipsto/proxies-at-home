@@ -11,6 +11,7 @@ vi.mock("../db", () => ({
     images: {
       get: vi.fn(),
       update: vi.fn(),
+      put: vi.fn(),
     },
   },
 }));
@@ -37,6 +38,9 @@ vi.mock("../store", () => ({
       }),
     }
   ),
+  useProjectStore: vi.fn((selector) => selector({
+    currentProjectId: 'test-project-id',
+  })),
 }));
 
 describe("useImageProcessing", () => {
@@ -120,7 +124,7 @@ describe("useImageProcessing", () => {
     });
 
     expect(mockProcess).toHaveBeenCalledTimes(1);
-    expect(db.images.update).toHaveBeenCalledWith("image123", expect.any(Object));
+    expect(db.images.put).toHaveBeenCalled();
   });
 
   it("should handle image processing failure", async () => {
@@ -141,7 +145,7 @@ describe("useImageProcessing", () => {
 
     // With imageId-keyed loading state, check using getLoadingState
     expect(result.current.getLoadingState(card.imageId)).toBe("error");
-    expect(db.images.update).not.toHaveBeenCalled();
+    expect(db.images.put).not.toHaveBeenCalled();
   });
 
   it("reprocessSelectedImages should process multiple cards", async () => {
@@ -180,9 +184,7 @@ describe("useImageProcessing", () => {
     });
 
     expect(mockProcess).toHaveBeenCalledTimes(2);
-    expect(db.images.update).toHaveBeenCalledTimes(2);
-    expect(db.images.update).toHaveBeenCalledWith('img1', expect.any(Object));
-    expect(db.images.update).toHaveBeenCalledWith('img2', expect.any(Object));
+    expect(db.images.put).toHaveBeenCalledTimes(2);
   });
 
   it("should use originalBlob if available", async () => {
@@ -240,7 +242,7 @@ describe("useImageProcessing", () => {
 
     // With imageId-keyed loading state, check using getLoadingState
     expect(result.current.getLoadingState(card.imageId)).toBe("error");
-    expect(db.images.update).not.toHaveBeenCalled();
+    expect(db.images.put).not.toHaveBeenCalled();
   });
 
   it("reprocessSelectedImages should handle errors", async () => {
@@ -261,7 +263,7 @@ describe("useImageProcessing", () => {
     });
 
     expect(mockProcess).toHaveBeenCalledTimes(1);
-    expect(db.images.update).not.toHaveBeenCalled();
+    expect(db.images.put).not.toHaveBeenCalled();
   });
 
   describe("in-flight deduplication", () => {

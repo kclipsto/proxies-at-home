@@ -107,6 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_notes: ${{ steps.changelog.outputs.notes }}
+      version: ${{ needs.prepare.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -402,3 +403,23 @@ jobs:
 
       - name: Summary
         run: echo "Promoted ${{ steps.latest.outputs.tag }} to stable channel"
+
+  # Cleanup release branch after workflow completes
+  cleanup:
+    needs: [prepare, update-version, release]
+    if: always() && needs.update-version.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete release branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.update-version.outputs.version }}"
+          BRANCH_NAME="release/v${VERSION}"
+
+          echo "Attempting to delete branch: $BRANCH_NAME"
+
+          # Delete the branch if it exists (will fail silently if already deleted by merge)
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${BRANCH_NAME}" 2>/dev/null \
+            && echo "Deleted release branch: $BRANCH_NAME" \
+            || echo "Branch $BRANCH_NAME already deleted or does not exist"

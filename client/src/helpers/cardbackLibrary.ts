@@ -14,6 +14,7 @@ import cardBack from '../assets/cardBack.png';
 import proxxiedBack from '../assets/proxxied-card-back.png';
 import classicDotsBack from '../assets/Classic Dots.png';
 import { db } from '../db';
+import { debugLog } from './debug';
 
 export interface CardbackOption {
     id: string;
@@ -140,6 +141,25 @@ export function invalidateCardbackUrl(id: string) {
 }
 
 /**
+ * Revokes all cached blob URLs and clears the cache.
+ * Call this during app cleanup, when clearing all cards, or when unmounting.
+ * Prevents memory leaks from accumulated blob URLs.
+ */
+export function revokeAllCardbackUrls(): void {
+    cardbackUrlCache.forEach(url => URL.revokeObjectURL(url));
+    cardbackUrlCache.clear();
+}
+
+/**
+ * Resets cardback state for testing purposes.
+ * Revokes all cached URLs and clears the ensured flag.
+ */
+export function _resetCardbackState(): void {
+    revokeAllCardbackUrls();
+    builtinCardbacksEnsured = false;
+}
+
+/**
  * Get all available cardbacks from the cardbacks table.
  * Returns built-in cardbacks plus any user-uploaded or MPC-imported cardbacks.
  */
@@ -167,10 +187,10 @@ export async function getAllCardbacks(): Promise<CardbackOption[]> {
         // Resolve URL
         let imageUrl = '';
         if (cardbackUrlCache.has(img.id)) {
-            // console.log(`[CardbackLib] Cache hit for ${img.id}`);
+            debugLog(`[CardbackLib] Cache hit for ${img.id}`);
             imageUrl = cardbackUrlCache.get(img.id)!;
         } else {
-            console.log(`[CardbackLib] Creating new Blob URL for ${img.id}`);
+            debugLog(`[CardbackLib] Creating new Blob URL for ${img.id}`);
             if (img.displayBlob) {
                 imageUrl = URL.createObjectURL(img.displayBlob);
                 cardbackUrlCache.set(img.id, imageUrl);

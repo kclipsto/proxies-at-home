@@ -3,7 +3,7 @@ import { useSettingsStore } from "./settings";
 
 interface Toast {
     id: string;
-    type: "processing" | "metadata" | "success" | "copy";
+    type: "processing" | "metadata" | "success" | "copy" | "error";
     message: string;
     dismissible: boolean;
 }
@@ -13,13 +13,13 @@ type ToastStore = {
     addToast: (toast: Omit<Toast, "id">) => string;
     removeToast: (id: string) => void;
     clearToasts: () => void;
-    // Convenience methods for common toasts
     showProcessingToast: () => void;
     hideProcessingToast: () => void;
     showMetadataToast: () => void;
     hideMetadataToast: () => void;
     showSuccessToast: (cardName: string) => void;
     showCopyToast: (message: string) => void;
+    showErrorToast: (message: string) => void;
 };
 
 export const useToastStore = create<ToastStore>((set, get) => ({
@@ -113,6 +113,21 @@ export const useToastStore = create<ToastStore>((set, get) => ({
         setTimeout(() => {
             removeToast(id);
         }, 2000);
+    },
+
+    showErrorToast: (message: string) => {
+        const { toasts, addToast, removeToast } = get();
+        // Remove any existing error toasts to prevent stacking
+        toasts.filter(t => t.type === "error").forEach(t => removeToast(t.id));
+        const id = addToast({
+            type: "error",
+            message,
+            dismissible: true,
+        });
+        // Auto-dismiss after 8 seconds for errors
+        setTimeout(() => {
+            removeToast(id);
+        }, 8000);
     },
 }));
 

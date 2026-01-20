@@ -2,14 +2,9 @@ import {
     fetchWithRetry,
     toProxied,
     calibratedBleedTrimPxForHeight,
-    MM_TO_PX,
-    getBleedInPixels,
-    computeDarknessFactorFromImageData,
-    applyEdgeContrastCPU,
-    applyContrastFullCPU,
-    applyDarkenAllCPU,
 } from "./imageProcessing";
-import { processCardImageWebGL } from "./webglImageProcessing";
+import { IMAGE_PROCESSING } from "../constants/imageProcessing";
+import { processCardImageWebGL, processExistingBleedWebGL } from "./webglImageProcessing";
 import { db } from "../db";
 
 export { };
@@ -21,132 +16,10 @@ let API_BASE = "";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // In-flight requests map to prevent duplicate fetches within a session
-const inflightRequests = new Map<string, Promise<Blob>>();
+// Uses reference counting to clean up when all waiters are done
+const inflightRequests = new Map<string, { promise: Promise<Blob>; waiters: number }>();
 
 // Note: DarkenMode type removed - all modes are now pre-generated
-
-/**
- * Resize an image WITHOUT generating new bleed.
- * Used for 'existing' mode where the image already has bleed built in.
- * We resize to match the expected dimensions (card + specified bleed width)
- * and report the correct bleed width for cut guide placement.
- */
-async function resizeWithoutBleed(
-    img: ImageBitmap,
-    bleedWidthMm: number,
-    opts?: { unit?: 'mm' | 'in'; exportDpi?: number; displayDpi?: number }
-): Promise<{
-    exportBlob: Blob;
-    exportDpi: number;
-    exportBleedWidth: number;
-    displayBlob: Blob;
-    displayDpi: number;
-    displayBleedWidth: number;
-    // Per-mode darkened blobs
-    exportBlobDarkenAll: Blob;
-    displayBlobDarkenAll: Blob;
-    exportBlobContrastEdges: Blob;
-    displayBlobContrastEdges: Blob;
-    exportBlobContrastFull: Blob;
-    displayBlobContrastFull: Blob;
-    // Legacy
-    exportBlobDarkened: Blob;
-    displayBlobDarkened: Blob;
-    // For Card Editor live preview
-    baseDisplayBlob: Blob;
-    baseExportBlob: Blob;
-}> {
-    const exportDpi = opts?.exportDpi ?? 300;
-    const displayDpi = opts?.displayDpi ?? 300;
-    const unit = opts?.unit ?? 'mm';
-
-    // Standard MTG card dimensions: 63x88mm
-    const cardWidthMm = 63;
-    const cardHeightMm = 88;
-
-    // Calculate bleed in pixels at each DPI
-    const exportBleedPx = Math.round(getBleedInPixels(bleedWidthMm, unit, exportDpi));
-    const displayBleedPx = Math.round(getBleedInPixels(bleedWidthMm, unit, displayDpi));
-
-    // Calculate total dimensions including bleed
-    const exportWidth = MM_TO_PX(cardWidthMm, exportDpi) + exportBleedPx * 2;
-    const exportHeight = MM_TO_PX(cardHeightMm, exportDpi) + exportBleedPx * 2;
-    const displayWidth = MM_TO_PX(cardWidthMm, displayDpi) + displayBleedPx * 2;
-    const displayHeight = MM_TO_PX(cardHeightMm, displayDpi) + displayBleedPx * 2;
-
-    // Create export canvas and resize image to fit
-    const exportCanvas = new OffscreenCanvas(exportWidth, exportHeight);
-    const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true })!;
-    exportCtx.imageSmoothingQuality = 'high';
-    exportCtx.drawImage(img, 0, 0, exportWidth, exportHeight);
-
-    // Create display canvas
-    const displayCanvas = new OffscreenCanvas(displayWidth, displayHeight);
-    const displayCtx = displayCanvas.getContext('2d', { willReadFrequently: true })!;
-    displayCtx.imageSmoothingQuality = 'high';
-    displayCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
-
-    // Get image data for all darkening modes
-    const exportImageData = exportCtx.getImageData(0, 0, exportWidth, exportHeight);
-    const displayImageData = displayCtx.getImageData(0, 0, displayWidth, displayHeight);
-    const darknessFactor = computeDarknessFactorFromImageData(exportImageData);
-
-    // Convert to blobs (normal versions - mode 0)
-    const exportBlob = await exportCanvas.convertToBlob({ type: 'image/png' });
-    const displayBlob = await displayCanvas.convertToBlob({ type: 'image/png' });
-
-    // --- Mode 1: Darken All ---
-    const exportDataMode1 = new ImageData(new Uint8ClampedArray(exportImageData.data), exportWidth, exportHeight);
-    const displayDataMode1 = new ImageData(new Uint8ClampedArray(displayImageData.data), displayWidth, displayHeight);
-    applyDarkenAllCPU(exportDataMode1);
-    applyDarkenAllCPU(displayDataMode1);
-    exportCtx.putImageData(exportDataMode1, 0, 0);
-    displayCtx.putImageData(displayDataMode1, 0, 0);
-    const exportBlobDarkenAll = await exportCanvas.convertToBlob({ type: 'image/png' });
-    const displayBlobDarkenAll = await displayCanvas.convertToBlob({ type: 'image/png' });
-
-    // --- Mode 2: Contrast Edges ---
-    const exportDataMode2 = new ImageData(new Uint8ClampedArray(exportImageData.data), exportWidth, exportHeight);
-    const displayDataMode2 = new ImageData(new Uint8ClampedArray(displayImageData.data), displayWidth, displayHeight);
-    applyEdgeContrastCPU(exportDataMode2, darknessFactor);
-    applyEdgeContrastCPU(displayDataMode2, darknessFactor);
-    exportCtx.putImageData(exportDataMode2, 0, 0);
-    displayCtx.putImageData(displayDataMode2, 0, 0);
-    const exportBlobContrastEdges = await exportCanvas.convertToBlob({ type: 'image/png' });
-    const displayBlobContrastEdges = await displayCanvas.convertToBlob({ type: 'image/png' });
-
-    // --- Mode 3: Contrast Full ---
-    const exportDataMode3 = new ImageData(new Uint8ClampedArray(exportImageData.data), exportWidth, exportHeight);
-    const displayDataMode3 = new ImageData(new Uint8ClampedArray(displayImageData.data), displayWidth, displayHeight);
-    applyContrastFullCPU(exportDataMode3, darknessFactor);
-    applyContrastFullCPU(displayDataMode3, darknessFactor);
-    exportCtx.putImageData(exportDataMode3, 0, 0);
-    displayCtx.putImageData(displayDataMode3, 0, 0);
-    const exportBlobContrastFull = await exportCanvas.convertToBlob({ type: 'image/png' });
-    const displayBlobContrastFull = await displayCanvas.convertToBlob({ type: 'image/png' });
-
-    return {
-        exportBlob,
-        exportDpi,
-        exportBleedWidth: bleedWidthMm,
-        displayBlob,
-        displayDpi,
-        displayBleedWidth: bleedWidthMm,
-        // Per-mode blobs
-        exportBlobDarkenAll,
-        displayBlobDarkenAll,
-        exportBlobContrastEdges,
-        displayBlobContrastEdges,
-        exportBlobContrastFull,
-        displayBlobContrastFull,
-        // Legacy (maps to contrast-edges)
-        exportBlobDarkened: exportBlobContrastEdges,
-        displayBlobDarkened: displayBlobContrastEdges,
-        // For Card Editor live preview
-        baseDisplayBlob: displayBlob,
-        baseExportBlob: exportBlob,
-    };
-}
 
 /**
  * Extract a stable cache key from a URL.
@@ -154,32 +27,37 @@ async function resizeWithoutBleed(
  * - Scryfall URLs: use the path without query params (e.g., "scry:/front/a/b/12345.png")
  * - Other URLs: use as-is
  */
-function getCacheKey(url: string): string {
+/**
+ * Extract a stable cache key from a URL.
+ * - MPC URLs: use the Google Drive id parameter (e.g., "mpc:abc123")
+ * - Scryfall URLs: use the path without query params (e.g., "scry:/front/a/b/12345.png")
+ * - Other URLs: use as-is
+ */
+function getCacheKey(url: string, dpi: number, bleedMm: number): string {
+    let baseKey = url;
     try {
         const parsed = new URL(url);
 
         // MPC Google Drive URLs: /api/cards/images/mpc?id=...
         if (parsed.pathname.includes('/api/cards/images/mpc')) {
             const id = parsed.searchParams.get('id');
-            if (id) return `mpc:${id}`;
+            if (id) baseKey = `mpc:${id}`;
         }
-
         // Scryfall URLs: use path (stable across hosts)
-        if (parsed.hostname.includes('scryfall.io') || parsed.hostname.includes('scryfall.com')) {
-            return `scry:${parsed.pathname}`;
+        else if (parsed.hostname.includes('scryfall.io') || parsed.hostname.includes('scryfall.com')) {
+            baseKey = `scry:${parsed.pathname}`;
         }
-
         // Proxy URLs: extract the original URL from the query param
-        if (parsed.pathname.includes('/api/cards/images/proxy')) {
+        else if (parsed.pathname.includes('/api/cards/images/proxy')) {
             const originalUrl = parsed.searchParams.get('url');
-            if (originalUrl) return getCacheKey(originalUrl); // Recursive call to normalize
+            if (originalUrl) return getCacheKey(originalUrl, dpi, bleedMm); // Recursive call
         }
 
-        // Default: use the full URL
-        return url;
+        // Add DPI and bleed settings to key to invalidate cache when settings change
+        return `${baseKey}:${dpi}:${bleedMm.toFixed(2)}`;
     } catch {
-        // If URL parsing fails, use as-is
-        return url;
+        // If URL parsing fails, use as-is but still append settings
+        return `${url}:${dpi}:${bleedMm.toFixed(2)}`;
     }
 }
 
@@ -195,8 +73,12 @@ self.onmessage = async (e: MessageEvent) => {
         bleedMode,
         existingBleedMm,
         dpi,
+        displayDpi: msgDisplayDpi, // Optional display DPI from message
+        darkenMode, // 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
     } = e.data;
     API_BASE = apiBase;
+
+    const effectiveDisplayDpi = msgDisplayDpi ?? 300; // Default to 300 if not provided
 
     if (typeof OffscreenCanvas === "undefined") {
         self.postMessage({ uuid, error: "OffscreenCanvas is not supported in this environment." });
@@ -206,7 +88,8 @@ self.onmessage = async (e: MessageEvent) => {
     try {
         const proxiedUrl = url.startsWith("http") ? toProxied(url, API_BASE) : url;
         // Use stable cache key for better hit rate across sessions and environments
-        const cacheKey = getCacheKey(url.startsWith("http") ? url : proxiedUrl);
+        // Only use sophisticated cache key for http URLs, otherwise use url as base
+        const cacheKey = getCacheKey(url.startsWith("http") ? url : proxiedUrl, dpi, bleedEdgeWidth);
 
         let blob: Blob | undefined;
         let cacheHit = false;
@@ -228,14 +111,26 @@ self.onmessage = async (e: MessageEvent) => {
 
         // 2. If not cached, check in-flight requests or fetch
         if (!cacheHit) {
-            if (inflightRequests.has(proxiedUrl)) {
-                blob = await inflightRequests.get(proxiedUrl)!;
+            const existingRequest = inflightRequests.get(proxiedUrl);
+            if (existingRequest) {
+                // Join existing request
+                existingRequest.waiters++;
+                try {
+                    blob = await existingRequest.promise;
+                } finally {
+                    existingRequest.waiters--;
+                    if (existingRequest.waiters === 0) {
+                        inflightRequests.delete(proxiedUrl);
+                    }
+                }
             } else {
+                // Start new request
                 const loadPromise = (async () => {
                     const response = await fetchWithRetry(proxiedUrl, 3, 250);
                     return await response.blob();
                 })();
-                inflightRequests.set(proxiedUrl, loadPromise);
+                const entry = { promise: loadPromise, waiters: 1 };
+                inflightRequests.set(proxiedUrl, entry);
                 try {
                     blob = await loadPromise;
 
@@ -256,8 +151,11 @@ self.onmessage = async (e: MessageEvent) => {
                     inflightRequests.delete(proxiedUrl);
                     throw fetchError;
                 } finally {
-                    // Clean up in-flight after a delay to handle concurrent requests
-                    setTimeout(() => inflightRequests.delete(proxiedUrl), 1000);
+                    // Clean up when all waiters are done
+                    entry.waiters--;
+                    if (entry.waiters === 0) {
+                        inflightRequests.delete(proxiedUrl);
+                    }
                 }
             }
         }
@@ -266,8 +164,7 @@ self.onmessage = async (e: MessageEvent) => {
         async function createTrimmedBitmapWithExistingBleed(inputBlob: Blob, existingMm: number): Promise<ImageBitmap> {
             const tempBitmap = await createImageBitmap(inputBlob);
             // Standard MTG card is ~63x88mm, calculate pixel ratio
-            const cardHeightMm = 88;
-            const pxPerMm = tempBitmap.height / (cardHeightMm + existingMm * 2);
+            const pxPerMm = tempBitmap.height / (IMAGE_PROCESSING.CARD_HEIGHT_MM + existingMm * 2);
             const trim = Math.round(existingMm * pxPerMm);
             const w = tempBitmap.width - trim * 2;
             const h = tempBitmap.height - trim * 2;
@@ -317,7 +214,7 @@ self.onmessage = async (e: MessageEvent) => {
                     // Target is less than or equal to existing - just trim to target, no generation needed
                     // Trim from existingBleedMm down to targetBleedMm
                     const trimAmount = existingBleedMm - targetBleedMm;
-                    if (trimAmount > 0.01) { // Only trim if meaningful difference
+                    if (trimAmount > IMAGE_PROCESSING.BLEED_TRIM_EPSILON_MM) { // Only trim if meaningful difference
                         imageBitmap = await createTrimmedBitmapWithExistingBleed(blob!, trimAmount);
                     } else {
                         // Existing bleed matches target exactly
@@ -325,10 +222,11 @@ self.onmessage = async (e: MessageEvent) => {
                     }
                     // Use 'existing' mode for rendering since we're using the built in bleed (trimmed or not)
                     // The result will have exactly targetBleedMm of bleed
-                    const result = await resizeWithoutBleed(imageBitmap, targetBleedMm, {
+                    const result = await processExistingBleedWebGL(imageBitmap, targetBleedMm, {
                         unit: 'mm',
                         exportDpi: dpi,
-                        displayDpi: 300,
+                        displayDpi: effectiveDisplayDpi,
+                        darkenMode,
                     });
                     imageBitmap.close();
                     self.postMessage({ uuid, imageCacheHit: cacheHit, ...result });
@@ -358,18 +256,20 @@ self.onmessage = async (e: MessageEvent) => {
         if (bleedMode === 'existing') {
             // For existing mode, use existingBleedMm (the bleed already in the image)
             // This determines the card+bleed dimensions and cut guide placement
-            const existingBleed = existingBleedMm ?? 3.175; // Default to 1/8 inch if not specified
-            result = await resizeWithoutBleed(imageBitmap, existingBleed, {
+            const existingBleed = existingBleedMm ?? IMAGE_PROCESSING.DEFAULT_MPC_BLEED_MM; // Default to 1/8 inch if not specified
+            result = await processExistingBleedWebGL(imageBitmap, existingBleed, {
                 unit: 'mm', // existingBleedMm is always in mm
                 exportDpi: dpi,
-                displayDpi: 300,
+                displayDpi: effectiveDisplayDpi,
+                darkenMode,
             });
         } else if (bleedMode === 'none') {
             // For 'none' mode, resize to card size without any bleed
-            result = await resizeWithoutBleed(imageBitmap, 0, {
+            result = await processExistingBleedWebGL(imageBitmap, 0, {
                 unit: 'mm',
                 exportDpi: dpi,
-                displayDpi: 300,
+                displayDpi: effectiveDisplayDpi,
+                darkenMode,
             });
         } else {
             // For generate mode (and legacy), run WebGL bleed processing
@@ -377,8 +277,9 @@ self.onmessage = async (e: MessageEvent) => {
             result = await processCardImageWebGL(imageBitmap, bleedEdgeWidth, {
                 unit,
                 exportDpi: dpi,
-                displayDpi: 300,
+                displayDpi: effectiveDisplayDpi,
                 inputHasBleedMm: (hasBuiltInBleed && existingBleedMm) ? existingBleedMm : undefined,
+                darkenMode,
             });
         }
 

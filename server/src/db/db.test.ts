@@ -2,10 +2,11 @@ import { describe, beforeEach, afterEach, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 // We need to test the actual implementation
-// Create a test database in a temp location
-const TEST_DB_PATH = path.join(__dirname, 'test-proxxied-cards.db');
+// Create a test database in temp location
+const TEST_DB_PATH = path.join(os.tmpdir(), 'test-proxxied-cards.db');
 
 describe('Database Layer', () => {
     let db: Database.Database;
@@ -200,6 +201,35 @@ describe('Database Layer', () => {
             const sizeBytes = pageCount * pageSize;
 
             expect(sizeBytes).toBeGreaterThan(0);
+        });
+    });
+
+    describe('PRAGMA Optimizations', () => {
+        it('should have WAL mode enabled', () => {
+            const result = db.pragma('journal_mode') as { journal_mode: string }[];
+            expect(result[0].journal_mode).toBe('wal');
+        });
+
+        it('should support synchronous = NORMAL setting', () => {
+            // Set and verify synchronous mode
+            // NORMAL = 1, FULL = 2, OFF = 0
+            db.pragma('synchronous = NORMAL');
+            const result = db.pragma('synchronous') as { synchronous: number }[];
+            expect(result[0].synchronous).toBe(1); // NORMAL = 1
+        });
+
+        it('should support temp_store = MEMORY setting', () => {
+            // MEMORY = 2, FILE = 1, DEFAULT = 0
+            db.pragma('temp_store = MEMORY');
+            const result = db.pragma('temp_store') as { temp_store: number }[];
+            expect(result[0].temp_store).toBe(2); // MEMORY = 2
+        });
+
+        it('should support mmap_size setting', () => {
+            const mmapSize = 268435456; // 256MB
+            db.pragma(`mmap_size = ${mmapSize}`);
+            const result = db.pragma('mmap_size') as { mmap_size: number }[];
+            expect(result[0].mmap_size).toBe(mmapSize);
         });
     });
 });

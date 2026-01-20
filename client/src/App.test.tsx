@@ -13,6 +13,15 @@ vi.mock('@/components/common', () => ({
     AboutModal: () => <div data-testid="about-modal">AboutModal</div>,
 }));
 
+// Mock ImageProcessor to avoid Worker errors in jsdom
+vi.mock('@/helpers/imageProcessor', () => ({
+    ImageProcessor: {
+        getInstance: () => ({
+            prewarm: vi.fn(),
+        }),
+    },
+}));
+
 import App from './App';
 
 // Helper to wrap App with Suspense for lazy loading

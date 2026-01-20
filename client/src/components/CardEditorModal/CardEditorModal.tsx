@@ -33,6 +33,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { ZoomControls } from '../PageView/ZoomControls';
 import { PixiCardPreview } from '../PixiPage/PixiCardPreview';
 import { useSettingsStore } from '@/store/settings';
+import { useUserPreferencesStore } from '@/store/userPreferences';
 import { useOnClickOutside } from '@/hooks/useOnClickOutside';
 import { DEFAULT_RENDER_PARAMS, type RenderParams } from '../CardCanvas';
 import type { CardOption, CardOverrides } from '../../../../shared/types';
@@ -240,8 +241,18 @@ export function CardEditorModal({
     const prevFrontBlobRef = useRef<Blob | null>(null);
     const prevBackBlobRef = useRef<Blob | null>(null);
 
-    // Section open state (persisted in settings, default to all expanded)
-    const { cardEditorSectionCollapsed, setCardEditorSectionCollapsed, cardEditorSectionOrder, setCardEditorSectionOrder } = useSettingsStore();
+    // Section open state (persisted in user preferences, default to all expanded)
+    const cardEditorSectionCollapsed = useUserPreferencesStore((state) => state.preferences?.cardEditorSectionCollapsed ?? {});
+    const setCardEditorSectionCollapsed = useUserPreferencesStore((state) => state.setCardEditorSectionCollapsed);
+
+    // Section order (persisted in user preferences)
+    const cardEditorSectionOrder = useUserPreferencesStore((state) =>
+        (state.preferences?.cardEditorSectionOrder && state.preferences.cardEditorSectionOrder.length > 0)
+            ? state.preferences.cardEditorSectionOrder
+            : ['basic', 'enhance', 'darkPixels', 'holographic', 'colorReplace', 'gamma', 'colorEffects', 'borderEffects']
+    );
+    const setCardEditorSectionOrder = useUserPreferencesStore((state) => state.setCardEditorSectionOrder);
+
     // Helper to check if a section is open (not collapsed = open)
     const isSectionOpen = useCallback((id: string) => !cardEditorSectionCollapsed[id], [cardEditorSectionCollapsed]);
 
@@ -404,9 +415,11 @@ export function CardEditorModal({
             }
         }
     }, [card.uuid, backCard, showBack, defaultParams, setParams, onApply, onApplyToSelected, selectedCardUuids]);
-
     const toggleSection = useCallback((id: string) => {
-        setCardEditorSectionCollapsed(id, !cardEditorSectionCollapsed[id]);
+        setCardEditorSectionCollapsed({
+            ...cardEditorSectionCollapsed,
+            [id]: !cardEditorSectionCollapsed[id]
+        });
     }, [cardEditorSectionCollapsed, setCardEditorSectionCollapsed]);
 
     // Section IDs for expand/collapse all
@@ -415,10 +428,14 @@ export function CardEditorModal({
     const shouldExpand = collapsedCount >= SECTION_IDS.length / 2;
 
     const toggleAllSections = useCallback(() => {
-        // If more than half are collapsed, expand all; otherwise collapse all
-        SECTION_IDS.forEach(id => {
-            setCardEditorSectionCollapsed(id, !shouldExpand);
-        });
+        // If more than half are collapsed, expand all (false); otherwise collapse all (true)
+        // We use reduce to build the new state object
+        const newCollapsed = SECTION_IDS.reduce((acc, id) => ({
+            ...acc,
+            [id]: !shouldExpand
+        }), {} as Record<string, boolean>);
+
+        setCardEditorSectionCollapsed(newCollapsed);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shouldExpand, setCardEditorSectionCollapsed]);
 

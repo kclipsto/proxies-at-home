@@ -8,6 +8,7 @@ import {
     overridesToRenderParams,
     hasAdvancedOverrides,
     renderCardWithOverridesWorker,
+    resetEffectContextManager,
 } from "./cardCanvasWorker";
 import { DEFAULT_RENDER_PARAMS } from "../components/CardCanvas/types";
 import type { CardOverrides } from "../../../shared/types";
@@ -79,6 +80,7 @@ const createMockGl = () => {
         drawArrays: vi.fn(),
         getError: vi.fn(() => 0),
         getExtension: vi.fn(() => ({ loseContext: vi.fn() })),
+        isContextLost: vi.fn(() => false),
     };
     return mockGl as unknown as WebGL2RenderingContext;
 };
@@ -345,6 +347,7 @@ describe("cardCanvasWorker", () => {
             expect(hasAdvancedOverrides({ contrast: 1 })).toBe(false);
         });
 
+
         it("should return true for saturation adjustment", () => {
             expect(hasAdvancedOverrides({ saturation: 0.5 })).toBe(true);
         });
@@ -414,9 +417,13 @@ describe("cardCanvasWorker", () => {
                     return mockGl;
                 }
                 convertToBlob = mockConvertToBlob;
+                addEventListener = vi.fn();
             }
 
             globalThis.OffscreenCanvas = MockOffscreenCanvas as unknown as typeof OffscreenCanvas;
+
+            // Reset the context manager so it picks up the mocked OffscreenCanvas
+            resetEffectContextManager();
         });
 
         afterEach(() => {
@@ -450,7 +457,7 @@ describe("cardCanvasWorker", () => {
 
             // Verify rendering completed successfully
             expect(result).toBeInstanceOf(Blob);
-            // Verify uniform1f was called for various render params
+            // Verify uniform1f was called multiple times (includes brightness)
             expect((mockGl as unknown as { uniform1f: ReturnType<typeof vi.fn> }).uniform1f).toHaveBeenCalled();
         });
 
@@ -476,13 +483,14 @@ describe("cardCanvasWorker", () => {
                     return null; // Simulate WebGL2 not supported
                 }
                 convertToBlob = vi.fn();
+                addEventListener = vi.fn();
             }
             globalThis.OffscreenCanvas = MockOffscreenCanvasNoWebGL as unknown as typeof OffscreenCanvas;
 
             const mockBitmap = { width: 100, height: 100 } as ImageBitmap;
 
             await expect(renderCardWithOverridesWorker(mockBitmap, DEFAULT_RENDER_PARAMS))
-                .rejects.toThrow("WebGL2 not supported in worker");
+                .rejects.toThrow("WebGL2 not supported");
         });
 
         it("should clean up WebGL resources after rendering", async () => {
@@ -551,6 +559,7 @@ describe("cardCanvasWorker", () => {
                     return errorGl;
                 }
                 convertToBlob = vi.fn();
+                addEventListener = vi.fn();
             }
             globalThis.OffscreenCanvas = MockOffscreenCanvasWithError as unknown as typeof OffscreenCanvas;
 

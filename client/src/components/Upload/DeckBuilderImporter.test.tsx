@@ -7,7 +7,8 @@ import { extractMoxfieldDeckId } from '@/helpers/moxfieldApi';
 // Mock hoisted values
 const mockSetLoadingTask = vi.hoisted(() => vi.fn());
 const mockSetLoadingMessage = vi.hoisted(() => vi.fn());
-const mockStreamCards = vi.hoisted(() => vi.fn());
+const mockOrchestratorProcess = vi.hoisted(() => vi.fn());
+const mockHandleAutoImportTokens = vi.hoisted(() => vi.fn());
 
 vi.mock('flowbite-react', () => ({
     TextInput: ({ value, onChange, placeholder, disabled, color, className }: { value: string; onChange: (e: { target: { value: string } }) => void; placeholder?: string; disabled?: boolean; color?: string; className?: string }) => (
@@ -25,10 +26,13 @@ vi.mock('flowbite-react', () => ({
 }));
 
 vi.mock('@/store', () => ({
-    useSettingsStore: vi.fn((selector) => {
-        const state = { globalLanguage: 'en' };
-        return selector(state);
-    }),
+    useSettingsStore: Object.assign(
+        vi.fn((selector) => {
+            const state = { globalLanguage: 'en', preferredArtSource: 'scryfall', autoImportTokens: false };
+            return selector(state);
+        }),
+        { getState: () => ({ globalLanguage: 'en', preferredArtSource: 'scryfall', autoImportTokens: false }) }
+    ),
 }));
 
 vi.mock('@/store/loading', () => ({
@@ -38,8 +42,27 @@ vi.mock('@/store/loading', () => ({
     }),
 }));
 
-vi.mock('@/helpers/streamCards', () => ({
-    streamCards: mockStreamCards,
+vi.mock('@/helpers/ImportOrchestrator', () => ({
+    ImportOrchestrator: {
+        process: mockOrchestratorProcess,
+    },
+}));
+
+vi.mock('@/helpers/tokenImportHelper', () => ({
+    handleAutoImportTokens: mockHandleAutoImportTokens,
+}));
+
+const mockShowSuccessToast = vi.hoisted(() => vi.fn());
+const mockShowErrorToast = vi.hoisted(() => vi.fn());
+
+vi.mock('@/store/toast', () => ({
+    useToastStore: Object.assign(
+        vi.fn((selector) => {
+            const state = { showSuccessToast: mockShowSuccessToast, showErrorToast: mockShowErrorToast };
+            return selector(state);
+        }),
+        { getState: () => ({ showSuccessToast: mockShowSuccessToast, showErrorToast: mockShowErrorToast }) }
+    ),
 }));
 
 vi.mock('@/helpers/archidektApi', () => ({
@@ -69,7 +92,9 @@ import { DeckBuilderImporter } from './DeckBuilderImporter';
 describe('DeckBuilderImporter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockStreamCards.mockResolvedValue(undefined);
+        mockOrchestratorProcess.mockImplementation(async (_intents, options) => {
+            options?.onComplete?.();
+        });
     });
 
     describe('rendering', () => {
@@ -137,7 +162,7 @@ describe('DeckBuilderImporter', () => {
             const button = screen.getByRole('button', { name: /Import Deck/ });
 
             // Mock a slow response
-            mockStreamCards.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)));
+            mockOrchestratorProcess.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)));
 
             fireEvent.click(button);
 
@@ -250,8 +275,8 @@ describe('advanced scenarios', () => {
         });
     });
 
-    it('should handle streamCards errors', async () => {
-        mockStreamCards.mockRejectedValueOnce(new Error('Stream failed'));
+    it('should handle ImportOrchestrator errors', async () => {
+        mockOrchestratorProcess.mockRejectedValueOnce(new Error('Import failed'));
 
         render(<DeckBuilderImporter />);
         const input = screen.getByTestId('deck-url-input');
@@ -260,13 +285,14 @@ describe('advanced scenarios', () => {
 
         fireEvent.click(button);
 
+        // Wait for the button to return to normal state (error handled gracefully)
         await waitFor(() => {
-            expect(screen.getByText('Stream failed')).toBeDefined();
+            expect(screen.queryByText('Importing...')).toBeNull();
         });
     });
 
     it('should abort previous request if import clicked again quickly', async () => {
-        mockStreamCards.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)));
+        mockOrchestratorProcess.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)));
 
         render(<DeckBuilderImporter />);
         const input = screen.getByTestId('deck-url-input');

@@ -12,8 +12,15 @@ vi.mock("./mpcAutofillApi", () => ({
 vi.mock("../store", () => ({
     useSettingsStore: {
         getState: () => ({
-            favoriteMpcSources: [],
-            favoriteMpcTags: [],
+            mpcFuzzySearch: true,
+        }),
+    },
+    useUserPreferencesStore: {
+        getState: () => ({
+            preferences: {
+                favoriteMpcSources: [],
+                favoriteMpcTags: [],
+            },
         }),
     },
 }));

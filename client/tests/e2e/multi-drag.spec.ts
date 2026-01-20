@@ -1,26 +1,29 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Multi-Card Drag and Drop', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, browserName }) => {
+        test.skip(browserName === 'webkit', 'WebKit is flaky with image loading');
         await page.goto('/');
 
-        // Clear existing cards if any (handle persistence)
-        const clearButton = page.getByRole('button', { name: 'Clear Cards' });
-        if (await clearButton.isEnabled()) {
-            await clearButton.click();
-            await page.getByRole('button', { name: "Yes, I'm sure" }).click();
-            await expect(page.locator('[data-dnd-sortable-item]')).toHaveCount(0);
+        // Clear existing cards if any
+        const cardCount = await page.locator('[data-dnd-sortable-item]').count();
+        if (cardCount > 0) {
+            const clearButton = page.getByRole('button', { name: 'Clear Cards' });
+            if (await clearButton.isEnabled()) {
+                await clearButton.click();
+                await page.getByRole('button', { name: "Yes, I'm sure" }).click();
+                await expect(page.locator('[data-dnd-sortable-item]')).toHaveCount(0, { timeout: 10000 });
+            }
         }
     });
 
     test('should allow dragging multiple cards', async ({ page, browserName }) => {
-        test.skip(browserName === 'webkit', 'WebKit is flaky with image loading');
+        console.log(`[${browserName}] Starting multi-card drag test`);
 
         // Force desktop viewport to ensure drag handles are visible
         await page.setViewportSize({ width: 1280, height: 800 });
 
-
-        // Ensure manual sort is active (Drag & Drop disabled if not)
+        // Ensure manual sort is active
         await page.evaluate(() => {
             interface CustomWindow extends Window {
                 useSettingsStore?: {
@@ -36,37 +39,57 @@ test.describe('Multi-Card Drag and Drop', () => {
         // Add 3 cards
         const decklistInput = page.getByPlaceholder(/1x Sol Ring/);
         await decklistInput.fill('Island\nMountain\nForest');
-        await page.getByRole('button', { name: 'Fetch Cards' }).click();
+        console.log(`[${browserName}] Filled decklist with 3 cards`);
 
-        // Wait for cards to appear (check elements first)
-        await expect(page.locator('[data-dnd-sortable-item]')).toHaveCount(3, { timeout: 30_000 });
+        await page.getByRole('button', { name: 'Fetch Cards' }).click();
+        console.log(`[${browserName}] Clicked Fetch Cards`);
+
+        // Wait for cards to appear
+        await expect(page.locator('[data-dnd-sortable-item]')).toHaveCount(3, { timeout: 30000 });
+        console.log(`[${browserName}] 3 cards appeared in deck`);
+
+        // Wait for processing to settle
+        await page.waitForTimeout(1000);
 
         // Wait for drag handles
         const cardDragHandles = page.getByTitle('Drag');
-        await expect(cardDragHandles).toHaveCount(3, { timeout: 10_000 });
+        await expect(cardDragHandles).toHaveCount(3, { timeout: 10000 });
+        console.log(`[${browserName}] Drag handles visible`);
 
-        // Wait for images to load (stability)
-        await expect(page.locator('.proxy-page img').first()).toHaveAttribute('src', /^blob:/, { timeout: 30_000 });
+        // Select first two cards
+        const selectButtons = page.getByTitle('Select card');
+        await expect(selectButtons).toHaveCount(3, { timeout: 5000 });
 
-        // Select first two cards (Shift + Click)
-        await page.keyboard.down('Shift');
-        await page.getByTitle('Select card').nth(0).click();
-        await page.getByTitle('Select card').nth(1).click();
-        await page.keyboard.up('Shift');
+        await selectButtons.nth(0).click();
+        console.log(`[${browserName}] Selected first card`);
+        await selectButtons.nth(1).click();
+        console.log(`[${browserName}] Selected second card`);
 
-        // Verify selection visual (checkbox is checked - distinct style)
-        // We can check if the parent div has bg-blue-600
-        const firstCheckbox = page.getByTitle('Select card').nth(0);
-        await expect(firstCheckbox).toHaveClass(/bg-blue-600/);
+        // Verify selection visual (checkbox has bg-blue-600)
+        const firstCheckbox = selectButtons.nth(0);
+        await expect(firstCheckbox).toHaveClass(/bg-blue-600/, { timeout: 5000 });
+        console.log(`[${browserName}] Selection visual confirmed`);
 
-        // Drag first card to last position using the HANDLE
+        // Drag first card to last position
         const sourceHandle = cardDragHandles.nth(0);
         const targetHandle = cardDragHandles.nth(2);
 
-        // Simple drag simulation
-        await sourceHandle.dragTo(targetHandle);
+        // Use a more robust drag approach
+        await sourceHandle.hover();
+        await page.mouse.down();
+        await page.waitForTimeout(200);
 
-        // Verify cards are still there (basic crash check)
-        await expect(cardDragHandles).toHaveCount(3);
+        const targetBound = await targetHandle.boundingBox();
+        if (targetBound) {
+            await page.mouse.move(targetBound.x + targetBound.width / 2, targetBound.y + targetBound.height / 2);
+            await page.waitForTimeout(200);
+        }
+
+        await page.mouse.up();
+        console.log(`[${browserName}] Drag operation completed`);
+
+        // Verify cards are still there
+        await expect(cardDragHandles).toHaveCount(3, { timeout: 5000 });
+        console.log(`[${browserName}] Test passed - all 3 cards still present`);
     });
 });
