@@ -230,6 +230,24 @@ export function initDatabase(): Database.Database {
       expires_at INTEGER NOT NULL,
       PRIMARY KEY (endpoint, query_hash)
     );
+
+    CREATE TABLE IF NOT EXISTS card_types (
+      card_id TEXT NOT NULL,
+      type TEXT NOT NULL COLLATE NOCASE,
+      is_token INTEGER DEFAULT 0,
+      PRIMARY KEY (card_id, type)
+    );
+
+    CREATE TABLE IF NOT EXISTS token_names (
+      name TEXT PRIMARY KEY COLLATE NOCASE
+    );
+
+    CREATE TABLE IF NOT EXISTS shares (
+      id TEXT PRIMARY KEY,
+      data BLOB NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
   `);
 
   // Create indexes (IF NOT EXISTS for idempotency)
@@ -241,6 +259,9 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_mpc_cache_time ON mpc_search_cache(cached_at);
     CREATE INDEX IF NOT EXISTS idx_scryfall_cache_expires ON scryfall_cache(expires_at);
     CREATE INDEX IF NOT EXISTS idx_scryfall_cache_endpoint_expires ON scryfall_cache(endpoint, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_card_types_type ON card_types(type);
+    CREATE INDEX IF NOT EXISTS idx_card_types_is_token ON card_types(is_token);
+    CREATE INDEX IF NOT EXISTS idx_shares_expires ON shares(expires_at);
   `);
 
   // Run any pending migrations
