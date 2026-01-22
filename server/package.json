@@ -7,7 +7,7 @@
     "test": "vitest run --silent",
     "test:ui": "vitest --ui --coverage.enabled=true",
     "dev": "NODE_ENV=development nodemon --exec tsx src/index.ts",
-    "build": "mkdir -p cardbacks && tsc -p tsconfig.build.json && cp -r cardbacks dist/server/cardbacks",
+    "build": "rm -rf dist && mkdir -p cardbacks && tsc -p tsconfig.build.json && cp -r cardbacks dist/server/",
     "start": "node dist/server/src/index.js",
     "lint": "eslint ."
   },
