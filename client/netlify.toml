@@ -1,6 +1,6 @@
 # Build settings
 [build]
-  command = "npm run build:prerender"
+  command = "npx puppeteer browsers install chrome && npm run build:prerender"
   publish = "static-pages"
 
 # Removed Netlify proxy - now using direct connection via api.proxxied.com

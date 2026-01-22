@@ -635,7 +635,46 @@ const CARDBACK_MAP: Record<string, string> = {
   'classic-dots': 'classic-dots.png',
 };
 
-const cardbacksDir = path.join(__dirname, '../../cardbacks');
+const cardbacksDir = resolveCardbacksDir();
+
+function resolveCardbacksDir(): string {
+  const candidates = [
+    // 1. Standard structure (src/routes -> src -> server -> cardbacks)
+    path.join(__dirname, "..", "..", "cardbacks"),
+    // 2. Deeper nesting (if dist structure varies)
+    path.join(__dirname, "..", "..", "..", "cardbacks"),
+    // 3. Process root fallback (often reliable in Docker)
+    path.join(process.cwd(), "cardbacks"),
+    // 4. Production build specific fallback
+    path.join(process.cwd(), "dist", "server", "cardbacks"),
+    // 5. Monorepo root fallback
+    path.join(process.cwd(), "server", "cardbacks"),
+  ];
+
+  console.log("[Cardbacks] Resolving directory...");
+  console.log(`[Cardbacks] __dirname: ${__dirname}`);
+  console.log(`[Cardbacks] CWD: ${process.cwd()}`);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      console.log(`[Cardbacks] Found valid directory: ${candidate}`);
+      // Verify it actually has images
+      try {
+        const files = fs.readdirSync(candidate);
+        if (files.some(f => f.endsWith(".png"))) {
+          return candidate;
+        }
+        console.warn(`[Cardbacks] Directory exists but has no PNGs: ${candidate}`);
+      } catch (e) {
+        console.warn(`[Cardbacks] Error reading directory ${candidate}:`, e);
+      }
+    }
+  }
+
+  console.error("[Cardbacks] FATAL: Could not find cardbacks directory in candidates:", candidates);
+  // Fallback to strict relative path even if check failed, so we see the original error behavior
+  return path.join(__dirname, "..", "..", "cardbacks");
+}
 
 imageRouter.get("/cardback/:id", (req: Request, res: Response) => {
   const id = req.params.id;
