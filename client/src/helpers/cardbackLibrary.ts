@@ -85,8 +85,10 @@ export async function ensureBuiltinCardbacksInDb(): Promise<void> {
         // Check if already in database
         const existing = await db.cardbacks.get(cardback.id);
 
-        // Skip if it exists AND has originalBlob (properly set up)
+        // Skip if it exists AND has originalBlob (properly set up for normal cardbacks)
+        // OR if it's the blank cardback and already exists (blank has no originalBlob by design)
         if (existing?.originalBlob) continue;
+        if (cardback.id === 'cardback_builtin_blank' && existing) continue;
 
         try {
             // Handle blank cardback specially - no image to fetch
@@ -211,7 +213,7 @@ export async function getAllCardbacks(): Promise<CardbackOption[]> {
     });
 
     // Sort: builtins first in defined order, then user-uploaded alphabetically
-    const priorityOrder = ['cardback_builtin_mtg', 'cardback_builtin_proxxied', 'cardback_builtin_blank', 'cardback_builtin_classic_dots'];
+    const priorityOrder = ['cardback_builtin_mtg', 'cardback_builtin_proxxied', 'cardback_builtin_classic_dots', 'cardback_builtin_blank'];
     return cardbackOptions.sort((a, b) => {
         const aIndex = priorityOrder.indexOf(a.id);
         const bIndex = priorityOrder.indexOf(b.id);
