@@ -383,7 +383,7 @@ export function ArtworkModal() {
 
         try {
             const projectId = activeCard.projectId || useProjectStore.getState().currentProjectId!;
-            const { cardsToAdd } = await ImportOrchestrator.resolve(intent, projectId);
+            const { cardsToAdd, backCardTasks } = await ImportOrchestrator.resolve(intent, projectId);
             const resolved = cardsToAdd[0];
 
             if (resolved) {
@@ -409,6 +409,29 @@ export function ArtworkModal() {
                     cardMetadata,
                     previewImageUrls: isReplacing && resolved.imageId ? [resolved.imageId] : undefined
                 });
+
+                // Handle DFC back face linking
+                if (backCardTasks && backCardTasks.length > 0 && selectedFace === 'front' && modalCard) {
+                    const backTask = backCardTasks[0];
+
+                    if (modalCard.linkedBackId) {
+                        // Update existing back card's image and name
+                        await db.cards.update(modalCard.linkedBackId, {
+                            imageId: backTask.backImageId,
+                            name: backTask.backName,
+                            hasBuiltInBleed: (backTask as { hasBleed?: boolean }).hasBleed ?? false,
+                            usesDefaultCardback: false,
+                        });
+                    } else {
+                        // Create new linked back card
+                        await createLinkedBackCard(
+                            modalCard.uuid,
+                            backTask.backImageId,
+                            backTask.backName,
+                            { hasBuiltInBleed: (backTask as { hasBleed?: boolean }).hasBleed ?? false }
+                        );
+                    }
+                }
             }
 
         } catch (e) {
@@ -447,13 +470,14 @@ export function ArtworkModal() {
 
         try {
             const projectId = activeCard.projectId || useProjectStore.getState().currentProjectId!;
-            const { cardsToAdd } = await ImportOrchestrator.resolve(intent, projectId);
+            const { cardsToAdd, backCardTasks } = await ImportOrchestrator.resolve(intent, projectId);
             const resolved = cardsToAdd[0];
 
             debugLog('[ArtworkModal] handleSelectMpcArt resolved:', {
                 resolvedName: resolved?.name,
                 resolvedImageId: resolved?.imageId,
                 cardsToAddLength: cardsToAdd.length,
+                backCardTasksLength: backCardTasks?.length,
             });
 
             if (resolved && resolved.imageId) {
@@ -476,6 +500,30 @@ export function ArtworkModal() {
                         mana_cost: resolved.mana_cost,
                     }
                 });
+
+                // Handle DFC back face linking
+                if (backCardTasks && backCardTasks.length > 0 && selectedFace === 'front' && modalCard) {
+                    const backTask = backCardTasks[0];
+
+                    if (modalCard.linkedBackId) {
+                        // Update existing back card's image and name
+                        await db.cards.update(modalCard.linkedBackId, {
+                            imageId: backTask.backImageId,
+                            name: backTask.backName,
+                            hasBuiltInBleed: (backTask as { hasBleed?: boolean }).hasBleed ?? false,
+                            usesDefaultCardback: false,
+                        });
+                    } else {
+                        // Create new linked back card
+                        await createLinkedBackCard(
+                            modalCard.uuid,
+                            backTask.backImageId,
+                            backTask.backName,
+                            { hasBuiltInBleed: (backTask as { hasBleed?: boolean }).hasBleed ?? false }
+                        );
+                    }
+                }
+
                 debugLog('[ArtworkModal] handleSelectMpcArt: applyArtworkToCards completed');
             } else {
                 debugLog('[ArtworkModal] handleSelectMpcArt: no resolved card or imageId');
@@ -994,7 +1042,6 @@ export function ArtworkModal() {
                         // MPC path: apply MPC art directly
                         debugLog('[ArtworkModal] onSelectCard: MPC path - calling handleSelectMpcArt');
                         const identifier = mpcImageUrl.split('id=')[1] || '';
-                        setArtSource('mpc');
                         handleSelectMpcArt({
                             identifier,
                             name,
@@ -1010,7 +1057,6 @@ export function ArtworkModal() {
                     } else {
                         // Scryfall path: fetch card data and update modal preview
                         debugLog('[ArtworkModal] onSelectCard: Scryfall path - calling handleSearch');
-                        setArtSource('scryfall');
                         handleSearch(name, true, specificPrint);
                     }
                 }}
