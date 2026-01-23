@@ -678,6 +678,10 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
           return null;
         }
 
+        // Check if card is using blank cardback - if flipped and back is blank, treat as having image
+        const isFlipped = flippedCards.has(pixiCard.card.uuid);
+        const isBlankBack = isFlipped && pixiCard.backImageId === 'cardback_builtin_blank';
+
         return {
           card: pixiCard.card,
           globalIndex: index,
@@ -685,11 +689,12 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
           screenY: contentY,
           width,
           height,
-          hasImage: renderedCardUuids.has(pixiCard.card.uuid),
+          // Blank cardbacks are intentionally shown as empty (no image), so treat as "has image" to hide spinner
+          hasImage: renderedCardUuids.has(pixiCard.card.uuid) || isBlankBack,
         };
       })
       .filter((layout): layout is CardControlLayout => layout !== null);
-  }, [globalPixiCards, effectiveZoom, scrollTop, containerHeight, renderedCardUuids]);
+  }, [globalPixiCards, effectiveZoom, scrollTop, containerHeight, renderedCardUuids, flippedCards]);
 
   // Render
   return (
