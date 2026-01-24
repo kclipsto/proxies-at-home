@@ -8,7 +8,7 @@ import { generateBleedCanvasWebGL } from "./webglImageProcessing";
 import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
 import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesWorker } from "./cardCanvasWorker";
-import { generatePerCardGuide, type GuideStyle } from "./cutGuideUtils";
+import { generatePerCardGuide, executePathCommands, type GuideStyle } from "./cutGuideUtils";
 import { db, type EffectCacheEntry } from "../db";
 import type { CardOption, CardOverrides } from "../../../shared/types";
 import { debugLog } from "./debug";
@@ -251,19 +251,7 @@ function createGuideCanvas(
         ctx.beginPath();
 
         // Execute path commands
-        for (const cmd of commands) {
-            switch (cmd.type) {
-                case 'moveTo':
-                    ctx.moveTo(cmd.x, cmd.y);
-                    break;
-                case 'lineTo':
-                    ctx.lineTo(cmd.x, cmd.y);
-                    break;
-                case 'arc':
-                    ctx.arc(cmd.cx, cmd.cy, cmd.r, cmd.startAngle, cmd.endAngle);
-                    break;
-            }
-        }
+        executePathCommands(ctx, commands);
 
         ctx.stroke();
         ctx.restore();
