@@ -5,7 +5,7 @@
  * These are used by the CardCanvas component for live preview and editing.
  */
 
-import { DARKEN_UNIFORMS_GLSL, DARKEN_FUNCTIONS_GLSL } from './sharedShaders';
+import { DARKEN_UNIFORMS_GLSL, DARKEN_FUNCTIONS_GLSL } from '../../shaders/darkenEffects';
 
 export const VS_CARD_CANVAS = `#version 300 es
 in vec2 a_position;

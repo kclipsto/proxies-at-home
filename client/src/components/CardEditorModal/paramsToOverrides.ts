@@ -21,6 +21,7 @@ export function paramsToOverrides(params: RenderParams): CardOverrides {
         overrides.darkenEdgeWidth = params.darkenEdgeWidth;
         overrides.darkenAmount = params.darkenAmount;
         overrides.darkenBrightness = params.darkenBrightness;
+        overrides.darkenAutoDetect = params.darkenAutoDetect;
     }
     // When darkenUseGlobalSettings is true, we don't save any darken overrides so they fall back to global
 

@@ -8,7 +8,7 @@ import { generateBleedCanvasWebGL } from "./webglImageProcessing";
 import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
 import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesWorker } from "./cardCanvasWorker";
-import { generatePerCardGuide, type GuideStyle } from "./cutGuideUtils";
+import { generatePerCardGuide, executePathCommands, type GuideStyle } from "./cutGuideUtils";
 import { db, type EffectCacheEntry } from "../db";
 import type { CardOption, CardOverrides } from "../../../shared/types";
 import { debugLog } from "./debug";
@@ -251,19 +251,7 @@ function createGuideCanvas(
         ctx.beginPath();
 
         // Execute path commands
-        for (const cmd of commands) {
-            switch (cmd.type) {
-                case 'moveTo':
-                    ctx.moveTo(cmd.x, cmd.y);
-                    break;
-                case 'lineTo':
-                    ctx.lineTo(cmd.x, cmd.y);
-                    break;
-                case 'arc':
-                    ctx.arc(cmd.cx, cmd.cy, cmd.r, cmd.startAngle, cmd.endAngle);
-                    break;
-            }
-        }
+        executePathCommands(ctx, commands);
 
         ctx.stroke();
         ctx.restore();
@@ -299,6 +287,13 @@ self.onmessage = async (event: MessageEvent) => {
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
             imagesById, API_BASE, darkenMode, cutLineStyle, perCardGuideStyle, guidePlacement,
             cutGuideLengthMm,
+            // Darken settings (Global)
+            darkenThreshold,
+            darkenContrast,
+            darkenEdgeWidth,
+            darkenAmount,
+            darkenBrightness,
+            darkenAutoDetect,
             // Receive pre-normalized source settings directly (no legacy conversion)
             sourceSettings, withBleedSourceAmount,
             // Right-align incomplete rows (for backs export)
@@ -435,21 +430,39 @@ self.onmessage = async (event: MessageEvent) => {
             let finalCardCanvas: OffscreenCanvas | ImageBitmap;
             const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
 
-            // Select appropriate blob based on per-card darkenMode override OR global darkenMode setting
+            // Determine effective mode and settings
+            const useGlobalSettings = card.overrides?.darkenUseGlobalSettings ?? true;
             const cardDarkenMode = card.overrides?.darkenMode;
-            const effectiveDarkenMode = cardDarkenMode ?? darkenMode ?? 'none';
+            const effectiveDarkenMode = cardDarkenMode && cardDarkenMode !== 'none'
+                ? cardDarkenMode
+                : (darkenMode ?? 'none');
+
+            // Resolve darken parameters with fallback to global settings
+            const resolveParam = (cardVal: number | undefined, globalVal: number) =>
+                (card.overrides && !useGlobalSettings) ? (cardVal ?? globalVal) : globalVal;
+
+            const r_darkenAutoDetect = card.overrides && !useGlobalSettings
+                ? (card.overrides.darkenAutoDetect ?? darkenAutoDetect ?? true)
+                : (darkenAutoDetect ?? true);
+
+            // Force contrast/brightness values for Auto Detect modes
+            const isAutoContrast = r_darkenAutoDetect && (effectiveDarkenMode === 'contrast-edges' || effectiveDarkenMode === 'contrast-full');
+
+            const darkenOpts = {
+                darkenThreshold: resolveParam(card.overrides?.darkenThreshold, darkenThreshold ?? 30),
+                darkenContrast: isAutoContrast ? 2.0 : resolveParam(card.overrides?.darkenContrast, darkenContrast ?? 2.0),
+                darkenEdgeWidth: resolveParam(card.overrides?.darkenEdgeWidth, darkenEdgeWidth ?? 0.1),
+                darkenAmount: resolveParam(card.overrides?.darkenAmount, darkenAmount ?? 1.0),
+                darkenBrightness: isAutoContrast ? -50 : resolveParam(card.overrides?.darkenBrightness, darkenBrightness ?? -50),
+                darkenAutoDetect: r_darkenAutoDetect
+            };
+
             let selectedExportBlob: Blob | undefined;
             if (effectiveDarkenMode === 'none') {
                 selectedExportBlob = imageInfo?.exportBlob;
-            } else if (effectiveDarkenMode === 'darken-all') {
-                selectedExportBlob = imageInfo?.exportBlobDarkenAll ?? imageInfo?.exportBlobDarkened ?? imageInfo?.exportBlob;
-            } else if (effectiveDarkenMode === 'contrast-edges') {
-                selectedExportBlob = imageInfo?.exportBlobContrastEdges ?? imageInfo?.exportBlobDarkened ?? imageInfo?.exportBlob;
-            } else if (effectiveDarkenMode === 'contrast-full') {
-                selectedExportBlob = imageInfo?.exportBlobContrastFull ?? imageInfo?.exportBlobDarkened ?? imageInfo?.exportBlob;
             } else {
-                // Fallback for unexpected mode values
-                selectedExportBlob = imageInfo?.exportBlob;
+                // Force regeneration for any darken mode to ensure slider accuracy
+                selectedExportBlob = undefined;
             }
 
             // Compute bleed mode and amounts
@@ -578,11 +591,11 @@ self.onmessage = async (event: MessageEvent) => {
                                     if (trimmed !== img) { img.close(); img = trimmed; }
                                 }
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, 0, {
-                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode,
+                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });
                             } else if (effectiveMode === 'existing' || !needsBleedChange) {
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
-                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode,
+                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });
                             } else {
                                 if (card.hasBuiltInBleed && existingBleedMm > 0) {
@@ -590,7 +603,7 @@ self.onmessage = async (event: MessageEvent) => {
                                     if (trimmed !== img) { img.close(); img = trimmed; }
                                 }
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedMm, {
-                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode,
+                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });
                             }
 
