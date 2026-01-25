@@ -23,6 +23,12 @@ interface WorkerBleedSettings {
 
     // Processing options
     darkenMode: 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full';
+    darkenThreshold: number;
+    darkenContrast: number;
+    darkenEdgeWidth: number;
+    darkenAmount: number;
+    darkenBrightness: number;
+    darkenAutoDetect: boolean;
     dpi: number;
 }
 
@@ -81,6 +87,12 @@ function serializeBleedSettingsForWorker(): WorkerBleedSettings {
         sourceSettings,
         withBleedSourceAmount: state.withBleedSourceAmount,
         darkenMode: state.darkenMode,
+        darkenThreshold: 30,
+        darkenContrast: state.darkenContrast,
+        darkenEdgeWidth: state.darkenEdgeWidth,
+        darkenAmount: state.darkenAmount,
+        darkenBrightness: state.darkenBrightness,
+        darkenAutoDetect: state.darkenAutoDetect,
         dpi: state.dpi,
     };
 }

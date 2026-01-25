@@ -301,7 +301,7 @@ function calculateImagePlacement(
 export async function generateBleedCanvasWebGL(
     img: ImageBitmap,
     bleedWidth: number,
-    opts: { unit?: "mm" | "in"; dpi?: number; darkenMode?: DarkenMode }
+    opts: { unit?: "mm" | "in"; dpi?: number; darkenMode?: DarkenMode; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
 ): Promise<OffscreenCanvas> {
     const dpi = opts?.dpi ?? 300;
     const targetCardWidth = IN(2.48, dpi);
@@ -405,6 +405,13 @@ export async function generateBleedCanvasWebGL(
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_offset"), bleed, bleed);
     gl.uniform1i(gl.getUniformLocation(progs.final, "u_darkenMode"), darkenModeInt);
     gl.uniform1f(gl.getUniformLocation(progs.final, "u_darknessFactor"), darknessFactor);
+    // Explicitly set darken params using opts
+    gl.uniform1f(gl.getUniformLocation(progs.final, "u_darkenThreshold"), opts.darkenThreshold ?? 30);
+    gl.uniform1f(gl.getUniformLocation(progs.final, "u_darkenContrast"), opts.darkenContrast ?? 2.0);
+    gl.uniform1f(gl.getUniformLocation(progs.final, "u_darkenEdgeWidth"), opts.darkenEdgeWidth ?? 0.1);
+    gl.uniform1f(gl.getUniformLocation(progs.final, "u_darkenAmount"), opts.darkenAmount ?? 1.0);
+    gl.uniform1f(gl.getUniformLocation(progs.final, "u_darkenBrightness"), opts.darkenBrightness ?? -50);
+
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
     gl.uniform2f(gl.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
@@ -440,7 +447,7 @@ export async function generateBleedCanvasWebGL(
 export async function processCardImageWebGL(
     img: ImageBitmap,
     bleedWidthMm: number,
-    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; inputHasBleedMm?: number; darkenMode?: number }
+    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; inputHasBleedMm?: number; darkenMode?: number; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
 ): Promise<{
     exportBlob: Blob;
     exportDpi: number;
@@ -590,6 +597,13 @@ export async function processCardImageWebGL(
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_offset"), additionalBleedPx, additionalBleedPx);
         glCtx.uniform1i(glCtx.getUniformLocation(progs.final, "u_darkenMode"), darkenMode);
         glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darknessFactor"), darknessFactor);
+        // Explicitly set darken params
+        glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darkenThreshold"), opts?.darkenThreshold ?? 30);
+        glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darkenContrast"), opts?.darkenContrast ?? 2.0);
+        glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darkenEdgeWidth"), opts?.darkenEdgeWidth ?? 0.1);
+        glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darkenAmount"), opts?.darkenAmount ?? 1.0);
+        glCtx.uniform1f(glCtx.getUniformLocation(progs.final, "u_darkenBrightness"), opts?.darkenBrightness ?? -50);
+
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcImageSize"), img.width, img.height);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
         glCtx.uniform2f(glCtx.getUniformLocation(progs.final, "u_scale"), scaleX, scaleY);
@@ -688,7 +702,7 @@ export async function processCardImageWebGL(
 export async function processExistingBleedWebGL(
     img: ImageBitmap,
     bleedWidthMm: number,
-    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; darkenMode?: number }
+    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; darkenMode?: number; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
 ): Promise<{
     exportBlob: Blob;
     exportDpi: number;
@@ -780,6 +794,13 @@ export async function processExistingBleedWebGL(
         gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
         gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), targetWidth, targetHeight);
         gl.uniform1f(gl.getUniformLocation(program, "u_darknessFactor"), darknessFactor);
+        // Explicitly set darken params
+        gl.uniform1f(gl.getUniformLocation(program, "u_darkenThreshold"), opts?.darkenThreshold ?? 30);
+        gl.uniform1f(gl.getUniformLocation(program, "u_darkenContrast"), opts?.darkenContrast ?? 2.0);
+        gl.uniform1f(gl.getUniformLocation(program, "u_darkenEdgeWidth"), opts?.darkenEdgeWidth ?? 0.1);
+        gl.uniform1f(gl.getUniformLocation(program, "u_darkenAmount"), opts?.darkenAmount ?? 1.0);
+        gl.uniform1f(gl.getUniformLocation(program, "u_darkenBrightness"), opts?.darkenBrightness ?? -50);
+
 
         const darkenModeLoc = gl.getUniformLocation(program, "u_darkenMode");
         const blobs = new Map<number, Blob>();

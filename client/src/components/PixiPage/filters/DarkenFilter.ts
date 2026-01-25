@@ -6,7 +6,7 @@
 
 import { Filter, GlProgram } from 'pixi.js';
 import type { DarkenMode } from '../../../store/settings';
-import { DARKEN_UNIFORMS_GLSL, DARKEN_FUNCTIONS_GLSL } from '../../CardCanvas/sharedShaders';
+import { DARKEN_UNIFORMS_GLSL, DARKEN_FUNCTIONS_GLSL } from '../../../shaders/darkenEffects';
 
 // Standard vertex shader that passes texture coordinates correctly
 const VERTEX = `

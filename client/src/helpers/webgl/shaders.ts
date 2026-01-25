@@ -1,4 +1,4 @@
-
+import { DARKEN_UNIFORMS_GLSL, DARKEN_FUNCTIONS_GLSL } from '../../shaders/darkenEffects';
 export const VS_QUAD = `#version 300 es
 in vec2 a_position;
 out vec2 v_uv;
@@ -116,12 +116,13 @@ uniform sampler2D u_image;
 uniform vec2 u_resolution;
 uniform vec2 u_imageSize;      // Content area size (targetCardWidth x targetCardHeight)
 uniform vec2 u_offset;         // Content area position (bleed, bleed)
-uniform int u_darkenMode;      // 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
 uniform vec2 u_srcImageSize;   // Source image dimensions
 uniform vec2 u_srcOffset;      // Source crop offset (in source pixels)
 uniform vec2 u_scale;          // Scale factor (drawWidth/srcWidth, drawHeight/srcHeight)
 
-uniform float u_darknessFactor; // 0-1, from histogram analysis (0=dark image, 1=light image)
+// Shared Darken Parameters
+${DARKEN_UNIFORMS_GLSL}
+
 
 in vec2 v_uv;
 out vec4 outColor;
@@ -134,112 +135,8 @@ vec2 contentToSourceUV(vec2 contentCoord) {
     return vec2(srcCoord.x / u_srcImageSize.x, 1.0 - srcCoord.y / u_srcImageSize.y);
 }
 
-// Adaptive edge contrast - darkens near-black pixels near edges with smooth falloff
-vec3 applyEdgeContrast(vec3 color, vec2 pixelCoord) {
-    // Edge detection zone - DPI-aware (64px at 300 DPI baseline)
-    // Approximate DPI from resolution (assuming standard card at ~744x1039 @ 300dpi)
-    float dpiScale = u_resolution.y / 1039.0;
-    float EDGE_PX = 64.0 * dpiScale;
-    
-    // Calculate distance from nearest edge
-    float edgeDist = min(
-        min(pixelCoord.x, pixelCoord.y),
-        min(u_resolution.x - pixelCoord.x - 1.0, u_resolution.y - pixelCoord.y - 1.0)
-    );
-    
-    // Skip if not near edge
-    if (edgeDist >= EDGE_PX) return color;
-    
-    // Smooth quadratic falloff from edge
-    float edgeFactor = 1.0 - edgeDist / EDGE_PX;
-    edgeFactor *= edgeFactor; // smooth falloff
-    
-    // Adaptive contrast parameters based on histogram-derived darkness factor
-    // Dark images (low darknessFactor) → smaller boost
-    // Light images (high darknessFactor) → stronger boost
-    float MAX_CONTRAST = 1.0 + 0.22 * u_darknessFactor;
-    float MAX_BRIGHTNESS = -8.0 / 255.0 * u_darknessFactor; // Normalized to 0-1
-    float HIGHLIGHT_SOFT = 230.0 / 255.0;
-    
-    vec3 result = color;
-    
-    for (int c = 0; c < 3; c++) {
-        float v = (c == 0) ? color.r : (c == 1) ? color.g : color.b;
-        
-        // Adaptive tone gating - only affect dark pixels (< 140/255)
-        float toneThreshold = 140.0 / 255.0;
-        if (v > toneThreshold) continue;
-        
-        float toneFactor = min(1.0, (toneThreshold - v) / (110.0 / 255.0));
-        float strength = edgeFactor * toneFactor;
-        
-        if (strength <= 0.0) continue;
-        
-        float contrast = 1.0 + (MAX_CONTRAST - 1.0) * strength;
-        float brightness = MAX_BRIGHTNESS * strength;
-        
-        float nv = (v - 0.5) * contrast + 0.5 + brightness;
-        
-        // Soft highlight clamping
-        if (nv > HIGHLIGHT_SOFT) {
-            nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
-        }
-        
-        nv = clamp(nv, 0.0, 1.0);
-        
-        if (c == 0) result.r = nv;
-        else if (c == 1) result.g = nv;
-        else result.b = nv;
-    }
-    
-    return result;
-}
-
-// Full-card contrast - same as edge contrast but applies to entire card
-vec3 applyFullContrast(vec3 color) {
-    float MAX_CONTRAST = 1.0 + 0.22 * u_darknessFactor;
-    float MAX_BRIGHTNESS = -8.0 / 255.0 * u_darknessFactor;
-    float HIGHLIGHT_SOFT = 230.0 / 255.0;
-    
-    vec3 result = color;
-    
-    for (int c = 0; c < 3; c++) {
-        float v = (c == 0) ? color.r : (c == 1) ? color.g : color.b;
-        
-        // Only affect dark pixels (< 140/255)
-        float toneThreshold = 140.0 / 255.0;
-        if (v > toneThreshold) continue;
-        
-        float toneFactor = min(1.0, (toneThreshold - v) / (110.0 / 255.0));
-        if (toneFactor <= 0.0) continue;
-        
-        float contrast = 1.0 + (MAX_CONTRAST - 1.0) * toneFactor;
-        float brightness = MAX_BRIGHTNESS * toneFactor;
-        
-        float nv = (v - 0.5) * contrast + 0.5 + brightness;
-        
-        if (nv > HIGHLIGHT_SOFT) {
-            nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
-        }
-        
-        nv = clamp(nv, 0.0, 1.0);
-        
-        if (c == 0) result.r = nv;
-        else if (c == 1) result.g = nv;
-        else result.b = nv;
-    }
-    
-    return result;
-}
-
-// Legacy darken-all - simple threshold (pixels < 30/255 → black)
-vec3 applyDarkenAll(vec3 color) {
-    float threshold = 30.0 / 255.0;
-    if (color.r < threshold && color.g < threshold && color.b < threshold) {
-        return vec3(0.0);
-    }
-    return color;
-}
+// === Darkening Functions (Shared) ===
+${DARKEN_FUNCTIONS_GLSL}
 
 void main() {
     vec2 pixelCoord = v_uv * u_resolution;
@@ -304,109 +201,15 @@ precision highp float;
 
 uniform sampler2D u_image;
 uniform vec2 u_resolution;
-uniform int u_darkenMode;      // 0=none, 1=darken-all, 2=contrast-edges, 3=contrast-full
-uniform float u_darknessFactor; // 0-1, from histogram analysis
+
+// Shared Darken Parameters
+${DARKEN_UNIFORMS_GLSL}
 
 in vec2 v_uv;
 out vec4 outColor;
 
-// Adaptive edge contrast - darkens near-black pixels near edges with smooth falloff
-vec3 applyEdgeContrast(vec3 color, vec2 pixelCoord) {
-    // Edge detection zone - DPI-aware (64px at 300 DPI baseline)
-    float dpiScale = u_resolution.y / 1039.0;
-    float EDGE_PX = 64.0 * dpiScale;
-    
-    // Calculate distance from nearest edge
-    float edgeDist = min(
-        min(pixelCoord.x, pixelCoord.y),
-        min(u_resolution.x - pixelCoord.x - 1.0, u_resolution.y - pixelCoord.y - 1.0)
-    );
-    
-    if (edgeDist >= EDGE_PX) return color;
-    
-    float edgeFactor = 1.0 - edgeDist / EDGE_PX;
-    edgeFactor *= edgeFactor;
-    
-    float MAX_CONTRAST = 1.0 + 0.22 * u_darknessFactor;
-    float MAX_BRIGHTNESS = -8.0 / 255.0 * u_darknessFactor;
-    float HIGHLIGHT_SOFT = 230.0 / 255.0;
-    
-    vec3 result = color;
-    
-    for (int c = 0; c < 3; c++) {
-        float v = (c == 0) ? color.r : (c == 1) ? color.g : color.b;
-        
-        float toneThreshold = 140.0 / 255.0;
-        if (v > toneThreshold) continue;
-        
-        float toneFactor = min(1.0, (toneThreshold - v) / (110.0 / 255.0));
-        float strength = edgeFactor * toneFactor;
-        
-        if (strength <= 0.0) continue;
-        
-        float contrast = 1.0 + (MAX_CONTRAST - 1.0) * strength;
-        float brightness = MAX_BRIGHTNESS * strength;
-        
-        float nv = (v - 0.5) * contrast + 0.5 + brightness;
-        
-        if (nv > HIGHLIGHT_SOFT) {
-            nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
-        }
-        
-        nv = clamp(nv, 0.0, 1.0);
-        
-        if (c == 0) result.r = nv;
-        else if (c == 1) result.g = nv;
-        else result.b = nv;
-    }
-    
-    return result;
-}
-
-// Full-card contrast
-vec3 applyFullContrast(vec3 color) {
-    float MAX_CONTRAST = 1.0 + 0.22 * u_darknessFactor;
-    float MAX_BRIGHTNESS = -8.0 / 255.0 * u_darknessFactor;
-    float HIGHLIGHT_SOFT = 230.0 / 255.0;
-    
-    vec3 result = color;
-    
-    for (int c = 0; c < 3; c++) {
-        float v = (c == 0) ? color.r : (c == 1) ? color.g : color.b;
-        
-        float toneThreshold = 140.0 / 255.0;
-        if (v > toneThreshold) continue;
-        
-        float toneFactor = min(1.0, (toneThreshold - v) / (110.0 / 255.0));
-        if (toneFactor <= 0.0) continue;
-        
-        float contrast = 1.0 + (MAX_CONTRAST - 1.0) * toneFactor;
-        float brightness = MAX_BRIGHTNESS * toneFactor;
-        
-        float nv = (v - 0.5) * contrast + 0.5 + brightness;
-        
-        if (nv > HIGHLIGHT_SOFT) {
-            nv = HIGHLIGHT_SOFT + (nv - HIGHLIGHT_SOFT) * 0.35;
-        }
-        
-        nv = clamp(nv, 0.0, 1.0);
-        
-        if (c == 0) result.r = nv;
-        else if (c == 1) result.g = nv;
-        else result.b = nv;
-    }
-    
-    return result;
-}
-
-// Legacy darken-all
-vec3 applyDarkenAll(vec3 color) {
-    float threshold = 30.0 / 255.0;
-    if (color.r < threshold && color.g < threshold && color.b < threshold) {
-        return vec3(0.0);
-    }
-    return color;
-}
+// === Darkening Functions (Shared) ===
+${DARKEN_FUNCTIONS_GLSL}
 
 void main() {
     vec2 pixelCoord = v_uv * u_resolution;

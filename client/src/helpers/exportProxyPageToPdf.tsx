@@ -75,6 +75,12 @@ export async function exportProxyPagesToPdf({
     guidePlacement,
     cutGuideLengthMm,
     rightAlignRows,
+    darkenThreshold,
+    darkenContrast,
+    darkenEdgeWidth,
+    darkenAmount,
+    darkenBrightness,
+    darkenAutoDetect,
   } = pdfSettings;
 
   const perPage = Math.max(1, columns * rows);
@@ -253,6 +259,12 @@ export async function exportProxyPagesToPdf({
                       imagesById,
                       API_BASE,
                       darkenMode,
+                      darkenThreshold,
+                      darkenContrast,
+                      darkenEdgeWidth,
+                      darkenAmount,
+                      darkenBrightness,
+                      darkenAutoDetect,
                       cutLineStyle,
                       perCardGuideStyle,
                       guidePlacement,
