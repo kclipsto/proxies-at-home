@@ -105,6 +105,7 @@ export function CardbackLibrary({
                         isDeleting={false}
                         isEditing={editingCardbackId === cardback.id}
                         editingName={editingCardbackName}
+                        hasBuiltInBleed={cardback.hasBuiltInBleed}
                         onSelect={() => onSelectCardback(cardback.id, cardback.name)}
                         onSetAsDefault={() => onSetAsDefaultCardback(cardback.id, cardback.name)}
                         onDelete={() => handleDelete(cardback.id)}
