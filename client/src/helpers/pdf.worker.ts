@@ -4,7 +4,7 @@ import {
     toProxied,
     trimBleedFromBitmap,
 } from "./imageProcessing";
-import { generateBleedCanvasWebGL } from "./webglImageProcessing";
+import { generateBleedCanvasWebGL, renderBleedCanvasDirect } from "./webglImageProcessing";
 import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
 import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesWorker } from "./cardCanvasWorker";
@@ -585,6 +585,7 @@ self.onmessage = async (event: MessageEvent) => {
 
                             const needsBleedChange = Math.abs(existingBleedMm - targetBleedMm) > 0.01;
 
+
                             if (effectiveMode === 'none') {
                                 if (card.hasBuiltInBleed && existingBleedMm > 0) {
                                     const trimmed = await trimBleedFromBitmap(img);
@@ -593,17 +594,25 @@ self.onmessage = async (event: MessageEvent) => {
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, 0, {
                                     unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });
-                            } else if (effectiveMode === 'existing' || !needsBleedChange) {
-                                finalCardCanvas = await generateBleedCanvasWebGL(img, existingBleedMm, {
-                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
+                            } else if (effectiveMode === 'existing' || !needsBleedChange || (card.hasBuiltInBleed && existingBleedMm >= targetBleedMm)) {
+                                // For existing bleed (or builtin bleed that needs resizing/cropping), use direct rendering
+                                // This skips JFA generation which would cause artifacts on already-bleeding images
+                                const targetWidth = Math.ceil(imageCardWidthPx); 
+                                const targetHeight = Math.ceil(imageCardHeightPx);
+                                
+                                finalCardCanvas = await renderBleedCanvasDirect(img, targetWidth, targetHeight, {
+                                    darkenMode: effectiveDarkenMode,
+                                    ...darkenOpts,
+                                    // Hint to use export context
+                                    mimeType: 'image/png' 
                                 });
                             } else {
-                                if (card.hasBuiltInBleed && existingBleedMm > 0) {
-                                    const trimmed = await trimBleedFromBitmap(img);
-                                    if (trimmed !== img) { img.close(); img = trimmed; }
-                                }
+                                // If generating new bleed (e.g. extending existing bleed), pass inputBleed info
+                                // so we don't distort the content. We do NOT trim it anymore.
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedMm, {
-                                    unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
+                                    unit: 'mm', dpi: DPI, 
+                                    inputBleed: (card.hasBuiltInBleed && existingBleedMm > 0) ? existingBleedMm : 0,
+                                    darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });
                             }
 

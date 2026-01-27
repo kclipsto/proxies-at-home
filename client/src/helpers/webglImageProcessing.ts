@@ -301,7 +301,7 @@ function calculateImagePlacement(
 export async function generateBleedCanvasWebGL(
     img: ImageBitmap,
     bleedWidth: number,
-    opts: { unit?: "mm" | "in"; dpi?: number; darkenMode?: DarkenMode; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
+    opts: { unit?: "mm" | "in"; dpi?: number; inputBleed?: number; darkenMode?: DarkenMode; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
 ): Promise<OffscreenCanvas> {
     const dpi = opts?.dpi ?? 300;
     const targetCardWidth = IN(2.48, dpi);
@@ -321,11 +321,46 @@ export async function generateBleedCanvasWebGL(
     const quadBuffer = createQuadBuffer(gl);
 
     // Calculate image placement
-    const { drawWidth, drawHeight, offsetX, offsetY } = calculateImagePlacement(
-        img,
-        targetCardWidth,
-        targetCardHeight
-    );
+    // Calculate image placement
+    // If input has bleed, we scale based on CONTENT size, not full image size
+    const inputBleedMm = opts?.inputBleed ?? 0;
+    const inputBleedPx = Math.round(getBleedInPixels(inputBleedMm, opts?.unit ?? "mm", dpi));
+
+    let drawWidth: number, drawHeight: number, offsetX: number, offsetY: number;
+
+    if (inputBleedMm > 0) {
+        // Calculate scale factor relative to target content size
+        const inputContentWidth = img.width - inputBleedPx * 2;
+        const inputContentHeight = img.height - inputBleedPx * 2;
+
+        // Scale to fit width (keeping aspect ratio)
+        const scale = targetCardWidth / inputContentWidth;
+
+        drawWidth = img.width * scale;
+        drawHeight = img.height * scale;
+
+        // Center the input content relative to the target content area
+        const targetContentCenterX = targetCardWidth / 2;
+        const targetContentCenterY = targetCardHeight / 2;
+
+        // Calculate center of the content portion within the scaled input image
+        const inputContentCenterX = (inputContentWidth / 2 + inputBleedPx) * scale;
+        const inputContentCenterY = (inputContentHeight / 2 + inputBleedPx) * scale;
+
+        offsetX = targetContentCenterX - inputContentCenterX;
+        offsetY = targetContentCenterY - inputContentCenterY;
+
+    } else {
+        const placement = calculateImagePlacement(
+            img,
+            targetCardWidth,
+            targetCardHeight
+        );
+        drawWidth = placement.drawWidth;
+        drawHeight = placement.drawHeight;
+        offsetX = placement.offsetX;
+        offsetY = placement.offsetY;
+    }
 
     // Calculate scale and source offset for shader coordinate mapping
     const scaleX = drawWidth / img.width;
@@ -744,7 +779,9 @@ export async function processExistingBleedWebGL(
     const displayHeight = Math.ceil(IN(cardHeightMm / 25.4, displayDpi) + displayBleedPx * 2);
 
     // Compute darknessFactor for adaptive effects
-    const darknessFactor = computeDarknessFactor(img);
+    // Compute darknessFactor for adaptive effects
+    // Removed unused darknessFactor
+
 
     // Get the current darken mode (0=none is always generated)
     const currentDarkenMode = opts?.darkenMode ?? 0;
@@ -757,69 +794,23 @@ export async function processExistingBleedWebGL(
         targetHeight: number,
         mimeType: "image/png" | "image/webp" = "image/png"
     ): Promise<Map<number, Blob>> {
-        const isExport = mimeType === 'image/png';
-        const contextManager = isExport ? exportContextManager : displayContextManager;
-
-        // Get or create context - will reuse if available
-        const { canvas, gl, isNew } = contextManager.getContext(targetWidth, targetHeight);
-
-        webglLog(`renderSelectedModes: ${targetWidth}x${targetHeight}, modes=[${modesToGenerate.join(',')}], format=${mimeType}, reused=${!isNew}`);
-
-        // Create shader program (could cache this too, but shaders are cheap)
-        const vs = createShader(gl, gl.VERTEX_SHADER, VS_QUAD);
-        const fs = createShader(gl, gl.FRAGMENT_SHADER, FS_DIRECT);
-        const program = createProgram(gl, vs, fs);
-        gl.deleteShader(vs);
-        gl.deleteShader(fs);
-
-        // Create quad buffer
-        const quadBuffer = createQuadBuffer(gl);
-
-        // Create image texture for this specific image
-        const imgTexture = createTexture(gl, img.width, img.height, img);
-        gl.bindTexture(gl.TEXTURE_2D, imgTexture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-        // Setup viewport and attributes
-        gl.viewport(0, 0, targetWidth, targetHeight);
-        const aPositionLoc = 0;
-        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-        gl.enableVertexAttribArray(aPositionLoc);
-        gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
-
-        gl.useProgram(program);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, imgTexture);
-        gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
-        gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), targetWidth, targetHeight);
-        gl.uniform1f(gl.getUniformLocation(program, "u_darknessFactor"), darknessFactor);
-        // Explicitly set darken params
-        gl.uniform1f(gl.getUniformLocation(program, "u_darkenThreshold"), opts?.darkenThreshold ?? 30);
-        gl.uniform1f(gl.getUniformLocation(program, "u_darkenContrast"), opts?.darkenContrast ?? 2.0);
-        gl.uniform1f(gl.getUniformLocation(program, "u_darkenEdgeWidth"), opts?.darkenEdgeWidth ?? 0.1);
-        gl.uniform1f(gl.getUniformLocation(program, "u_darkenAmount"), opts?.darkenAmount ?? 1.0);
-        gl.uniform1f(gl.getUniformLocation(program, "u_darkenBrightness"), opts?.darkenBrightness ?? -50);
-
-
-        const darkenModeLoc = gl.getUniformLocation(program, "u_darkenMode");
         const blobs = new Map<number, Blob>();
 
         // Render only the needed modes
         for (const mode of modesToGenerate) {
-            gl.uniform1i(darkenModeLoc, mode);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            // Use new helper to get canvas
+            const canvas = await renderBleedCanvasDirect(img, targetWidth, targetHeight, {
+                ...opts,
+                darkenMode: mode,
+                darkenAutoDetect: opts?.darkenAutoDetect,
+                mimeType
+            });
+
             blobs.set(mode, await canvas.convertToBlob({
                 type: mimeType,
                 quality: mimeType === "image/webp" ? 0.90 : undefined
             }));
         }
-
-        // Cleanup per-image resources only - keep context alive for next image
-        gl.deleteTexture(imgTexture);
-        gl.deleteBuffer(quadBuffer);
-        gl.deleteProgram(program);
-        // Do NOT release context - it will be reused for the next image
 
         return blobs;
     }
@@ -855,4 +846,90 @@ export async function processExistingBleedWebGL(
         baseDisplayBlob: displayBlob,
         baseExportBlob: exportBlob,
     };
+}
+
+/**
+ * Direct low-level WebGL rendering of an image to a canvas (skipping JFA).
+ * Returns an OffscreenCanvas containing the rendered result.
+ * This is efficient for PDF generation as it avoids Blob encoding/decoding.
+ */
+export async function renderBleedCanvasDirect(
+    img: ImageBitmap,
+    targetWidth: number,
+    targetHeight: number,
+    opts: {
+        darkenMode?: number;
+        darkenThreshold?: number;
+        darkenContrast?: number;
+        darkenEdgeWidth?: number;
+        darkenAmount?: number;
+        darkenBrightness?: number;
+        darkenAutoDetect?: boolean;
+        mimeType?: "image/png" | "image/webp"; // hint for context selection
+    }
+): Promise<OffscreenCanvas> {
+    const isExport = opts.mimeType === 'image/png';
+    // If no type hint, default to export context if large, display if small? 
+    // Or just use export context as default.
+    const contextManager = (!opts.mimeType || isExport) ? exportContextManager : displayContextManager;
+
+    // Get or create context - will reuse if available
+    const { canvas, gl } = contextManager.getContext(targetWidth, targetHeight);
+
+    // Create shader program (could cache this too, but shaders are cheap)
+    const vs = createShader(gl, gl.VERTEX_SHADER, VS_QUAD);
+    const fs = createShader(gl, gl.FRAGMENT_SHADER, FS_DIRECT);
+    const program = createProgram(gl, vs, fs);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+
+    // Create quad buffer
+    const quadBuffer = createQuadBuffer(gl);
+
+    // Create image texture for this specific image
+    const imgTexture = createTexture(gl, img.width, img.height, img);
+    gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    // Setup viewport and attributes
+    gl.viewport(0, 0, targetWidth, targetHeight);
+    const aPositionLoc = 0;
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+    gl.enableVertexAttribArray(aPositionLoc);
+    gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    // Compute darknessFactor if needed
+    // Note: computeDarknessFactor caches results on the img object so it's cheap to call again
+    const darknessFactor = computeDarknessFactor(img);
+
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+    gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), targetWidth, targetHeight);
+    gl.uniform1f(gl.getUniformLocation(program, "u_darknessFactor"), darknessFactor);
+    // Explicitly set darken params
+    gl.uniform1f(gl.getUniformLocation(program, "u_darkenThreshold"), opts.darkenThreshold ?? 30);
+    gl.uniform1f(gl.getUniformLocation(program, "u_darkenContrast"), opts.darkenContrast ?? 2.0);
+    gl.uniform1f(gl.getUniformLocation(program, "u_darkenEdgeWidth"), opts.darkenEdgeWidth ?? 0.1);
+    gl.uniform1f(gl.getUniformLocation(program, "u_darkenAmount"), opts.darkenAmount ?? 1.0);
+    gl.uniform1f(gl.getUniformLocation(program, "u_darkenBrightness"), opts.darkenBrightness ?? -50);
+    gl.uniform1i(gl.getUniformLocation(program, "u_darkenMode"), opts.darkenMode ?? 0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // Cleanup per-image resources
+    gl.deleteTexture(imgTexture);
+    gl.deleteBuffer(quadBuffer);
+    gl.deleteProgram(program);
+    // Do NOT release context
+
+    // Copy to new canvas (because the context canvas is reused)
+    const resultCanvas = new OffscreenCanvas(targetWidth, targetHeight);
+    const resultCtx = resultCanvas.getContext('2d');
+    if (resultCtx) {
+        resultCtx.drawImage(canvas, 0, 0);
+    }
+    return resultCanvas;
 }

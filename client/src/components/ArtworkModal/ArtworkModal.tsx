@@ -14,6 +14,7 @@ import {
     Label,
 } from "flowbite-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useArtworkModalStore } from "@/store/artworkModal";
 import type { ScryfallCard, CardOption } from "../../../../shared/types";
 import { ArrowLeft, X, Image, Settings, ChevronLeft, ChevronRight, Pencil, Check } from "lucide-react";
@@ -118,12 +119,12 @@ export function ArtworkModal() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isModalOpen, modalCard?.imageId]);
     useEffect(() => {
-        if (selectedFace === 'back') {
+        if (selectedFace === 'back' && isModalOpen) {
             getAllCardbacks().then(options => {
                 setCardbackOptions(options);
             });
         }
-    }, [selectedFace]);
+    }, [selectedFace, isModalOpen, showCardbackLibrary]);
 
     // Auto-apply first print when previewCardData changes (from search)
     // This runs AFTER state has updated, avoiding race condition
@@ -1062,9 +1063,9 @@ export function ArtworkModal() {
                 }}
                 initialSource={artSource}
             />
-            {pendingDeleteId && (
+            {pendingDeleteId && createPortal(
                 <div
-                    className="fixed inset-0 z-100 bg-gray-900/50 flex items-center justify-center"
+                    className="fixed inset-0 z-[20000] bg-gray-900/50 flex items-center justify-center"
                     onClick={(e) => {
                         e.stopPropagation();
                         if (e.target === e.currentTarget) {
@@ -1112,7 +1113,8 @@ export function ArtworkModal() {
                             </Button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
