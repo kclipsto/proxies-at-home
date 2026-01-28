@@ -1,6 +1,6 @@
 import logoSvg from "@/assets/logo.svg";
 import { Button } from "flowbite-react";
-import { ChevronDown, ChevronRight, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Star, RefreshCw } from "lucide-react";
 import { CardGrid } from "./CardGrid";
 import { CardArtFilterBar } from "./CardArtFilterBar";
 import { CardImageSvg } from "./CardImageSvg";
@@ -308,37 +308,19 @@ export function CardArtContent({
 
     // Render a single Scryfall card (search mode)
     const renderScryfallCard = (card: ScryfallCard, index: number) => {
-        const imageUrl = card.imageUrls?.[0] || '';
-        const isSelected = stripQuery(highlightSelectedArtId) === stripQuery(imageUrl);
-
-        const displayUrl = isSelected && processedDisplayUrl ? processedDisplayUrl : imageUrl;
-
         return (
-            <div
+            <ScryfallCardItem
                 key={`${card.name}-${index}`}
-                className="relative group cursor-pointer"
-                data-testid="artwork-card"
-                onClick={() => onSelectCard(card.name, imageUrl, { set: card.set || '', number: card.number || '' })}
-            >
-                {/* Container enforces 63:88mm ratio for consistent sizing */}
-                <div
-                    className="relative w-full overflow-hidden"
-                    style={{ aspectRatio: '63 / 88' }}
-                >
-                    <CardImageSvg
-                        url={displayUrl}
-                        id={`scry-${index}`}
-                        rounded={true}
-                    />
-                </div>
-                {isSelected && (
-                    <div className="absolute inset-0 rounded-[2.5mm] ring-4 ring-green-500 pointer-events-none" />
-                )}
-            </div>
+                card={card}
+                index={index}
+                highlightSelectedArtId={highlightSelectedArtId ?? null}
+                processedDisplayUrl={processedDisplayUrl ?? null}
+                onSelectCard={onSelectCard}
+                stripQuery={stripQuery}
+            />
         );
     };
 
-    // Render a single print (prints mode - used in ArtworkModal)
     const renderPrint = (print: PrintInfo, index: number) => {
         const isSelected = stripQuery(highlightSelectedArtId) === stripQuery(print.imageUrl);
 
@@ -601,3 +583,90 @@ export function CardArtContent({
     );
 }
 
+
+interface ScryfallCardItemProps {
+    card: ScryfallCard;
+    index: number;
+    highlightSelectedArtId: string | null;
+    processedDisplayUrl: string | null;
+    onSelectCard: CardArtContentProps['onSelectCard'];
+    stripQuery: (url?: string) => string | undefined;
+}
+
+function ScryfallCardItem({
+    card,
+    index,
+    highlightSelectedArtId,
+    processedDisplayUrl,
+    onSelectCard,
+    stripQuery
+}: ScryfallCardItemProps) {
+    const [isFlipped, setIsFlipped] = useState(false);
+
+    // Determine front/back URLs for DFCs
+    const getDfcUrls = () => {
+        if (!card.card_faces || card.card_faces.length < 2) return { front: card.imageUrls?.[0] || '', back: '' };
+        return {
+            front: card.card_faces[0].imageUrl || card.imageUrls?.[0] || '',
+            back: card.card_faces[1].imageUrl || ''
+        };
+    };
+
+    const { front, back } = getDfcUrls();
+    const isDfc = !!back;
+
+    // Current display URL logic
+    const currentFaceUrl = isFlipped ? back : front;
+    const isSelected = stripQuery(highlightSelectedArtId ?? undefined) === stripQuery(currentFaceUrl) ||
+        (isDfc && !isFlipped && stripQuery(highlightSelectedArtId ?? undefined) === stripQuery(back)); // Also highlight if back is selected but we are showing front
+
+    const displayUrl = isSelected && processedDisplayUrl ? processedDisplayUrl : currentFaceUrl;
+
+    const handleFlip = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsFlipped(!isFlipped);
+    };
+
+    return (
+        <div
+            className="relative group cursor-pointer"
+            data-testid="artwork-card"
+            onClick={() => onSelectCard(
+                card.name,
+                currentFaceUrl,
+                { set: card.set || '', number: card.number || '' }
+            )}
+        >
+            {/* Container enforces 63:88mm ratio for consistent sizing */}
+            <div
+                className="relative w-full overflow-hidden"
+                style={{ aspectRatio: '63 / 88' }}
+            >
+                <CardImageSvg
+                    url={displayUrl}
+                    id={`scry-${index}-${isFlipped ? 'back' : 'front'}`}
+                    rounded={true}
+                />
+            </div>
+
+            {/* Selection Ring */}
+            {isSelected && (
+                <div className="absolute inset-0 rounded-[2.5mm] ring-4 ring-green-500 pointer-events-none" />
+            )}
+
+            {/* Flip Button for DFCs - Styled to match SortableCard */}
+            {isDfc && (
+                <div
+                    onClick={handleFlip}
+                    className={`absolute right-[4px] top-2 w-6 h-6 rounded-sm flex items-center justify-center cursor-pointer group-hover:opacity-100 select-none z-20 transition-colors ${isFlipped
+                            ? 'bg-blue-500 text-white opacity-100'
+                            : 'bg-white text-gray-700 opacity-50 hover:bg-gray-100'
+                        }`}
+                    title={isFlipped ? "Show front" : "Show back"}
+                >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                </div>
+            )}
+        </div>
+    );
+}

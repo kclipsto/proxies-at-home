@@ -339,11 +339,13 @@ export function ArtworkModal() {
         setTimeout(() => useToastStore.getState().removeToast(toastId), 2000);
     }, [activeCard, modalCard, selectedFace, applyToAll, linkedBackCard]);
 
-    async function handleSelectArtwork(newImageUrl: string) {
+    async function handleSelectArtwork(newImageUrl: string, newCardName?: string, specificPrint?: { set: string; number: string }) {
         if (!activeCard) return;
 
         debugLog('[ArtworkModal] handleSelectArtwork:', {
             newImageUrl: newImageUrl?.substring(0, 80),
+            newCardName,
+            specificPrint,
             activeCardName: activeCard.name,
             previewCardDataName: previewCardData?.name,
             displayDataPrints: displayData.prints?.length,
@@ -358,11 +360,23 @@ export function ArtworkModal() {
         const selectedPrint = displayData.prints?.find(p => p.imageUrl === newImageUrl);
 
         const newFaceName = selectedPrint?.faceName;
-        const shouldUpdateName = isDFC && newFaceName && newFaceName !== activeCard.name;
+        // If we have an explicit newCardName (from search selection), use it.
+        // Otherwise fallback to faceName or activeCard.name logic.
+        const shouldUpdateName = (!!newCardName && newCardName !== activeCard.name) || (isDFC && newFaceName && newFaceName !== activeCard.name);
 
         let intent: ImportIntent;
 
-        if (selectedPrint) {
+        if (specificPrint) {
+            // Priority 1: Specific print from search result (includes set/number)
+            intent = {
+                name: newCardName || activeCard.name,
+                set: specificPrint.set,
+                number: specificPrint.number,
+                quantity: 1,
+                isToken: activeCard.isToken || false
+            };
+        } else if (selectedPrint) {
+            // Priority 2: Selected print from "Prints" tab
             intent = {
                 name: activeCard.name,
                 set: selectedPrint.set,
@@ -371,6 +385,7 @@ export function ArtworkModal() {
                 isToken: activeCard.isToken || false
             };
         } else if (previewCardData) {
+            // Priority 3: Preview data (fallback)
             intent = {
                 name: previewCardData.name,
                 set: previewCardData.set,
@@ -402,7 +417,7 @@ export function ArtworkModal() {
                     isToken: resolved.isToken
                 };
 
-                const newName = shouldUpdateName ? newFaceName : resolved.name;
+                const newName = newCardName || (shouldUpdateName ? newFaceName : resolved.name);
 
                 await applyArtworkToCards({
                     targetImageId: newImageId,

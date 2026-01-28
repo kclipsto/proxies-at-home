@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -49,7 +50,7 @@ describe('scryfallRouter - /prints', () => {
 
     it('should populate faceName for single-faced cards when mixed with DFCs', async () => {
         // Mock data representing a mixed result (e.g., "Treasure" token)
-        const mockPrints = [
+        const mockPrints: Partial<any>[] = [
             {
                 // Single-faced Treasure Token
                 name: 'Treasure',
@@ -79,7 +80,7 @@ describe('scryfallRouter - /prints', () => {
             },
         ];
 
-        vi.mocked(getCardsWithImagesForCardInfo).mockResolvedValue(mockPrints as any);
+        vi.mocked(getCardsWithImagesForCardInfo).mockResolvedValue(mockPrints as unknown as any);
 
         const res = await request(app).get('/api/scryfall/prints?name=Treasure');
 
@@ -89,16 +90,16 @@ describe('scryfallRouter - /prints', () => {
         const prints = res.body.prints;
 
         // Verify single-faced card has faceName populated
-        const singleFaced = prints.find((p: any) => p.imageUrl === 'https://example.com/treasure.png');
+        const singleFaced = prints.find((p: { imageUrl: string; faceName?: string }) => p.imageUrl === 'https://example.com/treasure.png');
         expect(singleFaced).toBeDefined();
-        expect(singleFaced.faceName).toBe('Treasure'); // THIS IS THE KEY FIX
+        expect(singleFaced.faceName).toBe('Treasure');
 
         // Verify DFC faces
-        const dinosaurFace = prints.find((p: any) => p.faceName === 'Dinosaur');
+        const dinosaurFace = prints.find((p: { imageUrl: string; faceName?: string }) => p.faceName === 'Dinosaur');
         expect(dinosaurFace).toBeDefined();
         expect(dinosaurFace.imageUrl).toBe('https://example.com/dinosaur.png');
 
-        const treasureFace = prints.find((p: any) => p.imageUrl === 'https://example.com/treasure_back.png');
+        const treasureFace = prints.find((p: { imageUrl: string; faceName?: string }) => p.imageUrl === 'https://example.com/treasure_back.png');
         expect(treasureFace).toBeDefined();
         expect(treasureFace.faceName).toBe('Treasure');
     });
@@ -112,7 +113,7 @@ describe('scryfallRouter - /prints', () => {
                 image_uris: { png: 'https://example.com/solring.png' },
             }
         ];
-        vi.mocked(getCardsWithImagesForCardInfo).mockResolvedValue(mockPrints as any);
+        vi.mocked(getCardsWithImagesForCardInfo).mockResolvedValue(mockPrints as unknown as any);
 
         const res = await request(app).get('/api/scryfall/prints?name=Sol Ring');
 
