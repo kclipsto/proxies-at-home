@@ -603,6 +603,7 @@ export default function ProxyBuilderPage() {
         >
           <UploadSection
             isCollapsed={isUploadPanelCollapsed}
+            onToggle={toggleUploadPanel}
             cardCount={cardCount}
           />
         </div>
