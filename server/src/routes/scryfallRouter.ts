@@ -388,6 +388,7 @@ router.get("/prints", async (req: Request, res: Response) => {
                     set: card.set ?? "",
                     number: card.collector_number ?? "",
                     rarity: card.rarity,
+                    faceName: card.name, // Use card name as faceName for compatibility with DFC filtering
                     lang: card.lang,
                 });
             } else if (card.card_faces) {

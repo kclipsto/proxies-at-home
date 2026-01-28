@@ -40,6 +40,7 @@ export interface ArtworkTabContentProps {
     displayData: {
         name?: string;
         imageUrls: string[] | undefined;
+        prints?: import("@/helpers/dfcHelpers").PrintInfo[];
         id: string | undefined;
         // Single ID for sorting and highlighting - replaces selectedId + initialScryfallId
         selectedArtId: string | undefined;
@@ -207,6 +208,7 @@ export function ArtworkTabContent({
                                 containerClassStyle="flex-1 h-full"
                                 isActive={artSource === 'scryfall'}
                                 cardTypeLine={modalCard.type_line}
+                                initialPrints={displayData.prints}
                             />
                         </div>
                     )

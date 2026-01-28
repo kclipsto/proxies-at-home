@@ -14,6 +14,7 @@ import { inferImageSource } from "@/helpers/imageSourceUtils";
 import type { ScryfallCard } from "../../../../shared/types";
 import { useUserPreferencesStore } from "@/store";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { debugLog } from "@/helpers/debug";
 
 type ArtSource = 'scryfall' | 'mpc';
 
@@ -54,6 +55,8 @@ export interface CardArtContentProps {
     isActive?: boolean;
     /** Card type_line for auto-detecting token cards in MPC search */
     cardTypeLine?: string;
+    /** Initial prints to prevent re-fetching if already available */
+    initialPrints?: PrintInfo[];
 }
 
 /**
@@ -77,6 +80,7 @@ export function CardArtContent({
     containerClassStyle,
     isActive,
     cardTypeLine,
+    initialPrints,
 }: CardArtContentProps) {
     // Helper to strip query params for URL comparison (Scryfall URLs have timestamps)
     const stripQuery = useCallback((url?: string) => url?.split('?')[0], []);
@@ -87,7 +91,8 @@ export function CardArtContent({
         autoSearch: artSource === 'scryfall' && mode === 'search'
     });
     const scryfallPrintsData = useScryfallPrints(query, {
-        autoFetch: artSource === 'scryfall' && mode === 'prints'
+        autoFetch: artSource === 'scryfall' && mode === 'prints' && !initialPrints,
+        initialPrints,
     });
 
     // Helper to detect if the selected art is MPC (for sorting/highlighting in the right source)
@@ -113,10 +118,29 @@ export function CardArtContent({
 
 
     // For DFC filtering in prints mode, extract face names and filter
-    const faceNames = useMemo(
+    const uniqueFaces = useMemo(
         () => getFaceNamesFromPrints(scryfallPrintsData.prints),
         [scryfallPrintsData.prints]
     );
+
+    // Sort faces to prioritize the one matching the query (case-insensitive)
+    // This ensures that if we search for "Treasure", "Treasure" becomes faceNames[0] (Front)
+    // even if "Dinosaur" (from Dinosaur // Treasure) appears first in the list.
+    const faceNames = useMemo(() => {
+        if (uniqueFaces.length <= 1) return uniqueFaces;
+
+        const sorted = [...uniqueFaces].sort((a, b) => {
+            const aMatches = a.toLowerCase() === query.toLowerCase();
+            const bMatches = b.toLowerCase() === query.toLowerCase();
+            if (aMatches && !bMatches) return -1;
+            if (!aMatches && bMatches) return 1;
+            return 0;
+        });
+
+        // Debug log to trace face detection
+        debugLog('Faces detected:', sorted, 'Query:', query);
+        return sorted;
+    }, [uniqueFaces, query]);
 
     // STABLE SORT KEY: Only updates when prints data actually changes
     // This prevents the old card's grid from re-sorting during navigation transition

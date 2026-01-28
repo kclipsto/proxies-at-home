@@ -19,6 +19,8 @@ export interface UseScryfallPrintsOptions {
     autoFetch?: boolean;
     /** Language code (default: en) */
     lang?: string;
+    /** Optional initial prints to use instead of fetching */
+    initialPrints?: PrintInfo[];
 }
 
 // Global cache shared across all instances - persists across mode switches
@@ -36,11 +38,11 @@ export function useScryfallPrints(
     cardName: string,
     options: UseScryfallPrintsOptions = {}
 ): ScryfallPrintsResult {
-    const { autoFetch = true, lang = "en" } = options;
+    const { autoFetch = true, lang = "en", initialPrints } = options;
 
-    const [prints, setPrints] = useState<PrintInfo[]>([]);
+    const [prints, setPrints] = useState<PrintInfo[]>(initialPrints || []);
     const [isLoading, setIsLoading] = useState(false);
-    const [hasSearched, setHasSearched] = useState(false);
+    const [hasSearched, setHasSearched] = useState(!!initialPrints);
 
     // Refs for request management
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -53,6 +55,16 @@ export function useScryfallPrints(
         if (!trimmed) return null;
         return `prints|${trimmed.toLowerCase()}|${language}`;
     }, []);
+
+    // Load initial prints into cache if provided
+    useEffect(() => {
+        if (initialPrints && cardName) {
+            const cacheKey = getCacheKey(cardName, lang);
+            if (cacheKey && globalPrintsCache[cacheKey] === undefined) {
+                globalPrintsCache[cacheKey] = initialPrints;
+            }
+        }
+    }, [initialPrints, cardName, lang, getCacheKey]);
 
     // Check if we have cached results
     const cachedResult = useMemo(() => {
