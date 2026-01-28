@@ -470,8 +470,11 @@ self.onmessage = async (event: MessageEvent) => {
             const existingBleedMm = getEffectiveExistingBleedMm(card, { withBleedSourceAmount }) ?? 0;
             const targetBleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
 
-            // Use the image's actual bleed width if available
-            const imageBleedWidthMm = imageInfo?.exportBleedWidth ?? targetBleedMm;
+            // Use the image's actual bleed width if available, prioritizing built-in/existing bleed
+            // to ensure we don't squish a large-bleed image into a small-bleed target canvas
+            const imageBleedWidthMm = (card.hasBuiltInBleed && existingBleedMm > 0)
+                ? existingBleedMm
+                : (imageInfo?.exportBleedWidth ?? targetBleedMm);
             const imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
 
             // Cache is valid if we have the blob at the right DPI
@@ -597,20 +600,20 @@ self.onmessage = async (event: MessageEvent) => {
                             } else if (effectiveMode === 'existing' || !needsBleedChange || (card.hasBuiltInBleed && existingBleedMm >= targetBleedMm)) {
                                 // For existing bleed (or builtin bleed that needs resizing/cropping), use direct rendering
                                 // This skips JFA generation which would cause artifacts on already-bleeding images
-                                const targetWidth = Math.ceil(imageCardWidthPx); 
+                                const targetWidth = Math.ceil(imageCardWidthPx);
                                 const targetHeight = Math.ceil(imageCardHeightPx);
-                                
+
                                 finalCardCanvas = await renderBleedCanvasDirect(img, targetWidth, targetHeight, {
                                     darkenMode: effectiveDarkenMode,
                                     ...darkenOpts,
                                     // Hint to use export context
-                                    mimeType: 'image/png' 
+                                    mimeType: 'image/png'
                                 });
                             } else {
                                 // If generating new bleed (e.g. extending existing bleed), pass inputBleed info
                                 // so we don't distort the content. We do NOT trim it anymore.
                                 finalCardCanvas = await generateBleedCanvasWebGL(img, targetBleedMm, {
-                                    unit: 'mm', dpi: DPI, 
+                                    unit: 'mm', dpi: DPI,
                                     inputBleed: (card.hasBuiltInBleed && existingBleedMm > 0) ? existingBleedMm : 0,
                                     darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });

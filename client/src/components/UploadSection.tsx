@@ -1,6 +1,6 @@
 import fullLogo from "@/assets/fullLogo.png";
 import { logoSvg } from "@/assets";
-import { useSettingsStore } from "@/store/settings";
+
 import {
   HR,
 } from "flowbite-react";
@@ -16,24 +16,23 @@ import {
 
 type Props = {
   isCollapsed?: boolean;
+  onToggle?: () => void;
   cardCount: number;
   mobile?: boolean;
   onUploadComplete?: () => void;
 };
 
-export function UploadSection({ isCollapsed, cardCount, mobile, onUploadComplete }: Props) {
-  const toggleUploadPanel = useSettingsStore((state) => state.toggleUploadPanel);
-
+export function UploadSection({ isCollapsed, onToggle, cardCount, mobile, onUploadComplete }: Props) {
   if (isCollapsed) {
     return (
       <div
         className={`h-full flex flex-col bg-gray-100 dark:bg-gray-700 items-center py-4 gap-4 border-r border-gray-200 dark:border-gray-600 ${mobile ? "mobile-scrollbar-hide" : "overflow-y-auto"} select-none`}
-        onDoubleClick={() => toggleUploadPanel()}
+        onDoubleClick={() => onToggle?.()}
       >
         <AutoTooltip content="Proxxied" placement="right" mobile={mobile}>
           <button
             onClick={() => {
-              toggleUploadPanel();
+              onToggle?.();
             }}
             className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
