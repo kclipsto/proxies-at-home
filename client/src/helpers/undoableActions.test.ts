@@ -102,6 +102,9 @@ describe("undoableActions", () => {
 
     describe("undoableReorderCards", () => {
         it("should push an undo action for reordering", async () => {
+            const mockCard = { uuid: "card-123", order: 0 };
+            vi.mocked(db.cards.get).mockResolvedValue(mockCard as unknown as CardOption);
+
             await undoableReorderCards("card-123", 0, 2);
 
             expect(mockPushAction).toHaveBeenCalledWith(
@@ -113,6 +116,9 @@ describe("undoableActions", () => {
         });
 
         it("should include undo and redo functions in the action", async () => {
+            const mockCard = { uuid: "card-123", order: 0 };
+            vi.mocked(db.cards.get).mockResolvedValue(mockCard as unknown as CardOption);
+
             await undoableReorderCards("card-123", 0, 2);
 
             const pushedAction = mockPushAction.mock.calls[0][0];
@@ -127,6 +133,11 @@ describe("undoableActions", () => {
                 { uuid: "card-1", oldOrder: 0, newOrder: 2 },
                 { uuid: "card-2", oldOrder: 1, newOrder: 0 },
             ];
+            const mockCards = [
+                { uuid: "card-1", order: 0 },
+                { uuid: "card-2", order: 1 },
+            ];
+            vi.mocked(db.cards.bulkGet).mockResolvedValue(mockCards as unknown as CardOption[]);
 
             await undoableReorderMultipleCards(adjustments);
 

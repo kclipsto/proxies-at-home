@@ -46,6 +46,8 @@ export interface ImportIntent {
     // For Custom/XML: The ID of the specific image to use as the back face.
     linkedBackImageId?: string;
     linkedBackName?: string;
+    linkedBackSet?: string;     // For linking specific Scryfall back via set/number
+    linkedBackNumber?: string;  // For linking specific Scryfall back via set/number
 
     // Image URL for direct imports (bypassing search)
     imageUrl?: string;
@@ -66,6 +68,10 @@ export interface ImportIntent {
     preloadedData?: PreloadedCardData;
 
     sourcePreference?: 'scryfall' | 'mpc' | 'manual';
+
+    // For restoring exact state from Share
+    preferredImageId?: string; // Specific Scryfall/URL image to use instead of default lookup
+    order?: number;            // Specific sort order
 
     // Original filename if from file import (useful for debugging/UI)
     filename?: string;

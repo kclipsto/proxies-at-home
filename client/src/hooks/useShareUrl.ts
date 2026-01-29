@@ -6,12 +6,14 @@
  */
 
 import { useEffect, useState, useRef } from 'react';
-import { loadShare, deserializeForImport, type ShareData, type ShareSettings } from '../helpers/shareHelper';
+import { db } from '@/db';
+import { loadShare, deserializeForImport, calculateStateHash, type ShareData, type ShareSettings, type SettingsInput } from '../helpers/shareHelper';
 import { useSettingsStore } from '../store/settings';
 import { ImportOrchestrator } from '../helpers/ImportOrchestrator';
 import type { ImportIntent } from '../helpers/importParsers';
 import { useToastStore } from '../store/toast';
 import { useProjectStore } from '../store';
+import { debugLog } from '@/helpers/debug';
 
 export interface UseShareUrlResult {
     isLoading: boolean;
@@ -105,8 +107,7 @@ function applyShareSettings(settings: ShareSettings): void {
 
 /**
  * Convert deserialized share data to ImportIntents
- * Handles DFC links by filtering out back cards and attaching their MPC IDs to front card intents.
- * For Scryfall-based backs, the SSE stream auto-detects DFCs so we don't need special handling.
+ * Handles DFC links by filtering out back cards and attaching their IDs to front card intents.
  */
 function convertToImportIntents(
     cards: ReturnType<typeof deserializeForImport>['cards'],
@@ -124,7 +125,7 @@ function convertToImportIntents(
     const intents: ImportIntent[] = [];
 
     for (let i = 0; i < cards.length; i++) {
-        // Skip back cards - they'll be created as linked backs via linkedBackImageId
+        // Skip back cards - they'll be created as linked backs
         if (backIndices.has(i)) continue;
 
         const card = cards[i];
@@ -140,16 +141,30 @@ function convertToImportIntents(
             category: card.category,
             cardOverrides: card.overrides,
             sourcePreference: card.mpcIdentifier ? 'mpc' as const : 'scryfall' as const,
+            preferredImageId: card.imageId,
+            order: card.order,
         };
 
-        // For MPC-based back cards, use linkedBackImageId with the MPC identifier
-        // executeDirect already handles this by calling getMpcAutofillImageUrl
-        if (backData?.mpcIdentifier) {
-            intent.linkedBackImageId = backData.mpcIdentifier;
-            intent.linkedBackName = backData.name || 'Back';
+        // Handle Back Face
+        if (backData) {
+            // Priority 1: Built-in Cardback
+            if (backData.builtInCardbackId) {
+                intent.linkedBackImageId = backData.builtInCardbackId;
+                // Don't need name for cardbacks usually, but helpful for debugging
+                intent.linkedBackName = backData.name || 'Cardback';
+            }
+            // Priority 2: MPC Card
+            else if (backData.mpcIdentifier) {
+                intent.linkedBackImageId = backData.mpcIdentifier;
+                intent.linkedBackName = backData.name || 'Back';
+            }
+            // Priority 3: Scryfall Card (Explicit Set/Number)
+            else if (backData.set && backData.number) {
+                intent.linkedBackSet = backData.set;
+                intent.linkedBackNumber = backData.number;
+                intent.linkedBackName = backData.name || 'Back';
+            }
         }
-        // For Scryfall-based backs, the SSE path auto-detects DFCs from card_faces
-        // so we don't need to set anything special here
 
         intents.push(intent);
     }
@@ -166,12 +181,9 @@ export function useShareUrl(): UseShareUrlResult {
     const [error, setError] = useState<string | null>(null);
     const [shareData, setShareData] = useState<ShareData | null>(null);
     const hasTriedLoading = useRef(false);
-    const isProjectLoading = useProjectStore(state => state.isLoading);
-    const currentProjectId = useProjectStore(state => state.currentProjectId);
 
     useEffect(() => {
-        // Only run once and wait for project
-        if (isProjectLoading || !currentProjectId) return;
+        // Prevent double-execution
         if (hasTriedLoading.current) return;
 
         const shareId = getShareIdFromUrl();
@@ -184,31 +196,135 @@ export function useShareUrl(): UseShareUrlResult {
             setError(null);
 
             try {
+                // 1. Fetch Share Data FIRST (to have the truth)
                 const data = await loadShare(shareId);
                 setShareData(data);
 
-                // Deserialize for import
+                // 2. Check if we already have this project locally
+                const existingProject = await db.projects.where('shareId').equals(shareId).first();
+
+                if (existingProject) {
+                    debugLog('[Share] Found existing project for share:', existingProject.id);
+
+                    // 2a. Compare local state hashes
+                    // Deserialize share data for import to getting hashable stat
+                    const remoteStateObj = {
+                        c: data.c,
+                        dfc: data.dfc || [],
+                        st: data.st || {}
+                    };
+                    const msgBuffer = new TextEncoder().encode(JSON.stringify(remoteStateObj));
+                    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+                    const remoteHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+                    // Calculate Local Hash
+                    const localCards = await db.cards.where('projectId').equals(existingProject.id).toArray();
+                    const localSettings = existingProject.settings as SettingsInput;
+                    const localHash = await calculateStateHash(localCards, localSettings);
+
+                    // 2b. Check for Local Edits
+                    // If lastSyncedHash is missing, we assume dirty UNLESS local==remote (which means we are luckily in sync)
+                    const lastSyncedHash = existingProject.lastSyncedHash;
+                    const isLocalClean = lastSyncedHash
+                        ? lastSyncedHash === localHash
+                        : localHash === remoteHash;
+
+                    if (!isLocalClean) {
+                        debugLog('[Share] Local project has user edits (Forking).');
+                        // Branch: User Edited -> Fork
+                        // 1. Unlink the old project so it doesn't verify against this shareId anymore
+                        await db.projects.update(existingProject.id, { shareId: undefined });
+
+                        // 2. Show toast
+                        useToastStore.getState().showInfoToast(`Local changes detected. Created new copy of shared deck.`);
+
+                        // 3. Fall through to Create New Project logic (below)
+                    } else {
+                        // Branch: Local is Clean (Unedited)
+                        if (localHash === remoteHash) {
+                            debugLog('[Share] Local project is up to date.');
+                            // Ensure lastSyncedHash is set (migration for legacy clean projects)
+                            if (!lastSyncedHash) {
+                                await db.projects.update(existingProject.id, { lastSyncedHash: localHash });
+                            }
+                            await useProjectStore.getState().switchProject(existingProject.id);
+                            useToastStore.getState().showSuccessToast(`Opened existing project "${existingProject.name}"`);
+                            clearShareFromUrl();
+                            setIsLoading(false);
+                            return;
+                        }
+
+                        debugLog('[Share] Local project differs but is clean. Overwriting...');
+
+                        // Update existing project
+                        await db.cards.where('projectId').equals(existingProject.id).delete();
+                        await useProjectStore.getState().switchProject(existingProject.id);
+
+                        const { cards, dfcLinks, settings } = deserializeForImport(data);
+                        if (settings) applyShareSettings(settings);
+
+                        const intents = convertToImportIntents(cards, dfcLinks);
+                        await ImportOrchestrator.process(intents, {
+                            onComplete: async () => {
+                                // Update hash after successful overwrite
+                                await db.projects.update(existingProject.id, { lastSyncedHash: remoteHash });
+                                useToastStore.getState().showSuccessToast(`Updated "${existingProject.name}" from share`);
+                            }
+                        });
+
+                        clearShareFromUrl();
+                        setIsLoading(false);
+                        return;
+                    }
+                }
+
+                // 3. Create New Project (Standard / Fork Flow)
                 const { cards, dfcLinks, settings } = deserializeForImport(data);
 
-                // Apply settings first
+                if (cards.length === 0) {
+                    throw new Error('Shared deck contains no cards');
+                }
+
                 if (settings) {
                     applyShareSettings(settings);
                 }
 
-                // Convert to ImportIntents and import
-                if (cards.length > 0) {
-                    const intents = convertToImportIntents(cards, dfcLinks);
+                // Create new project
+                // Generate share name from first card?
+                let firstCardName = 'Shared Deck';
+                const firstCard = cards.find(c => c.name);
+                if (firstCard && firstCard.name) firstCardName = firstCard.name;
 
-                    await ImportOrchestrator.process(intents, {
-                        onComplete: () => {
-                            useToastStore.getState().showSuccessToast(`Imported ${intents.length} cards from shared deck`);
-                        }
-                    });
-                } else {
-                    useToastStore.getState().showErrorToast('Shared deck contains no cards');
+                const newProjectId = await useProjectStore.getState().createProject(`${firstCardName} (Shared)`);
+                await useProjectStore.getState().switchProject(newProjectId);
+
+                // Calculate remote hash for initial sync state
+                const remoteStateObj = {
+                    c: data.c,
+                    dfc: data.dfc || [],
+                    st: data.st || {}
+                };
+                const msgBuffer = new TextEncoder().encode(JSON.stringify(remoteStateObj));
+                const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+                const remoteHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+                await db.projects.update(newProjectId, {
+                    shareId,
+                    lastSyncedHash: remoteHash
+                });
+
+                if (settings) {
+                    applyShareSettings(settings);
                 }
 
-                // Clear the share parameter from URL
+                const intents = convertToImportIntents(cards, dfcLinks);
+
+                await ImportOrchestrator.process(intents, {
+                    onComplete: () => {
+                        useToastStore.getState().showSuccessToast(`Imported ${intents.length} cards from shared deck`);
+                    }
+                });
+
                 clearShareFromUrl();
 
             } catch (err) {
@@ -222,7 +338,7 @@ export function useShareUrl(): UseShareUrlResult {
         };
 
         loadSharedDeck();
-    }, [isProjectLoading, currentProjectId]);
+    }, []); // Run on mount only (dependency array empty)
 
     return {
         isLoading,

@@ -14,7 +14,57 @@ import { inferImageSource } from "@/helpers/imageSourceUtils";
 import type { ScryfallCard } from "../../../../shared/types";
 import { useUserPreferencesStore } from "@/store";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { debugLog } from "@/helpers/debug";
+
+/**
+ * Hook to maintain a stable sort key that only updates on specific triggers:
+ * 1. Navigation (query changes)
+ * 2. Activation (source becomes active)
+ * 3. Initial Load (data reference changes and we don't have a key yet)
+ * 
+ * It DOES NOT update when selectedId changes while active and query is stable.
+ */
+function useStableSortKey<T>(
+    isActive: boolean,
+    query: string,
+    selectedId: string | undefined,
+    dataSignature: T // Reference to data (e.g. prints array) to detect refreshes
+) {
+    const sortKeyRef = useRef<string | undefined>(undefined);
+    const lastQueryRef = useRef(query);
+    const lastActiveRef = useRef(isActive);
+    const lastDataRef = useRef(dataSignature);
+
+    // 1. Navigation: Query changed
+    if (query !== lastQueryRef.current) {
+        lastQueryRef.current = query;
+        if (isActive) {
+            sortKeyRef.current = selectedId;
+        }
+    }
+
+    // 2. Activation: Became active
+    if (isActive && !lastActiveRef.current) {
+        sortKeyRef.current = selectedId;
+    }
+    lastActiveRef.current = isActive;
+
+    // 3. Data Refresh / Initial Load
+    // If data reference changed, and we don't have a sort key (or it invalid), OR we just loaded
+    if (dataSignature !== lastDataRef.current) {
+        lastDataRef.current = dataSignature;
+        // If we are active and sort key is not set, set it now (likely initial load)
+        if (isActive && sortKeyRef.current === undefined && selectedId) {
+            sortKeyRef.current = selectedId;
+        }
+    }
+
+    // Clear key if inactive to ensure fresh start next time
+    if (!isActive) {
+        sortKeyRef.current = undefined;
+    }
+
+    return sortKeyRef.current;
+}
 
 type ArtSource = 'scryfall' | 'mpc';
 
@@ -90,8 +140,9 @@ export function CardArtContent({
     const scryfallSearchData = useScryfallSearch(query, {
         autoSearch: artSource === 'scryfall' && mode === 'search'
     });
-    const scryfallPrintsData = useScryfallPrints(query, {
-        autoFetch: artSource === 'scryfall' && mode === 'prints' && !initialPrints,
+    const scryfallPrintsData = useScryfallPrints({
+        name: query,
+        enabled: artSource === 'scryfall' && mode === 'prints' && !initialPrints,
         initialPrints,
     });
 
@@ -103,8 +154,6 @@ export function CardArtContent({
         if (source !== 'mpc') return undefined;
         return extractMpcIdentifierFromImageId(selectedArtId) ?? undefined;
     }, [selectedArtId]);
-    const selectedArtIsMpc = selectedMpcId !== undefined;
-
     // MPC Search Hooks - sorting is done in CardArtContent using mpcSortKey for consistency
     const mpcData = useMpcSearch(
         artSource === 'mpc' ? query : '',
@@ -137,81 +186,48 @@ export function CardArtContent({
             return 0;
         });
 
-        // Debug log to trace face detection
-        debugLog('Faces detected:', sorted, 'Query:', query);
         return sorted;
     }, [uniqueFaces, query]);
 
-    // STABLE SORT KEY: Only updates when prints data actually changes
-    // This prevents the old card's grid from re-sorting during navigation transition
-    // We use prints array reference as stability indicator since it's the actual displayed data
-    const lastPrintsRef = useRef(scryfallPrintsData.prints);
-    const lastMpcCardsRef = useRef(mpcData.filteredCards);
-    const stableScryfallSortKeyRef = useRef<string | undefined>(undefined);
-    const stableMpcSortKeyRef = useRef<string | undefined>(undefined);
+    // Use shared stable sort logic for both sources
 
-    // Track query and selection for hybrid highlight logic
-    // During card navigation: query changes but data stays stale -> preserve highlight
-    // During same-card selection: query is same, selection changes -> update highlight immediately
-    const lastQueryRef = useRef(query);
-    const stableHighlightMpcIdRef = useRef<string | undefined>(selectedMpcId);
-    const stableHighlightArtIdRef = useRef<string | undefined>(selectedArtId ?? undefined);
+    // Filter prints by face (Base data for sorting)
+    const basePrints = useMemo(
+        () => filterPrintsByFace(
+            scryfallPrintsData.prints,
+            selectedFace || 'front',
+            faceNames[0],
+            faceNames[1]
+        ),
+        [scryfallPrintsData.prints, selectedFace, faceNames]
+    );
 
-    // Detect if we're mid-navigation (query changed but data hasn't updated yet)
-    const isNavigating = query !== lastQueryRef.current;
+    // Scryfall Sort Key
+    const scryfallSortKey = useStableSortKey(
+        !!isActive && artSource === 'scryfall',
+        query,
+        selectedArtId,
+        basePrints
+    );
 
-    // When query changes back to same (data loaded), or on same card, update highlight immediately
-    if (!isNavigating) {
-        // Same card - use live values for immediate highlight updates
-        stableHighlightMpcIdRef.current = selectedMpcId;
-        stableHighlightArtIdRef.current = selectedArtId ?? undefined;
-    }
-    // If navigating, keep the old stable highlight values until data changes
+    // MPC Sort Key
+    const mpcSortKey = useStableSortKey(
+        !!isActive && artSource === 'mpc',
+        query,
+        selectedMpcId,
+        mpcData.filteredCards
+    );
 
-    // Update Scryfall sort key only when prints data actually changes
-    if (lastPrintsRef.current !== scryfallPrintsData.prints) {
-        lastPrintsRef.current = scryfallPrintsData.prints;
-        lastQueryRef.current = query; // Reset query tracking when data updates
-        // Reset to new card's selected art for sorting and highlighting
-        if (isActive && artSource === 'scryfall' && !selectedArtIsMpc) {
-            stableScryfallSortKeyRef.current = selectedArtId ?? undefined;
-            stableHighlightArtIdRef.current = selectedArtId ?? undefined;
-        } else {
-            stableScryfallSortKeyRef.current = undefined;
-        }
-    }
-
-    // Update MPC sort key only when MPC data actually changes
-    if (lastMpcCardsRef.current !== mpcData.filteredCards) {
-        lastMpcCardsRef.current = mpcData.filteredCards;
-        lastQueryRef.current = query; // Reset query tracking when data updates
-        if (isActive && artSource === 'mpc') {
-            stableMpcSortKeyRef.current = selectedMpcId;
-            stableHighlightMpcIdRef.current = selectedMpcId;
-        } else {
-            stableMpcSortKeyRef.current = undefined;
-        }
-    }
-
-    const scryfallSortKey = stableScryfallSortKeyRef.current;
-    const mpcSortKey = stableMpcSortKeyRef.current;
-    // Use stable highlight values (immediate updates on same card, preserved during navigation)
-    const highlightSelectedArtId = stableHighlightArtIdRef.current;
-    const highlightSelectedMpcId = stableHighlightMpcIdRef.current;
+    // Track highlight IDs - we want these to always reflect current selection for the ring
+    // But we might need to be careful about strict URL matching (handled by stripQuery below)
+    const highlightSelectedArtId = selectedArtId;
+    const highlightSelectedMpcId = selectedMpcId;
 
     const filteredPrints = useMemo(
         () => {
-            const prints = filterPrintsByFace(
-                scryfallPrintsData.prints,
-                selectedFace || 'front',
-                faceNames[0],
-                faceNames[1]
-            );
-
             // Sort: pin selectedArtId to top (if it's a Scryfall URL)
-            if (scryfallSortKey && prints) {
-
-                return [...prints].sort((a, b) => {
+            if (scryfallSortKey && basePrints) {
+                return [...basePrints].sort((a, b) => {
                     const aSelected = stripQuery(a.imageUrl) === stripQuery(scryfallSortKey);
                     const bSelected = stripQuery(b.imageUrl) === stripQuery(scryfallSortKey);
                     if (aSelected && !bSelected) return -1;
@@ -219,9 +235,9 @@ export function CardArtContent({
                     return 0;
                 });
             }
-            return prints;
+            return basePrints;
         },
-        [scryfallPrintsData.prints, selectedFace, faceNames, scryfallSortKey, stripQuery]
+        [basePrints, scryfallSortKey, stripQuery]
     );
 
     // Local MPC sorting - re-sort based on mpcSortKey
@@ -659,8 +675,8 @@ function ScryfallCardItem({
                 <div
                     onClick={handleFlip}
                     className={`absolute right-[4px] top-2 w-6 h-6 rounded-sm flex items-center justify-center cursor-pointer group-hover:opacity-100 select-none z-20 transition-colors ${isFlipped
-                            ? 'bg-blue-500 text-white opacity-100'
-                            : 'bg-white text-gray-700 opacity-50 hover:bg-gray-100'
+                        ? 'bg-blue-500 text-white opacity-100'
+                        : 'bg-white text-gray-700 opacity-50 hover:bg-gray-100'
                         }`}
                     title={isFlipped ? "Show front" : "Show back"}
                 >

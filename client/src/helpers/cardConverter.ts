@@ -4,7 +4,7 @@ import { addRemoteImage, createLinkedBackCardsBulk } from "./dbUtils";
 import { undoableAddCards } from "./undoableActions";
 
 export interface ResolvedCardData {
-    cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[];
+    cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { order?: number; imageId?: string })[];
     backCardTasks: { frontIndex: number; backImageId: string; backName: string }[];
 }
 
@@ -60,7 +60,7 @@ export async function convertScryfallToCardOptions(
     const isToken = forceToken || card.type_line?.toLowerCase().includes('token') || false;
 
     // Create Card Objects
-    const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] = [];
+    const cardsToAdd: (Omit<CardOption, "uuid" | "order"> & { order?: number; imageId?: string })[] = [];
 
     for (let i = 0; i < quantity; i++) {
         cardsToAdd.push({

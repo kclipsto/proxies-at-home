@@ -364,11 +364,24 @@ export async function undoableDuplicateCardsBatch(uuids: string[]): Promise<stri
 
         newUuidsResult = newUuidsGenerated;
 
-        // Assign integer orders
-        const allUpdates: CardOption[] = combinedList.map((c, i) => ({
-            ...c,
-            order: (i + 1) * 10
-        }));
+        // Assign integer orders using Shared Slot Slot logic
+        const cardMap = new Map(combinedList.map(c => [c.uuid, c]));
+        const fronts = combinedList.filter(c => !c.linkedFrontId);
+        const allUpdates: CardOption[] = [];
+
+        fronts.forEach((front, index) => {
+            const newOrder = (index + 1) * 10;
+            // Update Front
+            allUpdates.push({ ...front, order: newOrder });
+
+            // Update Back if exists
+            if (front.linkedBackId) {
+                const back = cardMap.get(front.linkedBackId);
+                if (back) {
+                    allUpdates.push({ ...back, order: newOrder });
+                }
+            }
+        });
 
         // Bulk put (updates existing, adds new)
         await db.cards.bulkPut(allUpdates);
@@ -457,7 +470,7 @@ export async function undoableDuplicateCardsBatch(uuids: string[]): Promise<stri
  * @param options.startOrder Explicit starting order for the first card. If provided, cards will be ordered sequentially from this value.
  */
 export async function undoableAddCards(
-    cardsData: Array<Omit<CardOption, "uuid" | "order"> & { imageId?: string }>,
+    cardsData: Array<Omit<CardOption, "uuid" | "order"> & { order?: number; imageId?: string }>,
     options?: { startOrder?: number }
 ): Promise<CardOption[]> {
     if (cardsData.length === 0) return [];
@@ -628,20 +641,43 @@ export async function undoableReorderCards(
     oldOrder: number,
     newOrder: number
 ): Promise<void> {
-    // Record the action for undo
+    // 1. Identify partners
+    const card = await db.cards.get(cardUuid);
+    if (!card) return;
+
+    const uuidsToUpdate = [cardUuid];
+    if (card.linkedBackId) uuidsToUpdate.push(card.linkedBackId);
+    if (card.linkedFrontId) uuidsToUpdate.push(card.linkedFrontId);
+
+    // 2. Perform the update
+    await db.transaction("rw", db.cards, async () => {
+        for (const uuid of uuidsToUpdate) {
+            await db.cards.update(uuid, { order: newOrder });
+        }
+    });
+
+    // 3. Record the action for undo
     useUndoRedoStore.getState().pushAction({
         type: "REORDER_CARDS",
         description: "Reorder cards",
         undo: async () => {
             // Restore the original order
-            await db.cards.update(cardUuid, { order: oldOrder });
-            // Rebalance to clean up
-            await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
+            await db.transaction("rw", db.cards, async () => {
+                for (const uuid of uuidsToUpdate) {
+                    await db.cards.update(uuid, { order: oldOrder });
+                }
+                // Rebalance to clean up
+                await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
+            });
         },
         redo: async () => {
             // Apply the new order again
-            await db.cards.update(cardUuid, { order: newOrder });
-            await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
+            await db.transaction("rw", db.cards, async () => {
+                for (const uuid of uuidsToUpdate) {
+                    await db.cards.update(uuid, { order: newOrder });
+                }
+                await rebalanceCardOrders(useProjectStore.getState().currentProjectId ?? undefined);
+            });
         },
     });
 }
@@ -655,14 +691,58 @@ export async function undoableReorderMultipleCards(
 ): Promise<void> {
     if (adjustments.length === 0) return;
 
-    // Record the action for undo
+    // 1. Robustness: Ensure partners (Back/Front) are updated together.
+    // Fetch all involved cards to check for linked partners.
+    const inputUuids = adjustments.map(a => a.uuid);
+    const cards = await db.cards.bulkGet(inputUuids);
+
+    const adjMap = new Map(adjustments.map(a => [a.uuid, a]));
+    const finalAdjustments = [...adjustments];
+
+    // Identify missing partners
+    const extraUuidsToFetch: string[] = [];
+    cards.forEach(card => {
+        if (!card) return;
+        const partnerId = card.linkedBackId || card.linkedFrontId;
+        // If partner exists but is not in the update list, we must add it
+        if (partnerId && !adjMap.has(partnerId)) {
+            extraUuidsToFetch.push(partnerId);
+        }
+    });
+
+    // Fetch and create adjustments for missing partners
+    if (extraUuidsToFetch.length > 0) {
+        const extraCards = await db.cards.bulkGet(extraUuidsToFetch);
+        extraCards.forEach(card => {
+            if (!card) return;
+            // Find the adjustment of the source partner that triggered this
+            const partnerId = card.linkedFrontId || card.linkedBackId;
+            if (partnerId && adjMap.has(partnerId)) {
+                const sourceAdj = adjMap.get(partnerId)!;
+                finalAdjustments.push({
+                    uuid: card.uuid,
+                    oldOrder: card.order, // Capture current state for undo
+                    newOrder: sourceAdj.newOrder // Apply same new order
+                });
+            }
+        });
+    }
+
+    // 2. Perform the updates
+    await db.transaction("rw", db.cards, async () => {
+        for (const adj of finalAdjustments) {
+            await db.cards.update(adj.uuid, { order: adj.newOrder });
+        }
+    });
+
+    // 3. Record the action for undo
     useUndoRedoStore.getState().pushAction({
         type: "REORDER_MULTIPLE_CARDS",
         description: `Reorder ${adjustments.length} cards`,
         undo: async () => {
             // Restore the original order for each card
             await db.transaction("rw", db.cards, async () => {
-                for (const adj of adjustments) {
+                for (const adj of finalAdjustments) {
                     await db.cards.update(adj.uuid, { order: adj.oldOrder });
                 }
             });
@@ -672,7 +752,7 @@ export async function undoableReorderMultipleCards(
         redo: async () => {
             // Apply the new order for each card
             await db.transaction("rw", db.cards, async () => {
-                for (const adj of adjustments) {
+                for (const adj of finalAdjustments) {
                     await db.cards.update(adj.uuid, { order: adj.newOrder });
                 }
             });

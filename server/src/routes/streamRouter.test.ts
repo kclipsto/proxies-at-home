@@ -12,6 +12,7 @@ vi.mock("../utils/getCardImagesPaged", async (importOriginal) => {
         ...actual,
         batchFetchCards: vi.fn(),
         getCardsWithImagesForCardInfo: vi.fn(),
+
     };
 });
 
@@ -250,4 +251,6 @@ describe("Stream Router", () => {
         expect(cardErrorData.query.name).toBe("Empty Card");
         expect(cardErrorData.error).toBe("No images found for card on Scryfall.");
     });
+
+
 });
