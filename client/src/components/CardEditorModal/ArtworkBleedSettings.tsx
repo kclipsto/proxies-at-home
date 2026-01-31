@@ -58,7 +58,7 @@ export function ArtworkBleedSettings({ selectedFace }: ArtworkBleedSettingsProps
     // Initialize from active card (front or back based on selectedFace)
     useEffect(() => {
         if (activeCard) {
-            setHasBleedBuiltIn(getHasBuiltInBleed(activeCard));
+            setHasBleedBuiltIn(getHasBuiltInBleed(activeCard) ?? false);
 
             if (activeCard.existingBleedMm !== undefined) {
                 setSourceMode('manual');
@@ -82,8 +82,8 @@ export function ArtworkBleedSettings({ selectedFace }: ArtworkBleedSettingsProps
 
             // Initialize sameAsFront by comparing back card settings to front card settings
             if (selectedFace === 'back' && modalCard && linkedBackCard) {
-                const frontHasBleed = getHasBuiltInBleed(modalCard);
-                const backHasBleed = getHasBuiltInBleed(linkedBackCard);
+                const frontHasBleed = getHasBuiltInBleed(modalCard) ?? false;
+                const backHasBleed = getHasBuiltInBleed(linkedBackCard) ?? false;
                 const frontBleedMode = modalCard.bleedMode;
                 const backBleedMode = linkedBackCard.bleedMode;
                 const frontExisting = modalCard.existingBleedMm;

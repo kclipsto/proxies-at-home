@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     toProxied,
     fetchWithRetry,
@@ -13,7 +13,8 @@ import {
     MM_TO_PX,
     NEAR_BLACK,
     NEAR_WHITE,
-    ALPHA_EMPTY
+    ALPHA_EMPTY,
+    shouldTrimBleed
 } from './imageProcessing';
 
 // ... (MockOffscreenCanvas)
@@ -77,6 +78,33 @@ describe('imageProcessing', () => {
             expect(NEAR_BLACK).toBe(16);
             expect(NEAR_WHITE).toBe(239);
             expect(ALPHA_EMPTY).toBe(10);
+        });
+    });
+
+    describe('shouldTrimBleed', () => {
+        it('should return true when target bleed is smaller than existing bleed', () => {
+            // Target 1mm, Existing 3mm -> Trim
+            expect(shouldTrimBleed(1, 3)).toBe(true);
+        });
+
+        it('should return true when target bleed is equal to existing bleed', () => {
+            // Target 3mm, Existing 3mm -> Trim (or rather, no-op trim but use Fast Path)
+            expect(shouldTrimBleed(3, 3)).toBe(true);
+        });
+
+        it('should return false when target bleed is larger than existing bleed', () => {
+            // Target 5mm, Existing 3mm -> Need JFA to generate diff
+            expect(shouldTrimBleed(5, 3)).toBe(false);
+        });
+
+        it('should use default MPC bleed if existing bleed is not provided', () => {
+            // Default MPC is ~3.175mm. Target 1mm. Should trim.
+            expect(shouldTrimBleed(1)).toBe(true);
+        });
+
+        it('should return false if target is larger than default MPC bleed', () => {
+            // Target 5mm, Default 3.175mm -> Need JFA
+            expect(shouldTrimBleed(5)).toBe(false);
         });
     });
 
@@ -260,7 +288,7 @@ describe('imageProcessing', () => {
             const imgData = ctx.createImageData(2, 1);
             imgData.data.set([5, 5, 5, 255, 50, 50, 50, 255]);
 
-            blackenAllNearBlackPixels(imgData, 30);
+            blackenAllNearBlackPixels(imgData);
 
             const data = imgData.data;
             // Both pixels are at edge (in a 2x1 canvas), so edge processing may apply
@@ -286,7 +314,7 @@ describe('imageProcessing', () => {
                 imgData.data[i + 3] = 255;
             }
 
-            blackenAllNearBlackPixels(imgData, 30);
+            blackenAllNearBlackPixels(imgData);
 
             const data = imgData.data;
 

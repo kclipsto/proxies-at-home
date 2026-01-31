@@ -53,6 +53,6 @@ describe('FileUploader', () => {
         render(<FileUploader />);
 
         // Should show the current mode label
-        expect(screen.getByText('Without Bleed')).toBeDefined();
+        expect(screen.getByText('Auto Detect Bleed')).toBeDefined();
     });
 });

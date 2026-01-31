@@ -849,7 +849,28 @@ function PixiVirtualCanvasInner({
 
         // No cleanup needed - staleness is tracked by counter
         // Include serialized holo params to detect nested override changes
-    }, [cards, isReady, globalDarkenMode, globalDarkenContrast, globalDarkenEdgeWidth, globalDarkenAmount, globalDarkenBrightness, globalDarkenAutoDetect, flippedCards, activeId, recentlyDroppedId, scrollTop, viewportHeight, zoom, createTexture, onRenderedCardsChange, holoAnimationTick, holoSettingsKey, scrollContainerRef]);
+    }, [
+        isReady,
+        cards,
+        isDarkMode,
+        activeId,
+        recentlyDroppedId,
+        scrollTop,
+        viewportHeight,
+        zoom,
+        globalDarkenMode,
+        globalDarkenContrast,
+        globalDarkenEdgeWidth,
+        globalDarkenAmount,
+        globalDarkenBrightness,
+        globalDarkenAutoDetect,
+        flippedCards,
+        createTexture,
+        onRenderedCardsChange,
+        holoAnimationTick,
+        holoSettingsKey,
+        scrollContainerRef
+    ]);
 
     return (
         <canvas

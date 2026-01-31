@@ -433,9 +433,7 @@ self.onmessage = async (event: MessageEvent) => {
             // Determine effective mode and settings
             const useGlobalSettings = card.overrides?.darkenUseGlobalSettings ?? true;
             const cardDarkenMode = card.overrides?.darkenMode;
-            const effectiveDarkenMode = cardDarkenMode && cardDarkenMode !== 'none'
-                ? cardDarkenMode
-                : (darkenMode ?? 'none');
+            const effectiveDarkenMode = cardDarkenMode ?? (darkenMode ?? 'none');
 
             // Resolve darken parameters with fallback to global settings
             const resolveParam = (cardVal: number | undefined, globalVal: number) =>

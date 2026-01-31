@@ -124,8 +124,6 @@ export type Store = {
   // Preferred art source when opening artwork modal
   preferredArtSource: 'scryfall' | 'mpc';
   setPreferredArtSource: (value: 'scryfall' | 'mpc') => void;
-  // Card Editor section state (all expanded by default)
-
   setAllSettings: (settings: Partial<Store>) => void;
   hasHydrated: boolean;
   setHasHydrated: (value: boolean) => void;
@@ -195,8 +193,6 @@ const defaultPageSettings = {
   mpcFuzzySearch: true, // Default to fuzzy search enabled
   // Preferred art source
   preferredArtSource: 'scryfall' as 'scryfall' | 'mpc',
-  // Card Editor section state - all expanded by default (empty = not collapsed)
-
 };
 
 const layoutPresetsSizes: Record<

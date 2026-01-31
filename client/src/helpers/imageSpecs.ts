@@ -14,9 +14,10 @@ export interface GlobalSettings {
 
 /**
  * Gets the hasBuiltInBleed status for a card, handling legacy hasBakedBleed property.
+ * If card setting is undefined/unknown, falls back to the Image record's generated setting (if provided).
  */
-export function getHasBuiltInBleed(card: CardOption): boolean {
-    return card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed ?? false;
+export function getHasBuiltInBleed(card: CardOption, image?: { generatedHasBuiltInBleed?: boolean }): boolean | undefined {
+    return card.hasBuiltInBleed ?? (card as { hasBakedBleed?: boolean }).hasBakedBleed ?? image?.generatedHasBuiltInBleed;
 }
 
 /**
@@ -62,7 +63,8 @@ export function getEffectiveBleedMode(
  */
 export function getEffectiveExistingBleedMm(
     card: CardOption,
-    settings: Pick<GlobalSettings, 'withBleedSourceAmount'>
+    settings: Pick<GlobalSettings, 'withBleedSourceAmount'>,
+    image?: { generatedHasBuiltInBleed?: boolean }
 ): number | undefined {
     // 1. Per-card override
     if (card.existingBleedMm !== undefined) {
@@ -70,8 +72,10 @@ export function getEffectiveExistingBleedMm(
     }
 
     // 2. Type-specific Defaults
-    if (getHasBuiltInBleed(card)) {
-        return settings.withBleedSourceAmount;
+    if (getHasBuiltInBleed(card, image)) {
+        // If settings say 0 but it has built-in bleed, fallback to standard MPC amount (3.175mm ~ 1/8in)
+        // This ensures downstream workers don't assume 0 and trigger full generation
+        return settings.withBleedSourceAmount || 3.175;
     }
 
     // Images without built in bleed have 0mm existing bleed
