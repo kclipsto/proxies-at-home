@@ -20,17 +20,17 @@ export function clearPreparedStatements(): void {
 
 /**
  * Look up a card by set code and collector number.
- * Set+number uniquely identifies a physical card, so we ignore language
- * since the actual printing determines the language.
+ * Supports language filtering to ensure correct version is returned.
  * Returns the card in ScryfallApiCard format, or null if not found.
  */
 export function lookupCardBySetNumber(
   setCode: string,
-  collectorNumber: string
+  collectorNumber: string,
+  lang: string = 'en'
 ): ScryfallApiCard | null {
   try {
     // Check hot card cache first
-    const cacheKey = `${setCode.toLowerCase()}:${collectorNumber}`;
+    const cacheKey = `${setCode.toLowerCase()}:${collectorNumber}:${lang.toLowerCase()}`;
     const cached = hotCardCache.get(cacheKey);
     if (cached) {
       debugLog(`[DB Cache] Hot cache HIT for ${cacheKey}`);
@@ -39,9 +39,9 @@ export function lookupCardBySetNumber(
 
     // Use prepared statement
     const stmt = getPreparedStatement(
-      `SELECT * FROM cards WHERE set_code = ? AND collector_number = ? LIMIT 1`
+      `SELECT * FROM cards WHERE set_code = ? AND collector_number = ? AND lang = ? LIMIT 1`
     );
-    const row = stmt.get(setCode.toLowerCase(), collectorNumber) as CardRow | undefined;
+    const row = stmt.get(setCode.toLowerCase(), collectorNumber, lang.toLowerCase()) as CardRow | undefined;
     if (!row) return null;
 
     // Treat cards without all_parts as cache miss - they need re-fetch for token data
