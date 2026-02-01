@@ -57,6 +57,10 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     guidePlacement: 'inside' | 'outside' | 'center';
     cutGuideLengthMm: number;
 
+    // Silhouette registration marks
+    registrationMarks: 'none' | '3' | '4';
+    registrationMarksPortrait: boolean;
+
     // Right-align incomplete rows (for backs export)
     rightAlignRows?: boolean;
 }
@@ -124,5 +128,7 @@ export function serializePdfSettingsForWorker(): WorkerPdfSettings {
         perCardGuideStyle: state.perCardGuideStyle,
         guidePlacement: state.guidePlacement,
         cutGuideLengthMm: state.cutGuideLengthMm,
+        registrationMarks: state.registrationMarks,
+        registrationMarksPortrait: state.registrationMarksPortrait,
     };
 }

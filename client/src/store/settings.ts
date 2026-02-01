@@ -85,6 +85,11 @@ export type Store = {
   setGuidePlacement: (value: 'inside' | 'outside' | 'center') => void;
   cutGuideLengthMm: number;
   setCutGuideLengthMm: (value: number) => void;
+  // Silhouette Cameo registration marks for print & cut
+  registrationMarks: 'none' | '3' | '4';
+  setRegistrationMarks: (value: 'none' | '3' | '4') => void;
+  registrationMarksPortrait: boolean;
+  setRegistrationMarksPortrait: (value: boolean) => void;
   globalLanguage: string;
   setGlobalLanguage: (lang: string) => void;
 
@@ -175,6 +180,8 @@ const defaultPageSettings = {
   perCardGuideStyle: "corners" as "corners" | "rounded-corners" | "solid-rounded-rect" | "dashed-rounded-rect" | "solid-squared-rect" | "dashed-squared-rect" | "none",
   guidePlacement: "outside" as "inside" | "outside",
   cutGuideLengthMm: 6.25,
+  registrationMarks: 'none' as 'none' | '3' | '4',
+  registrationMarksPortrait: false,
   globalLanguage: "en",
 
   sortBy: "manual" as "name" | "type" | "cmc" | "color" | "manual" | "rarity",
@@ -418,6 +425,14 @@ export const useSettingsStore = create<Store>()((set) => ({
     recordSettingChange("cutGuideLengthMm", state.cutGuideLengthMm);
     return { cutGuideLengthMm: value };
   }),
+  setRegistrationMarks: (value) => set((state) => {
+    recordSettingChange("registrationMarks", state.registrationMarks);
+    return { registrationMarks: value };
+  }),
+  setRegistrationMarksPortrait: (value) => set((state) => {
+    recordSettingChange("registrationMarksPortrait", state.registrationMarksPortrait);
+    return { registrationMarksPortrait: value };
+  }),
   setGlobalLanguage: (lang) => set((state) => {
     recordSettingChange("globalLanguage", state.globalLanguage);
     return { globalLanguage: lang };
@@ -514,6 +529,7 @@ export const useSettingsStore = create<Store>()((set) => ({
       perCardGuideStyle: currentState.perCardGuideStyle,
       guidePlacement: currentState.guidePlacement,
       cutGuideLengthMm: currentState.cutGuideLengthMm,
+      registrationMarks: currentState.registrationMarks,
       globalLanguage: currentState.globalLanguage,
       sortBy: currentState.sortBy,
       sortOrder: currentState.sortOrder,

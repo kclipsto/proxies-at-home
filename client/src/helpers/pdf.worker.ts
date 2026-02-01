@@ -210,6 +210,105 @@ function scaleGuideWidthForDPI(screenPx: number, screenPPI = 96, targetDPI: numb
 // MTG card corner radius: 2.5mm
 const CARD_CORNER_RADIUS_MM = 2.5;
 
+// Silhouette registration mark constants (based on Silhouette Studio standard marks)
+const REG_MARK_OFFSET_MM = 10.0076;  // 0.394" from page edge (Silhouette spec)
+const REG_MARK_SQUARE_SIZE_MM = 5;  // Size of the top-left square (3-point)
+const REG_MARK_ARM_LENGTH_MM = 8.382;   // 0.33" length of L-shape arms (Silhouette spec)
+const REG_MARK_LINE_WIDTH_MM = 0.9906; // 0.039" thickness of L-shape lines
+
+/**
+ * Draw Silhouette registration marks on a canvas
+ * 3-point:
+ *   - Top-left: solid black square (origin mark)
+ *   - Top-right: L-shape (vertical down, horizontal left)
+ *   - Bottom-left: L-shape (vertical up, horizontal right)
+ * 4-point: L-shapes at all four corners (no square)
+ */
+function drawSilhouetteRegistrationMarks(
+    ctx: OffscreenCanvasRenderingContext2D,
+    pageWidthPx: number,
+    pageHeightPx: number,
+    dpi: number,
+    markCount: '3' | '4',
+    portrait: boolean = false
+): void {
+    const offsetPx = MM_TO_PX(REG_MARK_OFFSET_MM, dpi);
+    const squareSizePx = MM_TO_PX(REG_MARK_SQUARE_SIZE_MM, dpi);
+    const armLengthPx = MM_TO_PX(REG_MARK_ARM_LENGTH_MM, dpi);
+    const lineWidthPx = MM_TO_PX(REG_MARK_LINE_WIDTH_MM, dpi);
+
+    ctx.fillStyle = '#000000';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = lineWidthPx;
+    ctx.lineCap = 'square';
+
+    // Position coordinates
+    const topLeftX = offsetPx;
+    const topLeftY = offsetPx;
+    const topRightX = pageWidthPx - offsetPx;
+    const topRightY = offsetPx;
+    const bottomLeftX = offsetPx;
+    const bottomLeftY = pageHeightPx - offsetPx;
+    const bottomRightX = pageWidthPx - offsetPx;
+    const bottomRightY = pageHeightPx - offsetPx;
+
+    // Helper to draw L-shape
+    const drawLShape = (x: number, y: number, vDir: 'up' | 'down', hDir: 'left' | 'right') => {
+        const vEnd = vDir === 'down' ? y + armLengthPx : y - armLengthPx;
+        const hEnd = hDir === 'right' ? x + armLengthPx : x - armLengthPx;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, vEnd);
+        ctx.moveTo(x, y);
+        ctx.lineTo(hEnd, y);
+        ctx.stroke();
+    };
+
+    if (portrait) {
+        // Portrait mode: marks rotated for paper loaded in portrait orientation
+        // Square (3-point) at bottom-left, L's at top-left, bottom-right, (and top-right for 4-point)
+        if (markCount === '3') {
+            // 3-point: solid black square at bottom-left
+            ctx.fillRect(bottomLeftX, bottomLeftY - squareSizePx, squareSizePx, squareSizePx);
+        } else {
+            // 4-point: L-shape at bottom-left (up + right)
+            drawLShape(bottomLeftX, bottomLeftY, 'up', 'right');
+        }
+
+        // Top-left: L-shape (down + right)
+        drawLShape(topLeftX, topLeftY, 'down', 'right');
+
+        // Bottom-right: L-shape (up + left)
+        drawLShape(bottomRightX, bottomRightY, 'up', 'left');
+
+        // Top-right: L-shape (only for 4-point, down + left)
+        if (markCount === '4') {
+            drawLShape(topRightX, topRightY, 'down', 'left');
+        }
+    } else {
+        // Landscape mode: standard mark positions
+        // Square (3-point) at top-left, L's at top-right, bottom-left, (and bottom-right for 4-point)
+        if (markCount === '3') {
+            // 3-point: solid black square at top-left
+            ctx.fillRect(topLeftX, topLeftY, squareSizePx, squareSizePx);
+        } else {
+            // 4-point: L-shape at top-left (down + right)
+            drawLShape(topLeftX, topLeftY, 'down', 'right');
+        }
+
+        // Top-right: L-shape (down + left)
+        drawLShape(topRightX, topRightY, 'down', 'left');
+
+        // Bottom-left: L-shape (up + right)
+        drawLShape(bottomLeftX, bottomLeftY, 'up', 'right');
+
+        // Bottom-right: L-shape (only for 4-point, up + left)
+        if (markCount === '4') {
+            drawLShape(bottomRightX, bottomRightY, 'up', 'left');
+        }
+    }
+}
+
 /**
  * Create a reusable guide overlay canvas that can be stamped onto each card
  * Uses shared cut guide utility for consistent rendering with PixiJS canvas
@@ -287,6 +386,9 @@ self.onmessage = async (event: MessageEvent) => {
             bleedEdgeWidthMm, cardSpacingMm, cardPositionX, cardPositionY, guideColor, guideWidthCssPx, DPI,
             imagesById, API_BASE, darkenMode, cutLineStyle, perCardGuideStyle, guidePlacement,
             cutGuideLengthMm,
+            // Silhouette registration marks
+            registrationMarks,
+            registrationMarksPortrait,
             // Darken settings (Global)
             darkenThreshold,
             darkenContrast,
@@ -691,7 +793,10 @@ self.onmessage = async (event: MessageEvent) => {
             self.postMessage({ type: 'progress', pageIndex, imagesProcessed });
         }
 
-
+        // Draw Silhouette registration marks if enabled (on top of everything)
+        if (registrationMarks && registrationMarks !== 'none') {
+            drawSilhouetteRegistrationMarks(ctx, pageWidthPx, pageHeightPx, DPI, registrationMarks, registrationMarksPortrait);
+        }
 
         const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.98 });
         if (blob) {

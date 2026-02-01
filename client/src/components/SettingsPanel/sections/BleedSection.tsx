@@ -50,10 +50,10 @@ export function BleedSection() {
             {/* Global Bleed Width */}
             <div className="flex flex-col gap-2">
                 <Label className="text-nowrap">Bleed Width</Label>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-2">
                     <NumberInput
                         ref={bleedEdgeInput.inputRef}
-                        className="w-20"
+                        className="w-full"
                         step={0.1}
                         defaultValue={bleedEdgeInput.defaultValue}
                         onChange={bleedEdgeInput.handleChange}
@@ -79,7 +79,7 @@ export function BleedSection() {
                             setBleedEdgeUnit(newUnit);
                         }}
                         disabled={!bleedEdge}
-                        className="w-20"
+                        className="w-full"
                     >
                         <option value="mm">mm</option>
                         <option value="in">in</option>

@@ -91,6 +91,8 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
   const guideColor = useSettingsStore((s) => s.guideColor);
   const guidePlacement = useSettingsStore((s) => s.guidePlacement);
   const cutGuideLengthMm = useSettingsStore((s) => s.cutGuideLengthMm);
+  const registrationMarks = useSettingsStore((s) => s.registrationMarks);
+  const registrationMarksPortrait = useSettingsStore((s) => s.registrationMarksPortrait);
 
   // Flipped cards for back image display
   const flippedCards = useSelectionStore((s) => s.flippedCards);
@@ -762,6 +764,8 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
                   perCardGuideColor={perCardGuideColorNum}
                   perCardGuidePlacement={guidePlacement}
                   cutGuideLengthMm={cutGuideLengthMm}
+                  registrationMarks={registrationMarks}
+                  registrationMarksPortrait={registrationMarksPortrait}
                   isDarkMode={isDarkMode}
                   onRenderedCardsChange={setRenderedCardUuids}
                   style={{

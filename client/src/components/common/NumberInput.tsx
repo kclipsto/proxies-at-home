@@ -118,7 +118,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
                     max={max}
                     step={step}
                     onChange={onChange}
-                    className="[&_input]:pr-8 [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
+                    className="[&_input]:pr-8 [&_input]:appearance-none [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
                 />
                 <div className="absolute right-1 top-1 bottom-1 w-8 flex flex-col opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200">
                     <button
