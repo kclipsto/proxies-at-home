@@ -112,8 +112,8 @@ export type Store = {
   setShowProcessingToasts: (value: boolean) => void;
   defaultCardbackId: string;
   setDefaultCardbackId: (id: string) => void;
-  exportMode: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs';
-  setExportMode: (value: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs') => void;
+  exportMode: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs' | 'visible_faces';
+  setExportMode: (value: 'fronts' | 'interleaved-all' | 'interleaved-custom' | 'duplex' | 'backs' | 'visible_faces') => void;
 
   // Auto-import tokens
   autoImportTokens: boolean;
