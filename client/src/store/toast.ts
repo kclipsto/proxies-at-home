@@ -19,6 +19,7 @@ type ToastStore = {
     hideMetadataToast: () => void;
     showSuccessToast: (cardName: string) => void;
     showCopyToast: (message: string) => void;
+    showInfoToast: (message: string) => void;
     showErrorToast: (message: string) => void;
 };
 
@@ -98,6 +99,24 @@ export const useToastStore = create<ToastStore>((set, get) => ({
         setTimeout(() => {
             removeToast(id);
         }, 2000);
+    },
+
+    showInfoToast: (message: string) => {
+        const { toasts, addToast, removeToast } = get();
+        // Remove any existing info toasts to prevent stacking
+        toasts.filter(t => t.type === "copy").forEach(t => removeToast(t.id)); // Reuse copy type for now or add new type?
+        // Actually interface allows "copy" | "success" | "error" | "processing" | "metadata"
+        // I should update interface if I want "info" type.
+        // For now, let's just use "copy" type which is likely blue/neutral.
+        const id = addToast({
+            type: "copy", // Reuse copy style
+            message,
+            dismissible: true,
+        });
+        // Auto-dismiss after 4 seconds
+        setTimeout(() => {
+            removeToast(id);
+        }, 4000);
     },
 
     showCopyToast: (message: string) => {

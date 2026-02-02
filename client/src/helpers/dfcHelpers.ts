@@ -4,17 +4,7 @@
  * Provides utilities for detecting and handling double-faced cards.
  */
 
-import type { ScryfallCard } from '../../../shared/types';
-
-/** Print metadata for artwork selection */
-export interface PrintInfo {
-    imageUrl: string;
-    set: string;
-    number: string;
-    rarity?: string;
-    faceName?: string;
-    lang?: string;
-}
+import type { ScryfallCard, PrintInfo } from '@/types';
 
 /**
  * Checks if a card is a DFC (has multiple faces).

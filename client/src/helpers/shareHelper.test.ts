@@ -338,6 +338,24 @@ describe('shareHelper', () => {
             expect(result.dfcLinks).toEqual([[0, 1]]);
         });
 
+        it('should deserialize imageId and order', () => {
+            const data: ShareData = {
+                v: 1,
+                c: [[
+                    's',
+                    'sol/1',
+                    54321,
+                    null,
+                    null,
+                    'Sol Ring',
+                    'https://example.com/image.jpg'
+                ]]
+            };
+
+            const result = deserializeForImport(data);
+            expect(result.cards[0].order).toBe(54321);
+            expect(result.cards[0].imageId).toBe('https://example.com/image.jpg');
+        });
         it('should include settings', () => {
             const data: ShareData = {
                 v: 1,

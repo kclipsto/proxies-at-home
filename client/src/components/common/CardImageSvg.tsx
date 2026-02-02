@@ -101,6 +101,8 @@ export const CardImageSvg: React.FC<CardImageSvgProps> = ({
             className="w-full h-full block"
             preserveAspectRatio="xMidYMid meet"
             xmlns="http://www.w3.org/2000/svg"
+            role="img"
+            aria-label={`Card image for ${id}`}
         >
             <defs>
                 {rounded && (

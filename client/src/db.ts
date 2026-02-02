@@ -89,6 +89,7 @@ export type Json =
   | number
   | boolean
   | null
+  | undefined
   | { [key: string]: Json }
   | Json[];
 
@@ -107,6 +108,7 @@ export interface Project {
   settings: Json;          // Project-specific settings
   shareId?: string;        // Server share ID (for auto-sync)
   lastSharedAt?: number;   // Timestamp of last share (enables auto-sync)
+  lastSyncedHash?: string; // Hash of the state at last sync (to detect local edits)
 }
 
 // Persistent user uploads (content-addressed, shared across projects)
@@ -415,21 +417,40 @@ class ProxxiedDexie extends Dexie {
       userPreferences: '&id',
       user_images: '&hash', // Content-addressed by SHA-256 hash
     });
+
+    // Version 18: Add shareId index to projects for fast lookup
+    this.version(18).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId, projectId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+      projects: '&id, shareId, lastOpenedAt',
+      userPreferences: '&id',
+      user_images: '&hash',
+    });
   }
 }
 
 // Cache version for metadata - bump when adding new required fields
 export const METADATA_CACHE_VERSION = 2;
 
+export type JsonObject = { [key: string]: Json };
+
 export interface CachedMetadata {
   id: string;         // UUID
   name: string;       // Card Name
   set: string;        // Set Code (or empty)
   number: string;     // Collector Number (or empty)
-  data: Json;         // The metadata object
+  // Data must be an object to hold properties like 'prints' safely
+  data: JsonObject & { prints?: PrintInfo[] };
   cachedAt: number;   // Last accessed
   size: number;       // Estimated size in bytes
   cacheVersion?: number;  // Schema version for targeted invalidation
+  hasFullPrints?: boolean; // True if 'data.prints' contains complete list of standard prints
 }
 
 // MPC search cache entry - for caching MPC Autofill search results

@@ -40,6 +40,7 @@ export interface ArtworkTabContentProps {
     displayData: {
         name?: string;
         imageUrls: string[] | undefined;
+        prints?: import("@/helpers/dfcHelpers").PrintInfo[];
         id: string | undefined;
         // Single ID for sorting and highlighting - replaces selectedId + initialScryfallId
         selectedArtId: string | undefined;
@@ -49,7 +50,7 @@ export interface ArtworkTabContentProps {
     onOpenSearch: () => void;
     onSelectCardback: (id: string, name: string) => void;
     onSetAsDefaultCardback: (id: string, name: string) => void;
-    onSelectArtwork: (url: string) => void;
+    onSelectArtwork: (url: string, cardName?: string, specificPrint?: { set: string; number: string }) => void;
     onSelectMpcArt: (card: MpcAutofillCard) => void;
     onClose: () => void;
     onRequestDelete: (cardbackId: string, cardbackName: string) => void;
@@ -203,10 +204,11 @@ export function ArtworkTabContent({
                                 selectedArtId={displayData.selectedArtId}
                                 processedDisplayUrl={displayData.processedDisplayUrl}
                                 selectedFace={selectedFace}
-                                onSelectCard={(_, url) => onSelectArtwork(url || '')}
+                                onSelectCard={(name, url, print) => onSelectArtwork(url || '', name, print)}
                                 containerClassStyle="flex-1 h-full"
                                 isActive={artSource === 'scryfall'}
                                 cardTypeLine={modalCard.type_line}
+                                initialPrints={displayData.prints}
                             />
                         </div>
                     )

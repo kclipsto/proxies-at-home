@@ -7,8 +7,8 @@ import { ManaIcon } from "@/components/common";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/db";
 import { useMemo, useCallback } from "react";
-import { getCardTypes } from "@/hooks/useFilteredAndSortedCards";
 import type { CardOption } from "@/types";
+import { extractAvailableFilters } from "@/helpers/sortAndFilterUtils";
 
 // Collapsible section component with persisted state
 interface FilterSectionProps {
@@ -114,46 +114,10 @@ export function FilterSortSection({ cards }: { cards?: CardOption[] }) {
 
     const cardsFromDb = useMemo(() => cards ?? cardsFromQuery ?? [], [cards, cardsFromQuery]);
 
-    // Extract unique card types from loaded cards
-    const availableTypes = useMemo(() => {
-        if (!cardsFromDb) return [];
-        const types = new Set<string>();
-        let hasDfc = false;
-        let hasToken = false;
-        for (const card of cardsFromDb) {
-            // Check for tokens using the isToken field (set during import)
-            if (card.isToken === true) {
-                hasToken = true;
-            } else {
-                // Only check type_line for non-tokens - add ALL types, not just the primary
-                const cardTypes = getCardTypes(card.type_line);
-                for (const t of cardTypes) types.add(t);
-            }
-            if (card.linkedFrontId || card.linkedBackId) hasDfc = true;
-        }
-        const typeOrder = ["Token", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Battle", "Dual Faced"];
-        const sortedTypes = Array.from(types).sort((a, b) => typeOrder.indexOf(a) - typeOrder.indexOf(b));
-        // Add Token at the beginning if any tokens exist
-        if (hasToken) sortedTypes.unshift("Token");
-        if (hasDfc) sortedTypes.push("Dual Faced");
-        return sortedTypes;
-    }, [cardsFromDb]);
-
-    // Extract unique categories from loaded cards (Archidekt only)
-    const availableCategories = useMemo(() => {
-        if (!cardsFromDb) return [];
-        const categories = new Set<string>();
-        for (const card of cardsFromDb) {
-            if (card.category) categories.add(card.category);
-        }
-        // Sort with Commander first, then alphabetically
-        return Array.from(categories).sort((a, b) => {
-            if (a === "Commander") return -1;
-            if (b === "Commander") return 1;
-            if (a === "Mainboard") return -1;
-            if (b === "Mainboard") return 1;
-            return a.localeCompare(b);
-        });
+    // Extract unique card types and categories from loaded cards
+    const { types: availableTypes, categories: availableCategories } = useMemo(() => {
+        if (!cardsFromDb || cardsFromDb.length === 0) return { types: [], categories: [] };
+        return extractAvailableFilters(cardsFromDb);
     }, [cardsFromDb]);
 
     const toggleManaCost = (cost: number) => {

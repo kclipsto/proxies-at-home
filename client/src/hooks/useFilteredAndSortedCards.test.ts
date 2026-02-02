@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useFilteredAndSortedCards, getCardTypes } from "./useFilteredAndSortedCards";
+import { useFilteredAndSortedCards } from "./useFilteredAndSortedCards";
+import { getCardTypes } from "../helpers/sortAndFilterUtils";
 import type { CardOption } from "../../../shared/types";
 
 // Mock settings store
