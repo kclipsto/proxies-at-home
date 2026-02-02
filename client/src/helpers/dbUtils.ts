@@ -3,7 +3,7 @@ import type { CardOption } from "../../../shared/types";
 import { parseImageIdFromUrl } from "./imageHelper";
 import { isCardbackId } from "./cardbackLibrary";
 import { extractMpcIdentifierFromImageId, getMpcAutofillImageUrl } from "./mpcAutofillApi";
-import { inferSourceFromUrl } from "./imageSourceUtils";
+import { inferSourceFromUrl, getImageSourceSync, isCustomSource } from "./imageSourceUtils";
 
 /**
  * Calculates the SHA-256 hash of a file or blob.
@@ -753,16 +753,12 @@ export async function changeCardArtwork(
     }
 
     // 2. Determine if new image is custom (explicitly 'custom' source)
-    // We prioritize explicit source field over originalBlob existence to identify user uploads
-    // This handles MPC/Scryfall images correctly even if they somehow have blob data
     let newImageIsCustom = false;
     if (isCardbackId(newImageId)) {
       const cardback = await db.cardbacks.get(newImageId);
       newImageIsCustom = cardback ? !!cardback.originalBlob : false;
     } else {
       const newImage = await db.images.get(newImageId);
-      // Use helper to check source (explicit 'custom' or inferred hash)
-      const { getImageSourceSync, isCustomSource } = await import("./imageSourceUtils");
       newImageIsCustom = isCustomSource(getImageSourceSync(newImageId, newImage?.source));
     }
 

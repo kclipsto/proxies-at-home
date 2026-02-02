@@ -173,7 +173,7 @@ export class ImportOrchestrator {
 
                 try {
                     let imageId: string | undefined;
-                    let hasBuiltInBleed = false;
+                    let hasBuiltInBleed: boolean | undefined = undefined;
                     let needsEnrichment = false;
                     let scryfallMetadata: {
                         colors?: string[];
@@ -189,7 +189,7 @@ export class ImportOrchestrator {
                     if (intent.localImageId) {
                         imageId = intent.localImageId;
                         needsEnrichment = true;
-                        hasBuiltInBleed = intent.preloadedData?.hasBuiltInBleed ?? false;
+                        hasBuiltInBleed = intent.preloadedData?.hasBuiltInBleed;
 
                         // Try to enrich DFC metadata for local images (e.g. from Advanced Search)
                         const cleanedName = parseLineToIntent(intent.name).name;

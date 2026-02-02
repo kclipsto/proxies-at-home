@@ -502,6 +502,8 @@ export async function processCardImageWebGL(
     displayBlobDarkened?: Blob;
     // For Card Editor live preview
     baseDisplayBlob: Blob;
+    detectedHasBuiltInBleed?: boolean;
+    darknessFactor: number;
 }> {
 
     const exportDpi = opts?.exportDpi ?? 300;
@@ -614,7 +616,7 @@ export async function processCardImageWebGL(
         glCtx: WebGL2RenderingContext,
         darkenMode: number,
         darknessFactor: number
-    ): Promise<{ exportBlob: Blob; displayBlob: Blob }> {
+    ): Promise<{ exportBlob: Blob; displayBlob: Blob; darknessFactor: number }> {
         // Render to screen (null framebuffer)
         glCtx.bindFramebuffer(glCtx.FRAMEBUFFER, null);
         glCtx.useProgram(progs.final);
@@ -660,7 +662,7 @@ export async function processCardImageWebGL(
         // Use WebP for display blobs to save memory and improve performance (L6)
         const displayBlob = await lowResCanvas.convertToBlob({ type: "image/webp", quality: 0.90 });
 
-        return { exportBlob, displayBlob };
+        return { exportBlob, displayBlob, darknessFactor };
     }
 
     // Compute darknessFactor from the source image
@@ -717,6 +719,7 @@ export async function processCardImageWebGL(
         displayBlobDarkened: contrastEdgesResult?.displayBlob,
         // For Card Editor live preview (undarkened version)
         baseDisplayBlob: normalResult.displayBlob,
+        darknessFactor,
     };
 }
 
@@ -758,6 +761,8 @@ export async function processExistingBleedWebGL(
     // For Card Editor live preview
     baseDisplayBlob: Blob;
     baseExportBlob: Blob;
+    darknessFactor: number;
+    detectedHasBuiltInBleed?: boolean;
 }> {
     const exportDpi = opts?.exportDpi ?? 300;
     const displayDpi = opts?.displayDpi ?? 300;
@@ -779,8 +784,7 @@ export async function processExistingBleedWebGL(
     const displayHeight = Math.ceil(IN(cardHeightMm / 25.4, displayDpi) + displayBleedPx * 2);
 
     // Compute darknessFactor for adaptive effects
-    // Compute darknessFactor for adaptive effects
-    // Removed unused darknessFactor
+    const darknessFactor = computeDarknessFactor(img);
 
 
     // Get the current darken mode (0=none is always generated)
@@ -845,6 +849,7 @@ export async function processExistingBleedWebGL(
         // For Card Editor live preview
         baseDisplayBlob: displayBlob,
         baseExportBlob: exportBlob,
+        darknessFactor,
     };
 }
 

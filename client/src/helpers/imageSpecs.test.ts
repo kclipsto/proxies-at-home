@@ -31,9 +31,9 @@ const defaultSettings: GlobalSettings = {
 
 describe("imageSpecs", () => {
     describe("getHasBuiltInBleed", () => {
-        it("should return false when no bleed properties are set", () => {
+        it("should return undefined when no bleed properties are set (triggering auto-detect)", () => {
             const card = createTestCard();
-            expect(getHasBuiltInBleed(card)).toBe(false);
+            expect(getHasBuiltInBleed(card)).toBeUndefined();
         });
 
         it("should return true when hasBuiltInBleed is true", () => {

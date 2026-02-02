@@ -202,9 +202,9 @@ export function useCardEnrichment() {
                         }
 
                         const rawResponses = await response.json();
-                        // Validate responses to filter out malformed data
+                        // Validate responses but keep index alignment (map invalid to null instead of filtering)
                         validResponses = Array.isArray(rawResponses)
-                            ? rawResponses.filter(isEnrichedCardData)
+                            ? rawResponses.map(r => isEnrichedCardData(r) ? r : null)
                             : [];
 
                         // Cache the new results
@@ -374,16 +374,22 @@ export function useCardEnrichment() {
 
                             if (data) {
                                 // Default updates (for single face or DFC front)
+                                // Default updates (for single face or DFC front)
                                 const updates: Partial<CardOption> = {
-                                    name: data.name,
+                                    // Protect Custom/User Uploads from having their name/set/number identifying info overwritten
+                                    // They only want enrichment for token_parts, colors, etc.
+                                    ...(card.isUserUpload ? {} : {
+                                        name: data.name,
+                                        set: data.set || card.set,
+                                        number: data.number || card.number,
+                                        type_line: data.type_line,
+                                        mana_cost: data.mana_cost,
+                                    }),
+
                                     colors: data.colors,
                                     cmc: data.cmc,
-                                    type_line: data.type_line,
                                     rarity: data.rarity,
-                                    mana_cost: data.mana_cost,
                                     lang: data.lang,
-                                    set: data.set || card.set,
-                                    number: data.number || card.number,
                                     needsEnrichment: false,
                                     enrichmentRetryCount: undefined,
                                     enrichmentNextRetryAt: undefined,

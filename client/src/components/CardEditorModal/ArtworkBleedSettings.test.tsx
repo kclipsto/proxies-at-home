@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+expect.extend(matchers);
 import { ArtworkBleedSettings } from './ArtworkBleedSettings';
 import { useArtworkModalStore } from '@/store/artworkModal';
 import { useSettingsStore } from '@/store/settings';
@@ -159,6 +160,29 @@ describe('ArtworkBleedSettings', () => {
                 // Check source amount initialization
                 expect(screen.getByLabelText('Built-in Bleed')).toBeChecked();
             });
+        });
+
+        it('initializes with checked Built-in Bleed when matched (Standard persistence case)', async () => {
+            // In the new model, we persist the detected value to the card, so the card itself will have hasBuiltInBleed = true
+            const persistedCard = {
+                ...defaultFrontCard,
+                hasBuiltInBleed: true, // Persisted
+            };
+
+            (useArtworkModalStore as unknown as Mock).mockImplementation((selector) => {
+                return selector({
+                    card: persistedCard,
+                    closeModal: mockCloseModal,
+                });
+            });
+
+            render(<ArtworkBleedSettings selectedFace="front" />);
+
+            await waitFor(() => {
+                expect(screen.getByLabelText('Built-in Bleed')).toBeChecked();
+            });
+
+            expect(getHasBuiltInBleed).toHaveBeenCalledWith(persistedCard);
         });
 
         it('toggling Built-in Bleed shows/hides source controls', () => {

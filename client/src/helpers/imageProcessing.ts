@@ -1,5 +1,5 @@
 
-import { IMAGE_PROCESSING } from '@/constants/imageProcessing';
+import { IMAGE_PROCESSING } from '../constants/imageProcessing';
 
 export const NEAR_BLACK = 16;
 export const NEAR_WHITE = 239;
@@ -365,5 +365,16 @@ export function applyDarkenAllCPU(imageData: ImageData): void {
             d[i + 2] = 0;
         }
     }
+}
+
+/**
+ * Determines whether to use the "Fast Path" (trimming) for bleed processing.
+ * 
+ * @param targetBleedMm - The desired bleed width in mm
+ * @param existingBleedMm - The existing built-in bleed in mm (default 3.175)
+ * @returns true if we should trim existing bleed instead of generating new bleed
+ */
+export function shouldTrimBleed(targetBleedMm: number, existingBleedMm: number = IMAGE_PROCESSING.DEFAULT_MPC_BLEED_MM): boolean {
+    return targetBleedMm <= existingBleedMm;
 }
 
