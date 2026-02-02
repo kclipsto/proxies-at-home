@@ -7,16 +7,16 @@ import { getDatabase } from "../db/db.js";
 import { batchInsertCards, getCardCount } from "../db/proxxiedCardLookup.js";
 import {
   parseTypeLine,
-  insertCardType,
-  insertTokenName,
+  batchInsertCardTypes,
+  batchInsertTokenNames,
 } from "../utils/scryfallCatalog.js";
 import type { ScryfallApiCard } from "../utils/getCardImagesPaged.js";
 import { debugLog } from "../utils/debug.js";
 
-// Use default-cards bulk data for broad coverage on set+number lookups.
+// Use all-cards bulk data for broad coverage on set+number lookups.
 // Name-only queries bypass this cache and use live Scryfall API search with scoring.
-const BULK_DATA_API = "https://api.scryfall.com/bulk-data/default-cards";
-const BATCH_SIZE = 1000;
+const BULK_DATA_API = "https://api.scryfall.com/bulk-data/all-cards";
+const BATCH_SIZE = 10000;
 
 interface BulkDataInfo {
   download_uri: string;
@@ -104,6 +104,8 @@ export async function downloadAndImportBulkData(): Promise<{
 
   let cardsProcessed = 0;
   let batch: ScryfallApiCard[] = [];
+  let typeEntries: Array<{ cardId: string; type: string; isToken: boolean }> = [];
+  let tokenNames: string[] = [];
   let totalInserted = 0;
   let totalUpdated = 0;
 
@@ -130,12 +132,12 @@ export async function downloadAndImportBulkData(): Promise<{
     const isToken = types.includes("token");
 
     for (const type of types) {
-      insertCardType(value.id, type, isToken);
+      typeEntries.push({ cardId: value.id, type, isToken });
     }
 
     // Register token names for t: prefix detection
     if (isToken) {
-      insertTokenName(value.name);
+      tokenNames.push(value.name);
     }
 
     // Insert in batches for better performance
@@ -143,8 +145,16 @@ export async function downloadAndImportBulkData(): Promise<{
       const result = batchInsertCards(batch);
       totalInserted += result.inserted;
       totalUpdated += result.updated;
+
+      // Batch insert auxiliary data
+      batchInsertCardTypes(typeEntries);
+      batchInsertTokenNames(tokenNames);
+
       batch = [];
-      if (cardsProcessed % 10000 === 0) {
+      typeEntries = [];
+      tokenNames = [];
+
+      if (cardsProcessed % BATCH_SIZE === 0) {
         debugLog(
           `[Bulk Import] Processed ${cardsProcessed} cards... (${totalInserted} new, ${totalUpdated} updated)`
         );
@@ -165,6 +175,9 @@ export async function downloadAndImportBulkData(): Promise<{
     const result = batchInsertCards(batch);
     totalInserted += result.inserted;
     totalUpdated += result.updated;
+
+    batchInsertCardTypes(typeEntries);
+    batchInsertTokenNames(tokenNames);
   }
 
   // Update last import time

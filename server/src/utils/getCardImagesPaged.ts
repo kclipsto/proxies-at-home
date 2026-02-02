@@ -248,7 +248,7 @@ export async function batchFetchCards(
     // For name lookups, use the requested language
     const local =
       ci.set && ci.number
-        ? lookupCardBySetNumber(ci.set, ci.number)
+        ? lookupCardBySetNumber(ci.set, ci.number, lang)
         : lookupCardByName(ci.name, lang);
 
     if (local && local.name) {
@@ -470,6 +470,12 @@ export async function batchFetchCards(
     }
 
     for (const [key, card] of uniqueCards.entries()) {
+      // Optimization: If we already have the card in the requested language, skip fetch
+      if (card.lang === lang) {
+        debugLog(`[batchFetchCards] Skipping localization for "${card.name}" (already have ${lang})`);
+        continue;
+      }
+
       await delayScryfallRequest();
       try {
         const url = `https://api.scryfall.com/cards/${card.set}/${card.collector_number}/${lang}`;

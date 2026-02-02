@@ -140,14 +140,21 @@ describe('Database Layer', () => {
             expect(result.name).toBe('Bala Ged Recovery // Bala Ged Sanctuary');
         });
 
-        it('should find card regardless of language when looking up by set+number', () => {
-            // This tests the behavior where set+number uniquely identifies a card
+        it('should find card by set and collector number with correct language', () => {
             const result = db.prepare(`
-                SELECT * FROM cards WHERE set_code = ? AND collector_number = ?
-            `).get('snc', '459') as { name: string; lang: string };
+                SELECT * FROM cards WHERE set_code = ? AND collector_number = ? AND lang = ?
+            `).get('snc', '459', 'ru') as { name: string; lang: string };
 
             expect(result.name).toBe('Gala Greeters');
             expect(result.lang).toBe('ru');
+        });
+
+        it('should NOT find card if language does not match', () => {
+            const result = db.prepare(`
+                SELECT * FROM cards WHERE set_code = ? AND collector_number = ? AND lang = ?
+            `).get('snc', '459', 'en');
+
+            expect(result).toBeUndefined();
         });
     });
 
