@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Check, Trash2, Edit2, Share2, RefreshCw, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Check, Trash2, Edit2, Share2, RefreshCw, AlertCircle } from "lucide-react";
 import { useProjectStore, useSettingsStore } from "@/store";
 import { SelectDropdown } from "@/components/common";
 import { Button, TextInput, Label, Modal, ModalHeader, ModalBody, ModalFooter } from "flowbite-react";
@@ -10,6 +10,7 @@ import { createShare, getShareWarnings } from "@/helpers/shareHelper";
 import { useToastStore } from "@/store/toast";
 import { useShallow } from "zustand/react/shallow";
 import { useShareSync } from "@/hooks/useShareSync";
+import { debugLog } from "@/helpers/debug";
 
 export function ProjectSelector() {
     const projects = useProjectStore((state) => state.projects);
@@ -89,9 +90,21 @@ export function ProjectSelector() {
     // --- Share Project ---
     const cardsQuery = useLiveQuery(async () => {
         if (!currentProjectId) return [];
-        return db.cards.where('projectId').equals(currentProjectId).toArray();
+        const items = await db.cards.where('projectId').equals(currentProjectId).sortBy('order');
+        // Use central sorting logic (handles Shared Slot Key order + Front/Back tie-break)
+        const { sortCards } = await import('../../helpers/dbUtils');
+        return sortCards(items);
     }, [currentProjectId]);
     const cards = useMemo(() => cardsQuery ?? [], [cardsQuery]);
+
+    // Migration / cleanup: Enforce shared slot topology on load
+    useEffect(() => {
+        if (currentProjectId) {
+            import("../../helpers/dbUtils").then(({ rebalanceCardOrders }) => {
+                rebalanceCardOrders(currentProjectId).catch(console.error);
+            });
+        }
+    }, [currentProjectId]);
 
     // All share-relevant settings from store
     const settings = useSettingsStore(useShallow((state) => ({
@@ -146,12 +159,32 @@ export function ProjectSelector() {
     const shareableCount = useMemo(() => cards.filter(c => !c.linkedFrontId && !c.isUserUpload).length, [cards]);
 
     const handleShare = useCallback(async () => {
-        if (cards.length === 0) {
+        // Wait briefly for any pending DB writes to flush (race condition protection)
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Fetch latest cards directly from DB, sorted by order + Atomic Slot logic
+        const latestCards = currentProjectId
+            ? await db.cards.where('projectId').equals(currentProjectId).sortBy('order')
+            : [];
+
+        // Apply Composite Sort (Order ASC, Front First)
+        latestCards.sort((a, b) => {
+            if (Math.abs(a.order - b.order) > 0.0001) return a.order - b.order;
+            const aIsBack = !!a.linkedFrontId;
+            const bIsBack = !!b.linkedFrontId;
+            return Number(aIsBack) - Number(bIsBack);
+        });
+
+
+        if (latestCards.length === 0) {
             useToastStore.getState().showErrorToast('No cards to share');
             return;
         }
+
+        debugLog(`[ProjectSelector] handleShare - Fetched ${latestCards.length} cards for Project ${currentProjectId}:`);
+        debugLog(latestCards.map(c => `${c.name} (${c.order})`));
         try {
-            const result = await createShare(cards, settings, currentProjectId ?? undefined);
+            const result = await createShare(latestCards, settings, currentProjectId ?? undefined);
 
             // Save shareId and lastSharedAt for auto-sync
             if (currentProjectId) {
@@ -171,7 +204,7 @@ export function ProjectSelector() {
             const message = err instanceof Error ? err.message : 'Failed to create share';
             useToastStore.getState().showErrorToast(message);
         }
-    }, [cards, settings, currentProjectId]);
+    }, [settings, currentProjectId]);
 
     // Auto-sync shared projects
     const { syncStatus } = useShareSync();
@@ -276,8 +309,8 @@ export function ProjectSelector() {
                     <span className="text-sm font-medium">Share Project</span>
                     {/* Sync status indicator */}
                     {syncStatus === 'pending' && (
-                        <span className="text-purple-200 text-xs" title="Changes pending sync">
-                            •
+                        <span title="Changes pending sync">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-200" />
                         </span>
                     )}
                     {syncStatus === 'syncing' && (
@@ -285,11 +318,7 @@ export function ProjectSelector() {
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                         </span>
                     )}
-                    {syncStatus === 'synced' && (
-                        <span title="Synced">
-                            <CheckCircle className="w-3.5 h-3.5 text-green-300" />
-                        </span>
-                    )}
+
                     {syncStatus === 'error' && (
                         <span title="Sync failed">
                             <AlertCircle className="w-3.5 h-3.5 text-red-300" />

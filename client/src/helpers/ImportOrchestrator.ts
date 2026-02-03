@@ -4,6 +4,7 @@ import { undoableAddCards } from "./undoableActions";
 import { addRemoteImage, createLinkedBackCardsBulk } from "./dbUtils";
 import { useSettingsStore, useProjectStore } from "@/store";
 import { getMpcAutofillImageUrl } from "./mpcAutofillApi";
+import { findBestMpcMatches } from "./mpcImportIntegration";
 import { isCardbackId } from "./cardbackLibrary";
 import { convertScryfallToCardOptions } from "./cardConverter";
 import { fetchCardBySetAndNumber, fetchCardWithPrints, fetchCardsMetadataBatch } from "./scryfallApi";
@@ -138,6 +139,7 @@ export class ImportOrchestrator {
                 isToken: intent.isToken,
                 category: intent.category,
                 projectId,
+                order: intent.order, // Use explicit order if provided
             }));
         });
 
@@ -148,9 +150,9 @@ export class ImportOrchestrator {
             const { db } = await import('../db');
 
             // Step 2a: Batch fetch metadata for all MPC cards that need enrichment
-            // Gather unique card names for MPC intents to fetch all metadata in one request
+            // Gather unique card names for MPC and Local Image intents to fetch all metadata in one request
             const mpcIntentNames = intents
-                .filter(intent => intent.mpcId && !intent.localImageId)
+                .filter(intent => (intent.mpcId || intent.localImageId) && !intent.preloadedData)
                 .map(intent => parseLineToIntent(intent.name).name)
                 .filter(name => name); // Filter out empty names
 
@@ -171,7 +173,7 @@ export class ImportOrchestrator {
 
                 try {
                     let imageId: string | undefined;
-                    let hasBuiltInBleed = false;
+                    let hasBuiltInBleed: boolean | undefined = undefined;
                     let needsEnrichment = false;
                     let scryfallMetadata: {
                         colors?: string[];
@@ -187,7 +189,60 @@ export class ImportOrchestrator {
                     if (intent.localImageId) {
                         imageId = intent.localImageId;
                         needsEnrichment = true;
-                        hasBuiltInBleed = intent.preloadedData?.hasBuiltInBleed ?? false;
+                        hasBuiltInBleed = intent.preloadedData?.hasBuiltInBleed;
+
+                        // Try to enrich DFC metadata for local images (e.g. from Advanced Search)
+                        const cleanedName = parseLineToIntent(intent.name).name;
+                        if (cleanedName) {
+                            const scryfallCard = metadataCache.get(cleanedName.toLowerCase());
+                            if (scryfallCard) {
+                                scryfallMetadata = {
+                                    colors: scryfallCard.colors,
+                                    cmc: scryfallCard.cmc,
+                                    type_line: scryfallCard.type_line,
+                                    rarity: scryfallCard.rarity,
+                                    mana_cost: scryfallCard.mana_cost,
+                                    token_parts: scryfallCard.token_parts,
+                                };
+
+                                // Handle DFC Back Face
+                                if (scryfallCard.card_faces && scryfallCard.card_faces.length > 1) {
+                                    const backFace = scryfallCard.card_faces[1];
+
+                                    // 1. Try to find MPC image for the back face first
+                                    let backImageId: string | undefined;
+                                    try {
+                                        // Construct a virtual CardInfo to use the matcher
+                                        const backInfo = {
+                                            name: backFace.name,
+                                            set: scryfallCard.set,
+                                            number: scryfallCard.number,
+                                            isToken: false // Back faces aren't tokens usually
+                                        };
+
+                                        const mpcMatches = await findBestMpcMatches([backInfo]);
+                                        if (mpcMatches.length > 0 && mpcMatches[0].imageUrl) {
+                                            const match = mpcMatches[0];
+                                            backImageId = await addRemoteImage([match.imageUrl], quantity);
+                                            if (backImageId) {
+                                                console.debug(`[ImportOrchestrator] Found MPC back face for ${intent.name}: ${backFace.name}`);
+                                                dfcBackInfo = { imageId: backImageId, name: backFace.name };
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.warn(`[ImportOrchestrator] Failed MPC back face lookup for ${intent.name}`, e);
+                                    }
+
+                                    // 2. Fallback to Scryfall image if no MPC image found
+                                    if (!backImageId && backFace.imageUrl) {
+                                        backImageId = await addRemoteImage([backFace.imageUrl], quantity);
+                                        if (backImageId) {
+                                            dfcBackInfo = { imageId: backImageId, name: backFace.name };
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     // Case 2: Explicit MPC ID (XML or Manual)
                     else if (intent.mpcId) {
@@ -321,6 +376,12 @@ export class ImportOrchestrator {
             isToken: i.isToken,
             mpcIdentifier: i.mpcId, // Map mpcId -> mpcIdentifier
             overrides: i.cardOverrides, // Pass through card overrides for share import
+            linkedBackImageId: i.linkedBackImageId,
+            linkedBackName: i.linkedBackName,
+            linkedBackSet: i.linkedBackSet, // New field for Scryfall back via share
+            linkedBackNumber: i.linkedBackNumber, // New field for Scryfall back via share
+            preferredImageId: i.preferredImageId, // Fidelity: Specific image ID
+            order: i.order, // Fidelity: Specific order
         }));
 
         // Use settings from snapshot instead of re-fetching from store

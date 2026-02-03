@@ -3,7 +3,7 @@ import type { CardOption } from "../../../shared/types";
 import { parseImageIdFromUrl } from "./imageHelper";
 import { isCardbackId } from "./cardbackLibrary";
 import { extractMpcIdentifierFromImageId, getMpcAutofillImageUrl } from "./mpcAutofillApi";
-import { inferSourceFromUrl } from "./imageSourceUtils";
+import { inferSourceFromUrl, getImageSourceSync, isCustomSource } from "./imageSourceUtils";
 
 /**
  * Calculates the SHA-256 hash of a file or blob.
@@ -238,17 +238,18 @@ export async function removeImageRef(imageId: string): Promise<void> {
  */
 export async function addCards(
   cardsData: Array<
-    Omit<CardOption, "uuid" | "order"> & { imageId?: string }
+    Omit<CardOption, "uuid" | "order"> & { order?: number; imageId?: string }
   >,
   options?: { startOrder?: number }
 ): Promise<CardOption[]> {
   // Use explicit startOrder if provided, otherwise append after all existing cards
-  const baseOrder = options?.startOrder ?? ((await db.cards.orderBy("order").last())?.order ?? 0) + 10;
+  const startOrder = options?.startOrder ?? ((await db.cards.orderBy("order").last())?.order ?? 0) + 10;
 
   const newCards: CardOption[] = cardsData.map((cardData, i) => ({
     ...cardData,
     uuid: crypto.randomUUID(),
-    order: baseOrder + i * 10,
+    // Respect explicit order if provided, otherwise use sequential order
+    order: cardData.order ?? (startOrder + i * 10),
   }));
 
   if (newCards.length > 0) {
@@ -266,21 +267,40 @@ export async function rebalanceCardOrders(projectId?: string): Promise<void> {
   if (!projectId) return;
 
   await db.transaction("rw", db.cards, async () => {
-    const cards = await db.cards
-      .where('projectId').equals(projectId)
-      .sortBy('order');
+    // 1. Fetch all cards for the project
+    const allCards = await db.cards.where('projectId').equals(projectId).toArray();
+
+    // 2. Identify "Slots" (Front Cards)
+    // We sort fronts by their current order to maintain relative topology.
+    // Back cards are effectively attached to these slots.
+    const fronts = allCards
+      .filter(c => !c.linkedFrontId)
+      .sort((a, b) => a.order - b.order);
+
     const updates: { key: string; changes: { order: number } }[] = [];
 
-    cards.forEach((card, index) => {
+    // 3. Assign sequential integers to Slots
+    fronts.forEach((front, index) => {
       const newOrder = (index + 1) * 10;
-      if (Math.abs(card.order - newOrder) > 0.001) {
-        updates.push({
-          key: card.uuid,
-          changes: { order: newOrder },
-        });
+
+      // Update Front if needed
+      if (Math.abs(front.order - newOrder) > 0.001) {
+        updates.push({ key: front.uuid, changes: { order: newOrder } });
+      }
+
+      // 4. Update Linked Back if exists
+      // We must ensure the back card gets the EXACT same order as the front
+      if (front.linkedBackId) {
+        const back = allCards.find(c => c.uuid === front.linkedBackId);
+        // Only update if back exists and order is different
+        // We implicitly fix any drift here by forcing back.order = newOrder
+        if (back && Math.abs(back.order - newOrder) > 0.001) {
+          updates.push({ key: back.uuid, changes: { order: newOrder } });
+        }
       }
     });
 
+    // 5. Apply all updates atomically
     if (updates.length > 0) {
       await db.cards.bulkUpdate(updates);
     }
@@ -352,7 +372,7 @@ export async function createLinkedBackCard(
     const backCard: CardOption = {
       uuid: backUuid,
       name: backName,
-      order: frontCard.order + 0.001, // Place just after front in order
+      order: frontCard.order, // Shared Slot Key: Same order as front
       isUserUpload: frontCard.isUserUpload,
       imageId: backImageId,
       linkedFrontId: frontUuid,
@@ -446,7 +466,8 @@ export async function createLinkedBackCardsBulk(
       backCardsToAdd.push({
         uuid: backUuid,
         name: item.backName,
-        order: front.order + 0.001,
+        // Shared Slot Key: Back card gets exact same order as front
+        order: front.order,
         isUserUpload: front.isUserUpload,
         imageId: item.backImageId,
         linkedFrontId: item.frontUuid,
@@ -645,7 +666,7 @@ export async function duplicateCard(uuid: string): Promise<void> {
         const newBackCard: CardOption = {
           ...backCard,
           uuid: newBackUuid,
-          order: newOrder + 0.001, // Place just after front
+          order: newOrder, // Shared Slot Key: Same order as front
           linkedFrontId: newFrontUuid,
           linkedBackId: undefined,
         };
@@ -731,15 +752,14 @@ export async function changeCardArtwork(
       }
     }
 
-    // 2. Determine if new image is custom (has originalBlob)
-    // For cardbacks, check db.cardbacks; for regular images, check db.images
+    // 2. Determine if new image is custom (explicitly 'custom' source)
     let newImageIsCustom = false;
     if (isCardbackId(newImageId)) {
       const cardback = await db.cardbacks.get(newImageId);
       newImageIsCustom = cardback ? !!cardback.originalBlob : false;
     } else {
       const newImage = await db.images.get(newImageId);
-      newImageIsCustom = newImage ? !!newImage.originalBlob : false;
+      newImageIsCustom = isCustomSource(getImageSourceSync(newImageId, newImage?.source));
     }
 
     const changes: Partial<CardOption> = {
@@ -868,4 +888,15 @@ export async function modifyImageRefCount(imageId: string, delta: number, restor
     // Image was deleted, restore it
     await db.images.add({ ...restoreData, refCount: delta });
   }
+}
+
+import { sortManual } from "./sortAndFilterUtils";
+
+/**
+ * Sorts cards based on the Shared Slot Key logic:
+ * 1. Primary: 'order' (ascending)
+ * 2. Secondary: Front cards come before their linked Back cards.
+ */
+export function sortCards(cards: CardOption[]): CardOption[] {
+  return sortManual(cards);
 }

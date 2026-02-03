@@ -3,8 +3,10 @@ import {
     MM_TO_PX,
     toProxied,
     trimBleedFromBitmap,
+    trimBleedByMm,
 } from "./imageProcessing";
-import { generateBleedCanvasWebGL, renderBleedCanvasDirect } from "./webglImageProcessing";
+import { generateBleedCanvasWebGL, processExistingBleedWebGL } from "./webglImageProcessing";
+import { darkenModeToInt } from "../components/CardCanvas/types";
 import { getCardTargetBleed, computeCardLayouts, computeGridDimensions } from "./layout";
 import { getEffectiveBleedMode, getEffectiveExistingBleedMm } from "./imageSpecs";
 import { hasAdvancedOverrides, overridesToRenderParams, renderCardWithOverridesWorker } from "./cardCanvasWorker";
@@ -535,9 +537,7 @@ self.onmessage = async (event: MessageEvent) => {
             // Determine effective mode and settings
             const useGlobalSettings = card.overrides?.darkenUseGlobalSettings ?? true;
             const cardDarkenMode = card.overrides?.darkenMode;
-            const effectiveDarkenMode = cardDarkenMode && cardDarkenMode !== 'none'
-                ? cardDarkenMode
-                : (darkenMode ?? 'none');
+            const effectiveDarkenMode = cardDarkenMode ?? (darkenMode ?? 'none');
 
             // Resolve darken parameters with fallback to global settings
             const resolveParam = (cardVal: number | undefined, globalVal: number) =>
@@ -559,12 +559,20 @@ self.onmessage = async (event: MessageEvent) => {
                 darkenAutoDetect: r_darkenAutoDetect
             };
 
+            // Select correct cached blob based on darken mode
             let selectedExportBlob: Blob | undefined;
-            if (effectiveDarkenMode === 'none') {
-                selectedExportBlob = imageInfo?.exportBlob;
-            } else {
-                // Force regeneration for any darken mode to ensure slider accuracy
-                selectedExportBlob = undefined;
+            switch (effectiveDarkenMode) {
+                case 'darken-all':
+                    selectedExportBlob = imageInfo?.exportBlobDarkenAll;
+                    break;
+                case 'contrast-edges':
+                    selectedExportBlob = imageInfo?.exportBlobContrastEdges;
+                    break;
+                case 'contrast-full':
+                    selectedExportBlob = imageInfo?.exportBlobContrastFull;
+                    break;
+                default:
+                    selectedExportBlob = imageInfo?.exportBlob;
             }
 
             // Compute bleed mode and amounts
@@ -572,11 +580,10 @@ self.onmessage = async (event: MessageEvent) => {
             const existingBleedMm = getEffectiveExistingBleedMm(card, { withBleedSourceAmount }) ?? 0;
             const targetBleedMm = bleedEdge ? getCardTargetBleed(card, sourceSettings, bleedEdgeWidthMm) : 0;
 
-            // Use the image's actual bleed width if available, prioritizing built-in/existing bleed
-            // to ensure we don't squish a large-bleed image into a small-bleed target canvas
-            const imageBleedWidthMm = (card.hasBuiltInBleed && existingBleedMm > 0)
-                ? existingBleedMm
-                : (imageInfo?.exportBleedWidth ?? targetBleedMm);
+            // Use the image's actual bleed width from the cached export blob
+            // exportBleedWidth reflects the bleed the image was GENERATED at (e.g., target 1mm),
+            // NOT existingBleedMm (the card's original built-in bleed before trimming, e.g., 3.175mm)
+            const imageBleedWidthMm = imageInfo?.exportBleedWidth ?? targetBleedMm;
             const imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
 
             // Cache is valid if we have the blob at the right DPI
@@ -700,17 +707,24 @@ self.onmessage = async (event: MessageEvent) => {
                                     unit: 'mm', dpi: DPI, darkenMode: effectiveDarkenMode, ...darkenOpts,
                                 });
                             } else if (effectiveMode === 'existing' || !needsBleedChange || (card.hasBuiltInBleed && existingBleedMm >= targetBleedMm)) {
-                                // For existing bleed (or builtin bleed that needs resizing/cropping), use direct rendering
-                                // This skips JFA generation which would cause artifacts on already-bleeding images
-                                const targetWidth = Math.ceil(imageCardWidthPx);
-                                const targetHeight = Math.ceil(imageCardHeightPx);
-
-                                finalCardCanvas = await renderBleedCanvasDirect(img, targetWidth, targetHeight, {
-                                    darkenMode: effectiveDarkenMode,
+                                // Trim to target bleed using shared helper, then process
+                                const trimAmount = existingBleedMm - targetBleedMm;
+                                if (trimAmount > 0.001) {
+                                    const trimmed = await trimBleedByMm(img, trimAmount, existingBleedMm);
+                                    if (trimmed !== img) {
+                                        img.close();
+                                        img = trimmed;
+                                    }
+                                }
+                                // Now image has targetBleedMm of bleed, process it
+                                const result = await processExistingBleedWebGL(img, targetBleedMm, {
+                                    unit: 'mm',
+                                    exportDpi: DPI,
+                                    displayDpi: DPI,
+                                    darkenMode: darkenModeToInt(effectiveDarkenMode as 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full'),
                                     ...darkenOpts,
-                                    // Hint to use export context
-                                    mimeType: 'image/png'
                                 });
+                                finalCardCanvas = await createImageBitmap(result.exportBlob);
                             } else {
                                 // If generating new bleed (e.g. extending existing bleed), pass inputBleed info
                                 // so we don't distort the content. We do NOT trim it anymore.

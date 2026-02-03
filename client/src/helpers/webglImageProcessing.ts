@@ -502,6 +502,8 @@ export async function processCardImageWebGL(
     displayBlobDarkened?: Blob;
     // For Card Editor live preview
     baseDisplayBlob: Blob;
+    detectedHasBuiltInBleed?: boolean;
+    darknessFactor: number;
 }> {
 
     const exportDpi = opts?.exportDpi ?? 300;
@@ -614,7 +616,7 @@ export async function processCardImageWebGL(
         glCtx: WebGL2RenderingContext,
         darkenMode: number,
         darknessFactor: number
-    ): Promise<{ exportBlob: Blob; displayBlob: Blob }> {
+    ): Promise<{ exportBlob: Blob; displayBlob: Blob; darknessFactor: number }> {
         // Render to screen (null framebuffer)
         glCtx.bindFramebuffer(glCtx.FRAMEBUFFER, null);
         glCtx.useProgram(progs.final);
@@ -660,7 +662,7 @@ export async function processCardImageWebGL(
         // Use WebP for display blobs to save memory and improve performance (L6)
         const displayBlob = await lowResCanvas.convertToBlob({ type: "image/webp", quality: 0.90 });
 
-        return { exportBlob, displayBlob };
+        return { exportBlob, displayBlob, darknessFactor };
     }
 
     // Compute darknessFactor from the source image
@@ -717,6 +719,7 @@ export async function processCardImageWebGL(
         displayBlobDarkened: contrastEdgesResult?.displayBlob,
         // For Card Editor live preview (undarkened version)
         baseDisplayBlob: normalResult.displayBlob,
+        darknessFactor,
     };
 }
 
@@ -737,7 +740,7 @@ export async function processCardImageWebGL(
 export async function processExistingBleedWebGL(
     img: ImageBitmap,
     bleedWidthMm: number,
-    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; darkenMode?: number; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
+    opts?: { unit?: "mm" | "in"; exportDpi?: number; displayDpi?: number; darkenMode?: number; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean; inputBleedMm?: number }
 ): Promise<{
     exportBlob: Blob;
     exportDpi: number;
@@ -758,6 +761,8 @@ export async function processExistingBleedWebGL(
     // For Card Editor live preview
     baseDisplayBlob: Blob;
     baseExportBlob: Blob;
+    darknessFactor: number;
+    detectedHasBuiltInBleed?: boolean;
 }> {
     const exportDpi = opts?.exportDpi ?? 300;
     const displayDpi = opts?.displayDpi ?? 300;
@@ -779,8 +784,7 @@ export async function processExistingBleedWebGL(
     const displayHeight = Math.ceil(IN(cardHeightMm / 25.4, displayDpi) + displayBleedPx * 2);
 
     // Compute darknessFactor for adaptive effects
-    // Compute darknessFactor for adaptive effects
-    // Removed unused darknessFactor
+    const darknessFactor = computeDarknessFactor(img);
 
 
     // Get the current darken mode (0=none is always generated)
@@ -845,6 +849,7 @@ export async function processExistingBleedWebGL(
         // For Card Editor live preview
         baseDisplayBlob: displayBlob,
         baseExportBlob: exportBlob,
+        darknessFactor,
     };
 }
 
@@ -865,42 +870,34 @@ export async function renderBleedCanvasDirect(
         darkenAmount?: number;
         darkenBrightness?: number;
         darkenAutoDetect?: boolean;
-        mimeType?: "image/png" | "image/webp"; // hint for context selection
+        mimeType?: "image/png" | "image/webp";
     }
 ): Promise<OffscreenCanvas> {
     const isExport = opts.mimeType === 'image/png';
-    // If no type hint, default to export context if large, display if small? 
-    // Or just use export context as default.
     const contextManager = (!opts.mimeType || isExport) ? exportContextManager : displayContextManager;
 
-    // Get or create context - will reuse if available
+    // Render at TARGET dimensions - the input should already be properly sized/trimmed
     const { canvas, gl } = contextManager.getContext(targetWidth, targetHeight);
 
-    // Create shader program (could cache this too, but shaders are cheap)
     const vs = createShader(gl, gl.VERTEX_SHADER, VS_QUAD);
     const fs = createShader(gl, gl.FRAGMENT_SHADER, FS_DIRECT);
     const program = createProgram(gl, vs, fs);
     gl.deleteShader(vs);
     gl.deleteShader(fs);
 
-    // Create quad buffer
     const quadBuffer = createQuadBuffer(gl);
 
-    // Create image texture for this specific image
     const imgTexture = createTexture(gl, img.width, img.height, img);
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-    // Setup viewport and attributes
     gl.viewport(0, 0, targetWidth, targetHeight);
     const aPositionLoc = 0;
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     gl.enableVertexAttribArray(aPositionLoc);
     gl.vertexAttribPointer(aPositionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    // Compute darknessFactor if needed
-    // Note: computeDarknessFactor caches results on the img object so it's cheap to call again
     const darknessFactor = computeDarknessFactor(img);
 
     gl.useProgram(program);
@@ -909,7 +906,6 @@ export async function renderBleedCanvasDirect(
     gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
     gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), targetWidth, targetHeight);
     gl.uniform1f(gl.getUniformLocation(program, "u_darknessFactor"), darknessFactor);
-    // Explicitly set darken params
     gl.uniform1f(gl.getUniformLocation(program, "u_darkenThreshold"), opts.darkenThreshold ?? 30);
     gl.uniform1f(gl.getUniformLocation(program, "u_darkenContrast"), opts.darkenContrast ?? 2.0);
     gl.uniform1f(gl.getUniformLocation(program, "u_darkenEdgeWidth"), opts.darkenEdgeWidth ?? 0.1);
@@ -919,13 +915,11 @@ export async function renderBleedCanvasDirect(
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // Cleanup per-image resources
     gl.deleteTexture(imgTexture);
     gl.deleteBuffer(quadBuffer);
     gl.deleteProgram(program);
-    // Do NOT release context
 
-    // Copy to new canvas (because the context canvas is reused)
+    // Copy to result canvas (context canvas is reused)
     const resultCanvas = new OffscreenCanvas(targetWidth, targetHeight);
     const resultCtx = resultCanvas.getContext('2d');
     if (resultCtx) {

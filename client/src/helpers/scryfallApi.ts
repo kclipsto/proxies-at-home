@@ -139,7 +139,10 @@ export async function fetchCardWithPrints(query: string, exact: boolean = false,
             cardData = await getCardByName(query);
         } else {
             const cards = await searchCards(query);
-            cardData = cards?.[0];
+            // Prioritize exact name match if available (fixes "Sol Ring" resolving to "Solemn Offering")
+            const queryLower = query.toLowerCase();
+            const exactMatch = cards.find(c => c.name.toLowerCase() === queryLower);
+            cardData = exactMatch || cards?.[0];
         }
 
         if (!cardData) return null;

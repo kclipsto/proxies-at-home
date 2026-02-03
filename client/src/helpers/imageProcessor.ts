@@ -44,6 +44,8 @@ interface WorkerSuccessResponse {
   baseDisplayBlob: Blob;  // Same as displayBlob - undarkened version for CardCanvas
   baseExportBlob?: Blob;   // Optional - undarkened export version for CardCanvas
   imageCacheHit?: boolean; // True if image was served from 7-day persistent cache
+  detectedHasBuiltInBleed?: boolean; // Auto-detected during processing
+  darknessFactor?: number; // Computed histogram darkness (0-1)
   error?: undefined;
 }
 

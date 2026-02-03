@@ -9,9 +9,10 @@ import { Upload } from "lucide-react";
 import { db } from "@/db";
 import { SplitButton, type SplitButtonOption } from "../common";
 
-type UploadMode = "standard" | "withBleed" | "cardback";
+type UploadMode = "standard" | "withBleed" | "cardback" | "auto";
 
 const UPLOAD_MODE_OPTIONS: SplitButtonOption<UploadMode>[] = [
+    { value: "auto", label: "Auto Detect Bleed", description: "Detect built in bleed" },
     { value: "standard", label: "Without Bleed", description: "Like images from Scryfall" },
     { value: "withBleed", label: "With Bleed", description: "Like images from MPC Autofill" },
     { value: "cardback", label: "Cardback", description: "Custom card back for printing" },
@@ -24,7 +25,7 @@ type Props = {
 
 export function FileUploader({ mobile, onUploadComplete }: Props) {
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
-    const [uploadMode, setUploadMode] = useState<UploadMode>("standard");
+    const [uploadMode, setUploadMode] = useState<UploadMode>("auto");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const { processCards } = useCardImport({
         onComplete: () => onUploadComplete?.()
@@ -32,7 +33,7 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
 
     async function addUploadedFiles(
         files: FileList,
-        opts: { hasBuiltInBleed: boolean; isCardback?: boolean }
+        opts: { hasBuiltInBleed?: boolean; isCardback?: boolean }
     ) {
         const fileArray = Array.from(files);
 
@@ -58,7 +59,10 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
         const intents: ImportIntent[] = [];
 
         for (const file of fileArray) {
-            const suffix = opts.hasBuiltInBleed ? "-mpc" : "-std";
+            let suffix = "-std";
+            if (opts.hasBuiltInBleed === true) suffix = "-mpc";
+            if (opts.hasBuiltInBleed === undefined) suffix = "-auto";
+
             const imageId = await addCustomImage(file, suffix);
 
             const intent: ImportIntent = {
@@ -85,14 +89,20 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            const hasBuiltInBleed = uploadMode === "withBleed" || uploadMode === "cardback";
             const isCardback = uploadMode === "cardback";
 
             if (!isCardback) {
                 setLoadingTask("Processing Images");
             }
             try {
-                await addUploadedFiles(e.target.files, { hasBuiltInBleed, isCardback });
+                if (uploadMode === 'auto') {
+                    // Fast path: No detection here, let the pipeline handle it
+                    await addUploadedFiles(e.target.files, { hasBuiltInBleed: undefined, isCardback: false });
+                } else {
+                    const hasBuiltInBleed = uploadMode === "withBleed" || uploadMode === "cardback";
+                    await addUploadedFiles(e.target.files, { hasBuiltInBleed, isCardback });
+                }
+
             } finally {
                 if (!isCardback) {
                     setLoadingTask(null);
@@ -101,16 +111,14 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
         }
     };
 
-    const sublabel = uploadMode === "cardback" ? "Cardback" : uploadMode === "withBleed" ? "With Bleed" : "Without Bleed";
     const inputId = "upload-images-unified";
-
     return (
         <div className={`space-y-1 ${mobile ? '' : ''}`}>
             <h6 className="font-medium dark:text-white sr-only">Upload Images</h6>
 
             <SplitButton
                 label="Upload Images"
-                sublabel={sublabel}
+                sublabel={UPLOAD_MODE_OPTIONS.find((o) => o.value === uploadMode)?.label}
                 color="gray"
                 icon={Upload}
                 asLabel

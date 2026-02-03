@@ -266,7 +266,7 @@ describe('streamCards', () => {
                 expect.arrayContaining([
                     expect.objectContaining({ name: 'Lightning Bolt', isToken: false })
                 ]),
-                expect.anything()
+                undefined
             );
         });
     });
@@ -296,7 +296,7 @@ describe('streamCards', () => {
 
         expect(mockAddCards).toHaveBeenCalledWith(
             expect.arrayContaining([expect.objectContaining({ name: 'Missing Card', imageId: undefined })]),
-            expect.anything()
+            undefined
         );
     });
 
@@ -347,7 +347,7 @@ describe('streamCards', () => {
                         isFlipped: true
                     })
                 ]),
-                expect.anything()
+                undefined
             );
         });
 
@@ -391,7 +391,7 @@ describe('streamCards', () => {
                         isFlipped: undefined
                     })
                 ]),
-                expect.anything()
+                undefined
             );
         });
 
@@ -438,6 +438,74 @@ describe('streamCards', () => {
                     })
                 ])
             );
+        });
+    });
+
+    describe('Custom back face handling', () => {
+        it('should use direct URL for backImageId if it is a URL', async () => {
+            const options: any = {
+                cardInfos: [{
+                    name: 'Front Name',
+                    linkedBackImageId: 'https://scryfall.com/back.png',
+                    linkedBackName: 'Back Name'
+                }],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'front-uuid', name: 'Front Name' }]);
+            (addRemoteImage as any).mockResolvedValue('resolved-url-id');
+
+            // SSE returns basic card data
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Front Name',
+                        imageUrls: ['http://front'],
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should add the direct URL without wrapping in MPC proxy
+            expect(addRemoteImage).toHaveBeenCalledWith(['https://scryfall.com/back.png'], 1);
+        });
+
+        it('should use MPC proxy for backImageId if it is an MPC ID', async () => {
+            const options: any = {
+                cardInfos: [{
+                    name: 'Front Name',
+                    linkedBackImageId: 'mpc-id-123',
+                    linkedBackName: 'Back Name'
+                }],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'front-uuid', name: 'Front Name' }]);
+            (addRemoteImage as any).mockResolvedValue('resolved-mpc-id');
+
+            // SSE returns basic card data
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Front Name',
+                        imageUrls: ['http://front'],
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            // Should wrap in MPC proxy URL
+            expect(addRemoteImage).toHaveBeenCalledWith(['http://mpc/mpc-id-123'], 1);
         });
     });
 });

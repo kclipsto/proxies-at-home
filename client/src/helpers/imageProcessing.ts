@@ -1,5 +1,5 @@
 
-import { IMAGE_PROCESSING } from '@/constants/imageProcessing';
+import { IMAGE_PROCESSING } from '../constants/imageProcessing';
 
 export const NEAR_BLACK = 16;
 export const NEAR_WHITE = 239;
@@ -91,6 +91,44 @@ export async function trimBleedFromBitmap(img: ImageBitmap, bleedTrimPx?: number
     const h = img.height - trim * 2;
     if (w <= 0 || h <= 0) return img;
     return await createImageBitmap(img, trim, trim, w, h);
+}
+
+/**
+ * Trim bleed from an image by a specified amount in mm.
+ * Used by bleed workers when trimming from existing bleed to target bleed.
+ *
+ * @param input - ImageBitmap or Blob to trim
+ * @param trimAmountMm - Amount of bleed to remove from each edge (in mm)
+ * @param existingBleedMm - The total existing bleed the image has (in mm), used to calculate pixel ratio
+ * @returns A new ImageBitmap with the specified bleed amount removed
+ */
+export async function trimBleedByMm(
+    input: ImageBitmap | Blob,
+    trimAmountMm: number,
+    existingBleedMm: number
+): Promise<ImageBitmap> {
+    const tempBitmap = input instanceof Blob ? await createImageBitmap(input) : input;
+
+    // Standard MTG card is 63x88mm, calculate pixel ratio based on existing bleed dimensions
+    const pxPerMm = tempBitmap.height / (IMAGE_PROCESSING.CARD_HEIGHT_MM + existingBleedMm * 2);
+    const trimPx = Math.round(trimAmountMm * pxPerMm);
+    const w = tempBitmap.width - trimPx * 2;
+    const h = tempBitmap.height - trimPx * 2;
+
+    // Close temp bitmap if we created it from blob
+    if (input instanceof Blob) {
+        tempBitmap.close();
+    }
+
+    if (w <= 0 || h <= 0) {
+        // Can't trim that much, return original
+        return input instanceof Blob ? await createImageBitmap(input) : input;
+    }
+
+    // Create trimmed bitmap from original input
+    return input instanceof Blob
+        ? await createImageBitmap(input, trimPx, trimPx, w, h)
+        : await createImageBitmap(input, trimPx, trimPx, w, h);
 }
 
 export async function trimExistingBleedIfAny(src: string, bleedTrimPx?: number, init?: RequestInit): Promise<ImageBitmap> {
@@ -365,5 +403,16 @@ export function applyDarkenAllCPU(imageData: ImageData): void {
             d[i + 2] = 0;
         }
     }
+}
+
+/**
+ * Determines whether to use the "Fast Path" (trimming) for bleed processing.
+ * 
+ * @param targetBleedMm - The desired bleed width in mm
+ * @param existingBleedMm - The existing built-in bleed in mm (default 3.175)
+ * @returns true if we should trim existing bleed instead of generating new bleed
+ */
+export function shouldTrimBleed(targetBleedMm: number, existingBleedMm: number = IMAGE_PROCESSING.DEFAULT_MPC_BLEED_MM): boolean {
+    return targetBleedMm <= existingBleedMm;
 }
 

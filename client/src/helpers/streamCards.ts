@@ -104,18 +104,35 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
 
     // Build quantity map for deduplication AND track original order positions
     // The key insight: each unique card should be placed at its FIRST occurrence position
-    const quantityByKey = new Map<string, { info: CardInfo; quantity: number; startOrder: number; placeholderUuids?: string[] }>();
+    // Update: To support scattered duplicates, we track ALL instances of the card
+    const quantityByKey = new Map<string, { info: CardInfo; instances: CardInfo[]; placeholderUuids?: string[] }>();
+
     for (const info of cardInfos) {
         const k = cardKey(info);
         const cardQty = info.quantity ?? 1;
-        const existing = quantityByKey.get(k);
-        if (existing) {
-            // Card already seen - just add to its quantity (it keeps its original position)
-            existing.quantity += cardQty;
-        } else {
-            // First time seeing this card - record its starting order position
-            quantityByKey.set(k, { info, quantity: cardQty, startOrder: currentOrderBase });
+
+        let entry = quantityByKey.get(k);
+        if (!entry) {
+            entry = { info, instances: [] };
+            quantityByKey.set(k, entry);
         }
+
+        // Create an instance for each count of quantity
+        const baseOrder = info.order ?? currentOrderBase;
+        for (let i = 0; i < cardQty; i++) {
+            entry.instances.push({
+                ...info,
+                // If original had explicit order, use it. If implicit, preserve sequential spacing
+                // Note: If multiple quantity with explicit order, we might need to increment? 
+                // Share data usually has quantity=1 for each entry if they are distinct in array?
+                // No, standard import might have quantity=4.
+                // If info.order is set, all 4 get same order? That implies collision.
+                // Usually share data deserializer creates distinct intents for EACH card in the array, so quantity is always 1 for shared cards.
+                // Standard import might have quantity > 1.
+                order: baseOrder + (i * 10)
+            });
+        }
+
         // Advance order counter by quantity (even for duplicates, to reserve space)
         currentOrderBase += cardQty * 10;
     }
@@ -125,7 +142,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     const addedCardUuids: string[] = [];
 
     // Single-pass partitioning instead of two filter() calls
-    type QuantityEntry = { info: CardInfo; quantity: number; startOrder: number; placeholderUuids?: string[] };
+    type QuantityEntry = { info: CardInfo; instances: CardInfo[]; placeholderUuids?: string[] };
     const cardsWithMpcId: QuantityEntry[] = [];
     const cardsWithoutMpcId: QuantityEntry[] = [];
     for (const entry of quantityByKey.values()) {
@@ -136,28 +153,27 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     for (const entry of cardsWithMpcId) {
         if (signal.aborted) break;
 
-        const { info, quantity, startOrder } = entry;
+        const { info, instances } = entry;
         const imageUrl = getMpcAutofillImageUrl(info.mpcIdentifier!);
-        const imageId = await addRemoteImage([imageUrl], quantity);
+        const imageId = await addRemoteImage([imageUrl], instances.length);
 
-        const cardsToAdd = createCardOptions(
-            {
-                name: info.name,
-                lang: language,
-                imageId,
-                hasBuiltInBleed: true,
-                needsEnrichment: true,
-                category: info.category,
-                // For MPC cards, merge darken-off defaults with any existing overrides
-                overrides: info.overrides
-                    ? { darkenMode: 'none' as const, darkenUseGlobalSettings: false, ...info.overrides }
-                    : { darkenMode: 'none' as const, darkenUseGlobalSettings: false },
-                projectId,
-            },
-            quantity
-        );
+        const cardsToAdd = instances.map(instance => createCardOption({
+            name: instance.name,
+            lang: language,
+            imageId,
+            hasBuiltInBleed: true,
+            needsEnrichment: true,
+            category: instance.category,
+            // For MPC cards, merge darken-off defaults with any existing overrides
+            overrides: instance.overrides
+                ? { darkenMode: 'none' as const, darkenUseGlobalSettings: false, ...instance.overrides }
+                : { darkenMode: 'none' as const, darkenUseGlobalSettings: false },
+            projectId,
+        },
+            instance.order
+        ));
 
-        const added = await undoableAddCards(cardsToAdd, { startOrder });
+        const added = await undoableAddCards(cardsToAdd, { /* no startOrder - using explicit orders */ });
         cardsAdded += added.length;
         addedCardUuids.push(...added.map(c => c.uuid));
         if (cardsAdded === added.length) onFirstCard?.();
@@ -190,22 +206,21 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     for (const { entry, cardback } of cardbackMatches) {
         if (signal.aborted) break;
 
-        const { info, quantity, startOrder } = entry;
+        const { info, instances } = entry;
 
-        const cardsToAdd = createCardOptions(
-            {
-                name: info.name,
-                lang: language,
-                imageId: cardback.id,
-                isFlipped: true,
-                hasBuiltInBleed: cardback.hasBuiltInBleed ?? true,
-                category: info.category,
-                projectId,
-            },
-            quantity
-        );
+        const cardsToAdd = instances.map(instance => createCardOption({
+            name: instance.name,
+            lang: language,
+            imageId: cardback.id,
+            isFlipped: true,
+            hasBuiltInBleed: cardback.hasBuiltInBleed ?? true,
+            category: info.category,
+            projectId,
+        },
+            instance.order
+        ));
 
-        const added = await undoableAddCards(cardsToAdd, { startOrder });
+        const added = await undoableAddCards(cardsToAdd, { /* no startOrder */ });
         cardsAdded += added.length;
         addedCardUuids.push(...added.map(c => c.uuid));
         if (cardsAdded === added.length) onFirstCard?.();
@@ -227,23 +242,22 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
             if (entry.info.mpcIdentifier) continue; // Skip cards with explicit MPC IDs (already handled)
 
             const key = cardKey(entry.info);
-            const { quantity, startOrder, info } = entry;
+            const { instances, info } = entry;
 
             // Create placeholder cards with imageId: undefined (triggers loading spinner)
-            const placeholderCards = createCardOptions(
-                {
-                    name: info.name,
-                    lang: language,
-                    imageId: undefined, // Shows loading spinner
-                    category: info.category,
-                    isToken: info.isToken,
-                    overrides: info.overrides, // Preserve overrides for share import
-                    projectId,
-                },
-                quantity
-            );
+            const placeholderCards = instances.map(instance => createCardOption({
+                name: info.name,
+                lang: language,
+                imageId: undefined, // Shows loading spinner
+                category: info.category,
+                isToken: info.isToken,
+                overrides: info.overrides, // Preserve overrides for share import
+                projectId,
+            },
+                instance.order
+            ));
 
-            const added = await undoableAddCards(placeholderCards, { startOrder });
+            const added = await undoableAddCards(placeholderCards, { /* no startOrder */ });
             cardsAdded += added.length;
             addedCardUuids.push(...added.map(c => c.uuid));
             placeholderUuidsByKey.set(key, added.map(c => c.uuid));
@@ -274,7 +288,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                 const entry = quantityByKey.get(key);
                 if (!entry) continue;
 
-                const imageId = await addRemoteImage([match.imageUrl], entry.quantity);
+                const imageId = await addRemoteImage([match.imageUrl], entry.instances.length);
                 const { name: cardName, hasBuiltInBleed, needsEnrichment } = parseMpcCardLogic(match.mpcCard);
 
                 // Update all placeholder cards for this key with the MPC image
@@ -366,7 +380,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                 pendingOperations++;
                 const { query, error } = JSON.parse(ev.data) as { query: CardInfo; error?: string };
                 const entry = quantityByKey.get(cardKey(query));
-                const quantity = entry?.quantity ?? 1;
+                // quantity variable removed as it is now unused
                 const placeholderUuids = entry?.placeholderUuids;
 
                 if (placeholderUuids && placeholderUuids.length > 0) {
@@ -380,7 +394,9 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                     });
                 } else {
                     // No existing placeholders - add new error cards
-                    const placeholderCards = Array.from({ length: quantity }, () => ({
+                    const instances = entry?.instances ?? Array.from({ length: 1 }, () => ({ ...query, order: (entry?.instances?.[0]?.order ?? 0) })); // Fallback if entry missing?
+
+                    const placeholderCards = instances.map(instance => createCardOption({
                         name: query.name,
                         set: query.set,
                         number: query.number,
@@ -388,10 +404,9 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                         imageId: undefined,
                         lookupError: error || 'Card not found',
                         projectId,
-                    }));
+                    }, instance.order));
 
-                    const startOrder = entry?.startOrder;
-                    const added = await addCards(placeholderCards, startOrder !== undefined ? { startOrder } : undefined);
+                    const added = await addCards(placeholderCards, undefined);
                     cardsAdded += added.length;
                     if (cardsAdded === added.length) onFirstCard?.();
                 }
@@ -439,7 +454,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                     }
                 }
 
-                const quantity = entry?.quantity ?? 1;
+                const quantity = entry?.instances.length ?? 1;
                 const placeholderUuids = entry?.placeholderUuids;
 
                 // Map token_parts from all_parts if available (SSE returns raw object)
@@ -468,6 +483,70 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                     isBackFaceImport,
                     projectId,
                 });
+
+                // Fidelity: If a preferred image ID was specified (from Share), use it
+                if (entry?.info.preferredImageId) {
+                    try {
+                        const url = entry.info.preferredImageId;
+                        // Use addRemoteImage to cache it locally (deduplicated)
+                        // If it's a URL, this fetches and saves it. If it's a Scryfall URL, same.
+                        const resolvedId = await addRemoteImage([url], quantity);
+                        if (resolvedId) {
+                            cardsToAdd.forEach(c => c.imageId = resolvedId);
+                        }
+                    } catch (e) {
+                        console.warn(`[streamCards] Failed to resolve preferredImageId`, e);
+                    }
+                }
+
+                // Custom DFC Link Handling (Priority Overwrite)
+                // If the intent specified a custom back (MPC ID, Built-in, or Scryfall Set/Num), handle it here
+                if (entry?.info.linkedBackImageId || (entry?.info.linkedBackSet && entry?.info.linkedBackNumber)) {
+                    // Clear any auto-detected DFC tasks to avoid double-backs
+                    backCardTasks.length = 0;
+
+                    let backImageId = entry.info.linkedBackImageId;
+                    const backName = entry.info.linkedBackName || 'Back';
+
+                    // If we have set/number but no image ID, resolve it
+                    if (!backImageId && entry.info.linkedBackSet && entry.info.linkedBackNumber) {
+                        try {
+                            const { fetchCardBySetAndNumber } = await import('./scryfallApi');
+                            const backCard = await fetchCardBySetAndNumber(entry.info.linkedBackSet, entry.info.linkedBackNumber);
+                            if (backCard && backCard.imageUrls.length > 0) {
+                                // Add as remote image
+                                backImageId = await addRemoteImage([backCard.imageUrls[0]], quantity);
+                            }
+                        } catch (e) {
+                            console.warn(`[streamCards] Failed to resolve custom back Scryfall card`, e);
+                        }
+                    }
+
+                    // If we have an image ID (either from linkedBackImageId or resolved above)
+                    if (backImageId) {
+                        // Check if it's an MPC/URL that needs fetching (if not built-in/already ID)
+                        // addRemoteImage handles duplicates efficiently
+                        if (!backImageId.startsWith('cardback_') && !backImageId.startsWith('img_')) {
+                            // Assuming linkedBackImageId might be an MPC ID or URL, getMpcAutofillImageUrl handles MPC IDs
+                            // But addRemoteImage handles URLs.
+                            // ImportIntent usually puts MPC ID in linkedBackImageId.
+                            const url = (backImageId.startsWith('http://') || backImageId.startsWith('https://'))
+                                ? backImageId
+                                : getMpcAutofillImageUrl(backImageId);
+
+                            const resolvedId = await addRemoteImage([url], quantity);
+                            if (resolvedId) backImageId = resolvedId;
+                        }
+
+                        for (let i = 0; i < quantity; i++) {
+                            backCardTasks.push({
+                                frontIndex: i,
+                                backImageId: backImageId!,
+                                backName
+                            });
+                        }
+                    }
+                }
 
                 if (cardsToAdd.length > 0) {
                     if (placeholderUuids && placeholderUuids.length > 0) {
@@ -506,8 +585,43 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                             );
                         }
                     } else {
-                        // No existing placeholders - add new cards
-                        const added = await persistResolvedCards({ cardsToAdd, backCardTasks }, { startOrder: entry?.startOrder });
+                        // No existing placeholders - add new cards for each instance
+                        const instances = entry?.instances ?? [{ order: 0 }];
+
+                        // Type definition matching convertScryfallToCardOptions return type
+                        type CardAddData = Omit<CardOption, "uuid" | "order"> & { order?: number; imageId?: string };
+                        const allFrontCards: CardAddData[] = [];
+
+                        type BackTaskData = { frontIndex: number; backImageId: string; backName: string };
+                        const allBackTasks: BackTaskData[] = [];
+
+                        // Use the first card as a template for all instances
+                        // We already requested 'quantity' images in convertScryfallToCardOptions, so the refCounts are handled there.
+                        // We just need to construct the card entries properly without squaring the quantity.
+                        if (cardsToAdd.length > 0) {
+                            const template = cardsToAdd[0];
+                            const templateBackTasks = backCardTasks.filter(t => t.frontIndex === 0);
+
+                            for (const instance of instances) {
+                                const newFrontIndex = allFrontCards.length;
+
+                                // Add front card
+                                allFrontCards.push({
+                                    ...template,
+                                    order: instance.order // Specific order for this instance
+                                });
+
+                                // Add associated back tasks
+                                for (const task of templateBackTasks) {
+                                    allBackTasks.push({
+                                        ...task,
+                                        frontIndex: newFrontIndex
+                                    });
+                                }
+                            }
+                        }
+
+                        const added = await persistResolvedCards({ cardsToAdd: allFrontCards, backCardTasks: allBackTasks }, { /* no startOrder */ });
                         cardsAdded += added.length;
                         addedCardUuids.push(...added.map(c => c.uuid));
                         if (cardsAdded === added.length) onFirstCard?.();
@@ -526,10 +640,10 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     return { addedCardUuids, totalCardsAdded: cardsAdded };
 }
 
-function createCardOptions(
+function createCardOption(
     base: Partial<Omit<CardOption, "uuid" | "order"> & { imageId?: string }>,
-    quantity: number
-): (Omit<CardOption, "uuid" | "order"> & { imageId?: string })[] {
+    order?: number
+): Omit<CardOption, "uuid"> & { imageId?: string } {
     const defaults = {
         set: undefined,
         number: undefined,
@@ -542,10 +656,9 @@ function createCardOptions(
     };
 
     // Type assertion needed due to strict Omit/Partial overlap
-    const card = {
+    return {
         ...defaults,
         ...base,
-    } as Omit<CardOption, "uuid" | "order"> & { imageId?: string };
-
-    return Array.from({ length: quantity }, () => ({ ...card }));
+        order: order ?? 0,
+    } as Omit<CardOption, "uuid"> & { imageId?: string };
 }

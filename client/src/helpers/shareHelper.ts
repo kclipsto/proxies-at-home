@@ -14,8 +14,8 @@ import { inferImageSource } from './imageSourceUtils';
 // Types
 // ============================================================================
 
-/** Compact card representation: [type, id, order, category?, overrides?, name?] */
-export type ShareCard = ['s' | 'm', string, number, string | null, Record<string, unknown> | null, string?];
+/** Compact card representation: [type, id, order, category?, overrides?, name?, imageId?] */
+export type ShareCard = ['s' | 'm' | 'b', string, number, string | null, Record<string, unknown> | null, string?, string?];
 
 /** Share data structure */
 export interface ShareData {
@@ -246,9 +246,16 @@ function expandOverrides(compressed: Record<string, unknown>): CardOverrides {
  * Extract card identifier (Scryfall UUID or MPC ID) from a CardOption
  * Returns [type, id] or null if not shareable (custom upload)
  */
-function getCardIdentifier(card: CardOption): ['s' | 'm', string] | null {
+function getCardIdentifier(card: CardOption): ['s' | 'm' | 'b', string] | null {
     const source = inferImageSource(card.imageId);
 
+    // 1. Check for Built-in Cardback
+    // This must come first because cardbacks might be misidentified as other types
+    if (card.imageId && card.imageId.startsWith('cardback_')) {
+        return ['b', card.imageId];
+    }
+
+    // 2. Check for MPC
     if (source === 'mpc') {
         const mpcId = extractMpcIdentifierFromImageId(card.imageId);
         if (mpcId) return ['m', mpcId];
@@ -262,7 +269,7 @@ function getCardIdentifier(card: CardOption): ['s' | 'm', string] | null {
         }
     }
 
-    // Custom uploads or cardbacks are not shareable
+    // Custom uploads are not shareable
     return null;
 }
 
@@ -301,6 +308,7 @@ export function serializeCards(cards: CardOption[]): { shareCards: ShareCard[]; 
             card.category || null,
             overrides,
             card.name, // Include name
+            card.imageId, // Include exact image ID/URL for fidelity
         ]);
 
         uuidToIndex.set(card.uuid, shareCards.length - 1);
@@ -416,12 +424,21 @@ export function serializeSettings(settings: SettingsInput): ShareSettings {
  * Create a share on the server and return the share URL
  * Uses projectId for stable share links - same project = same link
  */
+import { sortCards } from './dbUtils';
+
+/**
+ * Create a share on the server and return the share URL
+ * Uses projectId for stable share links - same project = same link
+ */
 export async function createShare(
     cards: CardOption[],
     settings: SettingsInput,
     projectId?: string
 ): Promise<{ url: string; id: string; skipped: number }> {
-    const { shareCards, dfc, skipped } = serializeCards(cards);
+    // Sort cards by order to ensure the shared payload is ordered.
+    // This helps simple parsers and debugging, and aligns array order with 'order' property.
+    const sortedCards = sortCards(cards);
+    const { shareCards, dfc, skipped } = serializeCards(sortedCards);
 
     if (shareCards.length === 0) {
         throw new Error('No shareable cards in deck');
@@ -465,7 +482,7 @@ export async function createShare(
  * Load a share from the server
  */
 export async function loadShare(id: string): Promise<ShareData> {
-    const response = await fetch(`${API_BASE}/api/share/${id}`);
+    const response = await fetch(`${API_BASE}/api/share/${id}?t=${Date.now()}`);
 
     if (!response.ok) {
         if (response.status === 404) {
@@ -491,6 +508,10 @@ export function getShareWarnings(cards: CardOption[]): string[] {
         if (card.linkedFrontId) continue; // Skip backs
         // Only count actual custom uploads, not placeholders (undefined imageId)
         if (card.isUserUpload) {
+            // Check if it's a built-in cardback, which IS shareable now
+            if (card.imageId && card.imageId.startsWith('cardback_')) {
+                continue;
+            }
             customUploadCount++;
         }
     }
@@ -512,19 +533,33 @@ export function deserializeForImport(data: ShareData): {
         set?: string;
         number?: string;
         mpcIdentifier?: string;
+        builtInCardbackId?: string;
         category?: string;
         overrides?: CardOverrides;
+        imageId?: string;
+        order?: number;
     }>;
     dfcLinks: [number, number][];
     settings?: ShareSettings;
 } {
-    const cards = data.c.map(([type, id, , category, overrides, name]) => {
+    const cards = data.c.map(([type, id, order, category, overrides, name, imageId]) => {
         if (type === 'm') {
             return {
                 name,
                 mpcIdentifier: id,
                 category: category || undefined,
                 overrides: overrides ? expandOverrides(overrides) : undefined,
+                imageId,
+                order,
+            };
+        } else if (type === 'b') {
+            return {
+                name,
+                builtInCardbackId: id,
+                category: category || undefined,
+                overrides: overrides ? expandOverrides(overrides) : undefined,
+                imageId,
+                order,
             };
         } else {
             // Scryfall: set/number format
@@ -535,6 +570,8 @@ export function deserializeForImport(data: ShareData): {
                 number,
                 category: category || undefined,
                 overrides: overrides ? expandOverrides(overrides) : undefined,
+                imageId,
+                order,
             };
         }
     });
@@ -544,4 +581,33 @@ export function deserializeForImport(data: ShareData): {
         dfcLinks: data.dfc || [],
         settings: data.st,
     };
+}
+
+/**
+ * Calculate a stable hash of the project state (cards + settings)
+ * Used to detect if the user has modified their local copy since the last sync
+ */
+export async function calculateStateHash(
+    cards: CardOption[],
+    settings: SettingsInput
+): Promise<string> {
+    // Sort cards by order to ensure deterministic hash regardless of array/insertion order
+    const sortedCards = [...cards].sort((a, b) => a.order - b.order);
+    const { shareCards, dfc } = serializeCards(sortedCards);
+    const shareSettings = serializeSettings(settings);
+
+    // Create a stable object structure for hashing
+    const state = {
+        c: shareCards,
+        dfc,
+        st: shareSettings
+    };
+
+    const json = JSON.stringify(state);
+
+    // valid simple hash for this purpose (SHA-256 is good but async)
+    const msgBuffer = new TextEncoder().encode(json);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }

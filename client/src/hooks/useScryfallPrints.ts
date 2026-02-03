@@ -1,160 +1,168 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { debugLog } from "@/helpers/debug";
 import { API_BASE } from "@/constants";
-import type { PrintInfo } from "@/helpers/dfcHelpers";
+import type { PrintInfo } from "@/types";
+import { db } from "@/db";
 
 export interface ScryfallPrintsResult {
-    /** Array of print metadata */
-    prints: PrintInfo[];
-    /** Whether a fetch is currently in progress */
-    isLoading: boolean;
-    /** Whether at least one fetch has been performed */
-    hasSearched: boolean;
-    /** Whether there are any results */
-    hasResults: boolean;
+  /** Array of print metadata */
+  prints: PrintInfo[];
+  /** Whether a fetch is currently in progress */
+  isLoading: boolean;
+  /** Whether at least one fetch has been performed */
+  hasSearched: boolean;
+  /** Whether there are any results */
+  hasResults: boolean;
 }
 
 export interface UseScryfallPrintsOptions {
-    /** Whether to auto-fetch on card name change (default: true) */
-    autoFetch?: boolean;
-    /** Language code (default: en) */
-    lang?: string;
+  name: string;
+  lang?: string;
+  enabled?: boolean;
+  initialPrints?: PrintInfo[];
 }
-
-// Global cache shared across all instances - persists across mode switches
-const globalPrintsCache: Record<string, PrintInfo[]> = {};
 
 /**
  * Hook for fetching all prints of a specific card with full metadata.
  * Returns prints[] with faceName for DFC filtering.
- * 
+ *
  * @param cardName - Exact card name to fetch prints for
  * @param options - Configuration options
  * @returns ScryfallPrintsResult with prints, loading state, and fetch status
  */
-export function useScryfallPrints(
-    cardName: string,
-    options: UseScryfallPrintsOptions = {}
-): ScryfallPrintsResult {
-    const { autoFetch = true, lang = "en" } = options;
+export function useScryfallPrints({
+  name,
+  lang = "en",
+  enabled = true,
+  initialPrints,
+}: UseScryfallPrintsOptions): ScryfallPrintsResult {
+  const [prints, setPrints] = useState<PrintInfo[]>(initialPrints || []);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(
+    !!initialPrints && initialPrints.length > 0
+  );
 
-    const [prints, setPrints] = useState<PrintInfo[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [hasSearched, setHasSearched] = useState(false);
+  // Refs for request management
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const currentNameRef = useRef<string>("");
 
-    // Refs for request management
-    const abortControllerRef = useRef<AbortController | null>(null);
-    const currentCardNameRef = useRef<string>("");
-    const lastFetchedCacheKeyRef = useRef<string>("");
+  // Fetch effect
+  useEffect(() => {
+    // Don't fetch if disabled or empty name
+    if (!enabled || !name || !name.trim()) {
+      return;
+    }
 
-    // Compute cache key for the current card name
-    const getCacheKey = useCallback((name: string, language: string): string | null => {
-        const trimmed = name.trim();
-        if (!trimmed) return null;
-        return `prints|${trimmed.toLowerCase()}|${language}`;
-    }, []);
+    const trimmedName = name.trim();
 
-    // Check if we have cached results
-    const cachedResult = useMemo(() => {
-        const cacheKey = getCacheKey(cardName, lang);
-        if (cacheKey && globalPrintsCache[cacheKey] !== undefined) {
-            return globalPrintsCache[cacheKey];
-        }
-        return null;
-    }, [cardName, lang, getCacheKey]);
+    // Skip if same name requested
+    if (currentNameRef.current === trimmedName && hasSearched) return;
 
-    // Update prints from cache immediately if available
-    useEffect(() => {
-        if (cachedResult !== null) {
-            setPrints(cachedResult);
+    const performFetch = async () => {
+      currentNameRef.current = trimmedName;
+
+      // Abort any in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // Create new abort controller
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      try {
+        // 1. Check Local DB (Metatadata Cache)
+        // We verify 'hasFullPrints' to ensure we have the complete list
+        const cached = await db.cardMetadataCache
+          .where("name")
+          .equals(trimmedName)
+          .first();
+
+        if (
+          cached &&
+          cached.hasFullPrints &&
+          cached.data?.prints &&
+          Array.isArray(cached.data.prints)
+        ) {
+          // Cache Hit!
+          debugLog("[ScryfallPrints] Local cache HIT for:", trimmedName);
+          if (currentNameRef.current === trimmedName) {
+            setPrints(cached.data.prints);
             setHasSearched(true);
-        }
-    }, [cachedResult]);
-
-    // Fetch effect
-    useEffect(() => {
-        // Don't fetch if autoFetch is disabled
-        if (!autoFetch) return;
-
-        // Skip if we have cached results
-        if (cachedResult !== null) return;
-
-        // Abort any in-flight request
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
+            return; // Done, no network needed
+          }
         }
 
-        const performFetch = async () => {
-            currentCardNameRef.current = cardName;
+        // 2. Network Fetch (Cache Miss)
+        setIsLoading(true);
+        const url = `${API_BASE}/api/scryfall/prints?name=${encodeURIComponent(trimmedName)}&lang=${lang}`;
 
-            const trimmedName = cardName.trim();
-            if (!trimmedName) {
-                setPrints([]);
-                return;
-            }
+        const response = await fetch(url, { signal: controller.signal });
 
-            const cacheKey = getCacheKey(cardName, lang);
-            if (!cacheKey) return;
+        if (currentNameRef.current !== trimmedName) return;
 
-            // Skip if we already fetched this exact query (name + lang)
-            if (lastFetchedCacheKeyRef.current === cacheKey) return;
+        if (response.ok) {
+          const data = await response.json();
+          debugLog("[ScryfallPrints] Fetched prints:", data.total);
 
-            // Create abort controller
-            const controller = new AbortController();
-            abortControllerRef.current = controller;
+          const resultPrints: PrintInfo[] = data.prints || [];
 
-            try {
-                setIsLoading(true);
+          // 3. Update Local DB
+          // Update ALL matching records for this card name to include the prints
+          // This ensures future lookups find it
+          await db.cardMetadataCache
+            .where("name")
+            .equals(trimmedName)
+            .modify((entry) => {
+              entry.hasFullPrints = true;
+              // Merge prints into data object
+              if (typeof entry.data === "object" && entry.data !== null) {
+                // We know it's an object, safe to spread and assign
+                entry.data = { ...entry.data, prints: resultPrints };
+              } else {
+                // Fallback: entry.data was somehow not an object (primitive), overwrite it
+                entry.data = { prints: resultPrints };
+              }
+            });
 
-                const url = `${API_BASE}/api/scryfall/prints?name=${encodeURIComponent(trimmedName)}&lang=${lang}`;
-                const response = await fetch(url, { signal: controller.signal });
-
-                if (currentCardNameRef.current !== cardName) return;
-
-                if (response.ok) {
-                    const data = await response.json();
-                    debugLog('[ScryfallPrints] Fetched prints:', data.total);
-
-                    const resultPrints: PrintInfo[] = data.prints || [];
-
-                    // Cache and update state
-                    globalPrintsCache[cacheKey] = resultPrints;
-                    lastFetchedCacheKeyRef.current = cacheKey;
-                    setPrints(resultPrints);
-                    setHasSearched(true);
-                } else {
-                    console.error('[ScryfallPrints] Error fetching prints:', response.status);
-                    // Cache empty result and mark as searched so UI shows "no results" message
-                    globalPrintsCache[cacheKey] = [];
-                    setPrints([]);
-                    setHasSearched(true);
-                }
-
-            } catch (err) {
-                if (err instanceof Error && err.name !== 'AbortError') {
-                    if (cacheKey) globalPrintsCache[cacheKey] = [];
-                    setPrints([]);
-                    setHasSearched(true);
-                }
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        // Small delay to debounce rapid changes
-        const timeoutId = setTimeout(performFetch, 200);
-        return () => {
-            clearTimeout(timeoutId);
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
-        };
-    }, [cardName, lang, autoFetch, cachedResult, getCacheKey]);
-
-    return {
-        prints,
-        isLoading,
-        hasSearched,
-        hasResults: prints.length > 0,
+          setPrints(resultPrints);
+          setHasSearched(true);
+        } else {
+          console.error(
+            "[ScryfallPrints] Error fetching prints:",
+            response.status
+          );
+          setPrints([]);
+          setHasSearched(true);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          debugLog("[ScryfallPrints] Fetch error:", err);
+          setPrints([]);
+          setHasSearched(true);
+        }
+      } finally {
+        if (currentNameRef.current === trimmedName) {
+          setIsLoading(false);
+        }
+      }
     };
+
+    // Small debounce
+    const timeoutId = setTimeout(performFetch, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [name, lang, enabled, hasSearched, initialPrints]);
+
+  return {
+    prints,
+    isLoading,
+    hasSearched,
+    hasResults: prints.length > 0,
+  };
 }

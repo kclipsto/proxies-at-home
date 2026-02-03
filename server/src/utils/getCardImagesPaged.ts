@@ -1,6 +1,10 @@
 import axios, { type AxiosResponse } from "axios";
 import type { CardInfo } from "../../../shared/types.js";
-import { lookupCardBySetNumber, lookupCardByName, insertOrUpdateCard } from "../db/proxxiedCardLookup.js";
+import {
+  lookupCardBySetNumber,
+  lookupCardByName,
+  insertOrUpdateCard,
+} from "../db/proxxiedCardLookup.js";
 import { debugLog } from "./debug.js";
 
 const SCRYFALL_API = "https://api.scryfall.com/cards/search";
@@ -36,7 +40,7 @@ async function delayScryfallRequest() {
     const now = Date.now();
     const elapsed = now - lastScryfallRequest;
     if (elapsed < 100) {
-      await new Promise(r => setTimeout(r, 100 - elapsed));
+      await new Promise((r) => setTimeout(r, 100 - elapsed));
     }
     lastScryfallRequest = Date.now();
   } finally {
@@ -76,7 +80,7 @@ function deduplicatedSearch(
   }
 
   const existing = inFlightSearches.get(cacheKey);
-  if (existing && (now - existing.createdAt < IN_FLIGHT_TTL_MS)) {
+  if (existing && now - existing.createdAt < IN_FLIGHT_TTL_MS) {
     debugLog(`[Scryfall] Deduplicating in-flight request: ${cacheKey}`);
     return existing.promise;
   }
@@ -108,6 +112,7 @@ interface ScryfallCardFace {
 
 export interface ScryfallApiCard {
   name?: string;
+  oracle_id?: string;
   image_uris?: {
     png?: string;
     large?: string;
@@ -123,10 +128,11 @@ export interface ScryfallApiCard {
   set?: string;
   collector_number?: string;
   lang?: string;
+  prints_search_uri?: string;
   // Related cards/tokens from Scryfall
   all_parts?: Array<{
     id?: string;
-    component?: string;  // "token", "combo_piece", "meld_part", etc.
+    component?: string; // "token", "combo_piece", "meld_part", etc.
     name?: string;
     type_line?: string;
     uri?: string;
@@ -157,11 +163,15 @@ async function fetchAllPages<T>(
     while (next) {
       await delayScryfallRequest();
       // Explicitly cast the response to avoid circular inference issues with 'next'
-      const resp: AxiosResponse<ScryfallResponse> = await AX.get<ScryfallResponse>(next);
+      const resp: AxiosResponse<ScryfallResponse> =
+        await AX.get<ScryfallResponse>(next);
       const { data, has_more, next_page } = resp.data;
 
       if (data) {
-        debugLog(`[Scryfall] Page returned ${data.length} cards:`, data.slice(0, 3).map(c => c.name));
+        debugLog(
+          `[Scryfall] Page returned ${data.length} cards:`,
+          data.slice(0, 3).map((c) => c.name)
+        );
         for (const card of data) {
           results.push(...extractor(card));
         }
@@ -226,7 +236,9 @@ export async function batchFetchCards(
 
   const lang = language.toLowerCase();
 
-  debugLog(`[batchFetchCards] Starting batch fetch for ${cardInfos.length} cards, lang=${lang}`);
+  debugLog(
+    `[batchFetchCards] Starting batch fetch for ${cardInfos.length} cards, lang=${lang}`
+  );
 
   // Step 1: Check local DB first for all cards
   const cardsToFetch: CardInfo[] = [];
@@ -234,13 +246,16 @@ export async function batchFetchCards(
   for (const ci of cardInfos) {
     // For set+number lookups, language doesn't matter (the printing determines the language)
     // For name lookups, use the requested language
-    const local = ci.set && ci.number
-      ? lookupCardBySetNumber(ci.set, ci.number)
-      : lookupCardByName(ci.name, lang);
+    const local =
+      ci.set && ci.number
+        ? lookupCardBySetNumber(ci.set, ci.number, lang)
+        : lookupCardByName(ci.name, lang);
 
     if (local && local.name) {
       // Found in local DB
-      debugLog(`[batchFetchCards] Cache HIT for "${ci.name}" -> "${local.name}" (${local.set}:${local.collector_number})`);
+      debugLog(
+        `[batchFetchCards] Cache HIT for "${ci.name}" -> "${local.name}" (${local.set}:${local.collector_number})`
+      );
       const key = local.name.toLowerCase();
       results.set(key, local);
 
@@ -262,23 +277,29 @@ export async function batchFetchCards(
       }
     } else {
       // Not found locally, need to fetch from Scryfall
-      debugLog(`[batchFetchCards] Cache MISS for "${ci.name}" (set=${ci.set}, num=${ci.number})`);
+      debugLog(
+        `[batchFetchCards] Cache MISS for "${ci.name}" (set=${ci.set}, num=${ci.number})`
+      );
       cardsToFetch.push(ci);
     }
   }
 
   // Step 2: Fetch missing cards from Scryfall
-  debugLog(`[batchFetchCards] ${results.size} from cache, ${cardsToFetch.length} to fetch from Scryfall`);
+  debugLog(
+    `[batchFetchCards] ${results.size} from cache, ${cardsToFetch.length} to fetch from Scryfall`
+  );
 
   // Split tokens from regular cards - tokens need individual search with type:token filter
   // because the /cards/collection API doesn't support type filters
-  const tokenCards = cardsToFetch.filter(ci => ci.isToken);
-  const regularCards = cardsToFetch.filter(ci => !ci.isToken);
+  const tokenCards = cardsToFetch.filter((ci) => ci.isToken);
+  const regularCards = cardsToFetch.filter((ci) => !ci.isToken);
 
   // Fetch tokens using batched OR queries (much faster than individual searches)
   // The /cards/collection API doesn't support type filters, so we use search API with OR
   if (tokenCards.length > 0) {
-    debugLog(`[batchFetchCards] Fetching ${tokenCards.length} tokens with batched OR queries`);
+    debugLog(
+      `[batchFetchCards] Fetching ${tokenCards.length} tokens with batched OR queries`
+    );
 
     // Build batches of token names for OR queries
     // Keep query length reasonable (~800 chars max to be safe with Scryfall limits)
@@ -293,18 +314,27 @@ export async function batchFetchCards(
         await delayScryfallRequest();
 
         // Build OR query: (name:"Token A" OR name:"Token B") type:token include:extras
-        const orClauses = batch.map(ci => `name:"${ci.name.replace(/"/g, '\\"')}"`).join(' OR ');
+        const orClauses = batch
+          .map((ci) => `name:"${ci.name.replace(/"/g, '\\"')}"`)
+          .join(" OR ");
         const q = `(${orClauses}) type:token include:extras`;
-        debugLog(`[batchFetchCards] Token batch query (${batch.length} tokens): ${q.substring(0, 100)}...`);
+        debugLog(
+          `[batchFetchCards] Token batch query (${batch.length} tokens): ${q.substring(0, 100)}...`
+        );
 
-        const response = await AX.get<ScryfallResponse>('https://api.scryfall.com/cards/search', {
-          params: { q, unique: 'prints' }
-        });
+        const response = await AX.get<ScryfallResponse>(
+          "https://api.scryfall.com/cards/search",
+          {
+            params: { q, unique: "prints" },
+          }
+        );
 
         if (response.data?.data) {
           for (const card of response.data.data) {
             if (!card.name) continue;
-            debugLog(`[batchFetchCards] Token found: "${card.name}" (${card.set}:${card.collector_number})`);
+            debugLog(
+              `[batchFetchCards] Token found: "${card.name}" (${card.set}:${card.collector_number})`
+            );
 
             const key = card.name.toLowerCase();
             // Only store if not already in results (first match wins)
@@ -320,14 +350,19 @@ export async function batchFetchCards(
 
         // Fallback: if batch query fails (e.g., too long), try individual queries
         if (batch.length > 1) {
-          debugLog(`[batchFetchCards] Falling back to individual token queries`);
+          debugLog(
+            `[batchFetchCards] Falling back to individual token queries`
+          );
           for (const ci of batch) {
             try {
               await delayScryfallRequest();
               const q = `!"${ci.name}" type:token include:extras`;
-              const response = await AX.get<ScryfallResponse>('https://api.scryfall.com/cards/search', {
-                params: { q, unique: 'prints' }
-              });
+              const response = await AX.get<ScryfallResponse>(
+                "https://api.scryfall.com/cards/search",
+                {
+                  params: { q, unique: "prints" },
+                }
+              );
               if (response.data?.data?.[0]) {
                 const card = response.data.data[0];
                 if (card.name) {
@@ -337,7 +372,9 @@ export async function batchFetchCards(
                 }
               }
             } catch {
-              debugLog(`[batchFetchCards] Individual token search also failed for "${ci.name}"`);
+              debugLog(
+                `[batchFetchCards] Individual token search also failed for "${ci.name}"`
+              );
             }
           }
         }
@@ -358,9 +395,12 @@ export async function batchFetchCards(
       const batch = batches[batchIdx];
       await delayScryfallRequest();
 
-      const identifiers = batch.map(ci => {
+      const identifiers = batch.map((ci) => {
         if (ci.set && ci.number) {
-          return { set: ci.set.toLowerCase(), collector_number: String(ci.number) };
+          return {
+            set: ci.set.toLowerCase(),
+            collector_number: String(ci.number),
+          };
         } else if (ci.set) {
           return { name: ci.name, set: ci.set.toLowerCase() };
         } else {
@@ -370,15 +410,19 @@ export async function batchFetchCards(
 
       try {
         const response = await AX.post<CollectionResponse>(
-          'https://api.scryfall.com/cards/collection',
+          "https://api.scryfall.com/cards/collection",
           { identifiers }
         );
 
         if (response.data?.data) {
-          debugLog(`[batchFetchCards] Scryfall batch ${batchIdx + 1} returned ${response.data.data.length} cards`);
+          debugLog(
+            `[batchFetchCards] Scryfall batch ${batchIdx + 1} returned ${response.data.data.length} cards`
+          );
           for (const card of response.data.data) {
             if (!card.name) continue;
-            debugLog(`[batchFetchCards] Scryfall returned: "${card.name}" (${card.set}:${card.collector_number})`);
+            debugLog(
+              `[batchFetchCards] Scryfall returned: "${card.name}" (${card.set}:${card.collector_number})`
+            );
 
             // Store by lowercase name for lookup
             const key = card.name.toLowerCase();
@@ -426,6 +470,12 @@ export async function batchFetchCards(
     }
 
     for (const [key, card] of uniqueCards.entries()) {
+      // Optimization: If we already have the card in the requested language, skip fetch
+      if (card.lang === lang) {
+        debugLog(`[batchFetchCards] Skipping localization for "${card.name}" (already have ${lang})`);
+        continue;
+      }
+
       await delayScryfallRequest();
       try {
         const url = `https://api.scryfall.com/cards/${card.set}/${card.collector_number}/${lang}`;
@@ -456,8 +506,13 @@ export function lookupCardFromBatch(
   batchResults: Map<string, ScryfallApiCard>,
   cardInfo: CardInfo
 ): ScryfallApiCard | undefined {
-  debugLog(`[lookupCardFromBatch] Looking for "${cardInfo.name}" (set=${cardInfo.set}, num=${cardInfo.number})`);
-  debugLog(`[lookupCardFromBatch] Batch has ${batchResults.size} entries, keys:`, Array.from(batchResults.keys()).slice(0, 10));
+  debugLog(
+    `[lookupCardFromBatch] Looking for "${cardInfo.name}" (set=${cardInfo.set}, num=${cardInfo.number})`
+  );
+  debugLog(
+    `[lookupCardFromBatch] Batch has ${batchResults.size} entries, keys:`,
+    Array.from(batchResults.keys()).slice(0, 10)
+  );
 
   // Try set+number first (most specific)
   if (cardInfo.set && cardInfo.number) {
@@ -472,7 +527,9 @@ export function lookupCardFromBatch(
   // Fall back to name lookup
   const nameKey = cardInfo.name.toLowerCase();
   const byName = batchResults.get(nameKey);
-  debugLog(`[lookupCardFromBatch] Name key "${nameKey}" -> ${byName ? `"${byName.name}"` : 'NOT FOUND'}`);
+  debugLog(
+    `[lookupCardFromBatch] Name key "${nameKey}" -> ${byName ? `"${byName.name}"` : "NOT FOUND"}`
+  );
   return byName;
 }
 
@@ -519,28 +576,35 @@ export async function getImagesForCardInfo(
 
   // Helper to build query based on strategy
   const executeStrategy = (queryTemplate: (lang: string) => string) => {
-    return searchScryfallWithFallback(fetchPngsByQuery, queryTemplate, language, fallbackToEnglish);
+    return searchScryfallWithFallback(
+      fetchPngsByQuery,
+      queryTemplate,
+      language,
+      fallbackToEnglish
+    );
   };
 
   // 1) Exact printing: set + collector number + name
   if (unique === "prints" && set && number) {
-    const results = await executeStrategy((lang) =>
-      `set:${set} number:${escapeColon(number)} name:"${name}" include:extras unique:prints lang:${lang}`
+    const results = await executeStrategy(
+      (lang) =>
+        `set:${set} number:${escapeColon(number)} name:"${name}" include:extras unique:prints lang:${lang}`
     );
     if (results.length) return results;
   }
 
   // 2) Set + name (all printings in set for that name)
   if (unique === "prints" && set && !number) {
-    const results = await executeStrategy((lang) =>
-      `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
+    const results = await executeStrategy(
+      (lang) =>
+        `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
     );
     if (results.length) return results;
   }
 
   // 3) Name-only search - this is the main strategy for unique:art
-  return executeStrategy((lang) =>
-    `!"${name}" include:extras unique:${unique} lang:${lang}`
+  return executeStrategy(
+    (lang) => `!"${name}" include:extras unique:${unique} lang:${lang}`
   );
 }
 
@@ -556,21 +620,27 @@ export async function getCardsWithImagesForCardInfo(
   const { name, set, number, isToken } = cardInfo || {};
 
   // Create cache key for request deduplication
-  const cacheKey = `cards:${name}:${set || ''}:${number || ''}:${unique}:${language}:${isToken || false}`;
+  const cacheKey = `cards:${name}:${set || ""}:${number || ""}:${unique}:${language}:${isToken || false}`;
 
   return deduplicatedSearch(cacheKey, async () => {
     // Add type:token filter for explicit token searches
     const typeFilter = isToken ? " type:token" : "";
 
     const executeStrategy = (queryTemplate: (lang: string) => string) => {
-      return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
+      return searchScryfallWithFallback(
+        fetchCardsByQuery,
+        queryTemplate,
+        language,
+        fallbackToEnglish
+      );
     };
 
     // 1) Exact printing - when user specifies set AND number
     // This takes priority regardless of unique parameter
     if (set && number) {
-      const results = await executeStrategy((lang) =>
-        `set:${set} number:${escapeColon(number)} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
+      const results = await executeStrategy(
+        (lang) =>
+          `set:${set} number:${escapeColon(number)} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
       );
       if (results.length) return results;
       // If no results with exact match, fall through to broader search
@@ -578,16 +648,18 @@ export async function getCardsWithImagesForCardInfo(
 
     // 2) Set + name - when user specifies set but not number
     if (set && !number) {
-      const results = await executeStrategy((lang) =>
-        `set:${set} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
+      const results = await executeStrategy(
+        (lang) =>
+          `set:${set} name:"${name}"${typeFilter} include:extras unique:prints lang:${lang}`
       );
       if (results.length) return results;
       // If no results with set filter, fall through to name-only
     }
 
     // 3) Name-only search - get all arts/prints based on unique parameter
-    const results = await executeStrategy((lang) =>
-      `!"${name}"${typeFilter} include:extras unique:${unique} lang:${lang}`
+    const results = await executeStrategy(
+      (lang) =>
+        `!"${name}"${typeFilter} include:extras unique:${unique} lang:${lang}`
     );
 
     // Score and sort results to prioritize best matches
@@ -595,29 +667,29 @@ export async function getCardsWithImagesForCardInfo(
 
     const scoreCard = (card: ScryfallApiCard): number => {
       let score = 0;
-      const cardName = card.name?.toLowerCase() || '';
+      const cardName = card.name?.toLowerCase() || "";
 
       // Exact full name match (highest priority)
       if (cardName === queryLower) {
         score += 100;
       }
       // DFC: query matches one of the faces
-      else if (cardName.includes(' // ')) {
-        const [front, back] = cardName.split(' // ').map(s => s.trim());
+      else if (cardName.includes(" // ")) {
+        const [front, back] = cardName.split(" // ").map((s) => s.trim());
         if (front === queryLower || back === queryLower) {
           score += 90;
         }
       }
       // Query is DFC format, card matches one face
-      else if (queryLower.includes(' // ')) {
-        const [front, back] = queryLower.split(' // ').map(s => s.trim());
+      else if (queryLower.includes(" // ")) {
+        const [front, back] = queryLower.split(" // ").map((s) => s.trim());
         if (cardName === front || cardName === back) {
           score += 90;
         }
       }
 
       // Deprioritize art_series (often have wrong metadata)
-      if (card.layout === 'art_series') {
+      if (card.layout === "art_series") {
         score -= 50;
       }
 
@@ -626,8 +698,10 @@ export async function getCardsWithImagesForCardInfo(
 
     results.sort((a, b) => scoreCard(b) - scoreCard(a));
 
-    debugLog(`[Scryfall] Sorted results for "${name}":`,
-      results.slice(0, 3).map(c => `${c.name} (score: ${scoreCard(c)})`));
+    debugLog(
+      `[Scryfall] Sorted results for "${name}":`,
+      results.slice(0, 3).map((c) => `${c.name} (score: ${scoreCard(c)})`)
+    );
 
     return results;
   });
@@ -649,37 +723,49 @@ export async function getCardDataForCardInfo(
   const tokenFilter = isToken ? " type:token" : "";
 
   const executeStrategy = (queryTemplate: (lang: string) => string) => {
-    return searchScryfallWithFallback(fetchCardsByQuery, queryTemplate, language, fallbackToEnglish);
+    return searchScryfallWithFallback(
+      fetchCardsByQuery,
+      queryTemplate,
+      language,
+      fallbackToEnglish
+    );
   };
 
   // Strategy 1: Exact printing (set, number, name, lang)
   if (set && number) {
-    const cards = await executeStrategy((lang) =>
-      `set:${set} number:${escapeColon(number)} name:"${name}" include:extras lang:${lang}`
+    const cards = await executeStrategy(
+      (lang) =>
+        `set:${set} number:${escapeColon(number)} name:"${name}" include:extras lang:${lang}`
     );
     if (cards.length) return cards[0];
   }
 
   // Strategy 2: Set + name
   if (set) {
-    const cards = await executeStrategy((lang) =>
-      `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
+    const cards = await executeStrategy(
+      (lang) =>
+        `set:${set} name:"${name}" include:extras unique:prints lang:${lang}`
     );
     if (cards.length) return cards[0];
   }
 
   // Helper to filter out Art Series cards (they have type_line: "Card // Card" and cmc: 0)
   const isRealCard = (card: ScryfallApiCard) => {
-    if (card.type_line === 'Card // Card') return false;
-    if (card.set?.startsWith('ac') && card.rarity === 'common' && card.cmc === 0) return false;
+    if (card.type_line === "Card // Card") return false;
+    if (
+      card.set?.startsWith("ac") &&
+      card.rarity === "common" &&
+      card.cmc === 0
+    )
+      return false;
     return true;
   };
 
   // Strategy 3: Name-only exact match
   // DO NOT use include:extras here - it matches Art Series cards with cmc:0, type:"Card // Card"
   // We use unique:art to get different art options, and order:released to prefer newer cards
-  const exactCards = await executeStrategy((lang) =>
-    `!"${name}" unique:art order:released lang:${lang}${tokenFilter}`
+  const exactCards = await executeStrategy(
+    (lang) => `!"${name}" unique:art order:released lang:${lang}${tokenFilter}`
   );
   const realExactCards = exactCards.filter(isRealCard);
   if (realExactCards.length) return realExactCards[0];
@@ -687,8 +773,9 @@ export async function getCardDataForCardInfo(
   // Strategy 4: Fuzzy name search (for MPC names with missing punctuation like "Conjurers Closet")
   // Uses name: operator which does partial/fuzzy matching
   // DO NOT use include:extras - it matches Art Series cards
-  const fuzzyCards = await executeStrategy((lang) =>
-    `name:"${name}" unique:art order:released lang:${lang}${tokenFilter}`
+  const fuzzyCards = await executeStrategy(
+    (lang) =>
+      `name:"${name}" unique:art order:released lang:${lang}${tokenFilter}`
   );
   const realFuzzyCards = fuzzyCards.filter(isRealCard);
   return realFuzzyCards[0] || null;

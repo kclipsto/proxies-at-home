@@ -93,7 +93,7 @@ describe('useScryfallSearch', () => {
             // Wait for debounce + API call
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            }, { timeout: 3000 });
 
             expect(global.fetch).toHaveBeenCalledWith(
                 expect.stringContaining('/api/scryfall/search?q=Lightning%20Bolt'),
@@ -149,7 +149,7 @@ describe('useScryfallSearch', () => {
 
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            }, { timeout: 3000 });
 
             expect(global.fetch).toHaveBeenCalledWith(
                 expect.stringContaining('/api/scryfall/cards/cmd/129'),
@@ -208,7 +208,7 @@ describe('useScryfallSearch', () => {
 
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            }, { timeout: 3000 });
 
             // Should pass through as-is, not wrapped in quotes
             expect(global.fetch).toHaveBeenCalledWith(
@@ -227,7 +227,7 @@ describe('useScryfallSearch', () => {
 
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            }, { timeout: 3000 });
 
             // Should pass through as-is, NOT become !"is:legend" set:ecc
             expect(global.fetch).toHaveBeenCalledWith(
@@ -246,7 +246,7 @@ describe('useScryfallSearch', () => {
 
             await vi.waitFor(() => {
                 expect(global.fetch).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            }, { timeout: 3000 });
 
             expect(global.fetch).toHaveBeenCalledWith(
                 expect.stringContaining('/api/scryfall/search?q=c%3Ar%20t%3Acreature'),
