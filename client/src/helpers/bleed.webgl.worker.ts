@@ -2,6 +2,7 @@ import {
     fetchWithRetry,
     toProxied,
     shouldTrimBleed,
+    trimBleedByMm,
 } from "./imageProcessing";
 import { STANDARD_ASPECT_RATIO, detectBleed } from "./cardDimensions";
 import { IMAGE_PROCESSING } from "../constants/imageProcessing";
@@ -156,17 +157,7 @@ self.onmessage = async (e: MessageEvent) => {
 
         // Helper function to trim bleed with user-specified amount (in mm)
         async function createTrimmedBitmapWithExistingBleed(inputBlob: Blob, existingMm: number): Promise<ImageBitmap> {
-            const tempBitmap = await createImageBitmap(inputBlob);
-            // Standard MTG card is ~63x88mm, calculate pixel ratio
-            const pxPerMm = tempBitmap.height / (IMAGE_PROCESSING.CARD_HEIGHT_MM + existingMm * 2);
-            const trim = Math.round(existingMm * pxPerMm);
-            const w = tempBitmap.width - trim * 2;
-            const h = tempBitmap.height - trim * 2;
-            tempBitmap.close();
-
-            return w > 0 && h > 0
-                ? await createImageBitmap(inputBlob, trim, trim, w, h)
-                : await createImageBitmap(inputBlob);
+            return trimBleedByMm(inputBlob, existingMm, existingMm);
         }
 
         // Determine how to handle the image based on bleed mode
