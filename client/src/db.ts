@@ -59,7 +59,9 @@ export interface Cardback {
 
   // Processed versions
   displayBlob?: Blob;
+  displayDpi?: number;
   exportBlob?: Blob;
+  exportDpi?: number;
   exportBleedWidth?: number;
 
   // Darkened versions for each mode

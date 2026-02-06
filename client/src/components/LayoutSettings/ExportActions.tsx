@@ -289,6 +289,7 @@ export function ExportActions({ cards }: Props) {
             // No else - skip cards without real backs
           }
           filenameSuffix = '_interleaved-all';
+          pdfSettings.perCardBackOffsets = {};
           break;
 
         case 'interleaved-custom':
@@ -304,6 +305,7 @@ export function ExportActions({ cards }: Props) {
             }
           }
           filenameSuffix = '_interleaved-custom';
+          pdfSettings.perCardBackOffsets = {};
           break;
 
         case 'visible_faces':
@@ -322,6 +324,7 @@ export function ExportActions({ cards }: Props) {
             }
           }
           filenameSuffix = '_visible_faces';
+          pdfSettings.perCardBackOffsets = {};
           break;
 
         case 'duplex': {
@@ -402,6 +405,7 @@ export function ExportActions({ cards }: Props) {
           filenameSuffix = '_backs';
           // Pass rightAlignRows for backs export
           pdfSettings.rightAlignRows = true;
+          pdfSettings.perCardBackOffsets = {};
           if (useCustomBackOffset) {
             pdfSettings.cardPositionX = cardBackPositionX;
             pdfSettings.cardPositionY = cardBackPositionY;

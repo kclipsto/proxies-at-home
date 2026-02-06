@@ -41,6 +41,7 @@ export function usePageGuides({
             if (graphicsRef.current) {
                 graphicsRef.current.clear();
             }
+            if (app) app.render();
             return;
         }
 

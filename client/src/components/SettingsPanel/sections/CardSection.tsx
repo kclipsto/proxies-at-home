@@ -1,9 +1,11 @@
 import { useSettingsStore } from "@/store/settings";
-import { Label, Checkbox } from "flowbite-react";
+import { Label, Checkbox, Button } from "flowbite-react";
 import { NumberInput } from "@/components/common";
 import { useNormalizedInput, usePositionInput } from "@/hooks/useInputHooks";
 import { AutoTooltip } from "@/components/common";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { PerCardOffsetModal } from "@/components/PerCardOffsetModal";
+import { WrenchIcon } from "lucide-react";
 
 const INCH_TO_MM = 25.4;
 const CARD_W_IN = 2.5;
@@ -34,6 +36,8 @@ export function CardSection() {
     const setUseCustomBackOffset = useSettingsStore((state) => state.setUseCustomBackOffset);
     const setCardBackPositionX = useSettingsStore((state) => state.setCardBackPositionX);
     const setCardBackPositionY = useSettingsStore((state) => state.setCardBackPositionY);
+
+    const [showPerCardModal, setShowPerCardModal] = useState(false);
 
     const pageWmm = pageUnit === "mm" ? pageWidth : inToMm(pageWidth);
     const pageHmm = pageUnit === "mm" ? pageHeight : inToMm(pageHeight);
@@ -67,21 +71,40 @@ export function CardSection() {
 
     return (
         <div className="space-y-4">
+            <div className="flex flex-col space-y-2">
+                <Label className="font-bold">Advanced Positioning</Label>
+                <div className="flex items-center gap-2 pt-2">
+                    <Button
+                        color="green"
+                        onClick={() => setShowPerCardModal(true)}
+                        className="flex-1 gap-2"
+                    >
+                        <WrenchIcon className="h-5 w-5" />
+                        Card Back Alignement Tool
+                    </Button>
+                    <AutoTooltip content="Adjust position and rotation for each card back individually. Use this to fine-tune alignment for each position in the grid." />
+                </div>
+            </div>
+
             <div>
-                <div className="flex items-center justify-between relative">
-                    <Label>Card Spacing (mm)</Label>
-                    {cardSpacingInput.warning && (
-                        <span className="absolute right-8 text-xs text-red-500 font-medium animate-pulse">
-                            {cardSpacingInput.warning}
-                        </span>
-                    )}
-                    <AutoTooltip
-                        content={
-                            <div className="whitespace-nowrap">
-                                Max that fits with current layout: {maxSpacingMm} mm
-                            </div>
-                        }
-                    />
+
+                <div className="flex flex-col space-y-2">
+                    <Label className="font-bold">Basic Positioning</Label>
+                    <div className="flex items-center justify-between relative">
+                        <Label>Card Spacing (mm)</Label>
+                        {cardSpacingInput.warning && (
+                            <span className="absolute right-8 text-xs text-red-500 font-medium animate-pulse">
+                                {cardSpacingInput.warning}
+                            </span>
+                        )}
+                        <AutoTooltip
+                            content={
+                                <div className="whitespace-nowrap">
+                                    Max that fits with current layout: {maxSpacingMm} mm
+                                </div>
+                            }
+                        />
+                    </div>
                 </div>
                 <NumberInput
                     ref={cardSpacingInput.inputRef}
@@ -148,38 +171,46 @@ export function CardSection() {
                 </div>
 
                 {useCustomBackOffset && (
-                    <div className="grid grid-cols-2 gap-3 border-gray-200 dark:border-gray-700">
-                        <div>
-                            <div className="flex items-center justify-between">
-                                <Label>Back Horizontal</Label>
+                    <>
+                        <div className="grid grid-cols-2 gap-3 border-gray-200 dark:border-gray-700">
+                            <div>
+                                <div className="flex items-center justify-between">
+                                    <Label>Back Horizontal</Label>
+                                </div>
+                                <NumberInput
+                                    ref={cardBackPositionXInput.inputRef}
+                                    className="w-full"
+                                    step={0.1}
+                                    defaultValue={cardBackPositionXInput.defaultValue}
+                                    onChange={cardBackPositionXInput.handleChange}
+                                    onBlur={cardBackPositionXInput.handleBlur}
+                                    placeholder="-0.0"
+                                />
                             </div>
-                            <NumberInput
-                                ref={cardBackPositionXInput.inputRef}
-                                className="w-full"
-                                step={0.1}
-                                defaultValue={cardBackPositionXInput.defaultValue}
-                                onChange={cardBackPositionXInput.handleChange}
-                                onBlur={cardBackPositionXInput.handleBlur}
-                                placeholder="-0.0"
-                            />
-                        </div>
-                        <div>
-                            <div className="flex items-center justify-between">
-                                <Label>Back Vertical</Label>
+                            <div>
+                                <div className="flex items-center justify-between">
+                                    <Label>Back Vertical</Label>
+                                </div>
+                                <NumberInput
+                                    ref={cardBackPositionYInput.inputRef}
+                                    className="w-full"
+                                    step={0.1}
+                                    defaultValue={cardBackPositionYInput.defaultValue}
+                                    onChange={cardBackPositionYInput.handleChange}
+                                    onBlur={cardBackPositionYInput.handleBlur}
+                                    placeholder="-0.0"
+                                />
                             </div>
-                            <NumberInput
-                                ref={cardBackPositionYInput.inputRef}
-                                className="w-full"
-                                step={0.1}
-                                defaultValue={cardBackPositionYInput.defaultValue}
-                                onChange={cardBackPositionYInput.handleChange}
-                                onBlur={cardBackPositionYInput.handleBlur}
-                                placeholder="-0.0"
-                            />
                         </div>
-                    </div>
+
+                    </>
                 )}
             </div>
+
+            <PerCardOffsetModal
+                isOpen={showPerCardModal}
+                onClose={() => setShowPerCardModal(false)}
+            />
         </div>
     );
 }

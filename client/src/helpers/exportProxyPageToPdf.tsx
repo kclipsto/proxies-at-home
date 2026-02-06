@@ -74,6 +74,8 @@ export async function exportProxyPagesToPdf({
     perCardGuideStyle,
     guidePlacement,
     cutGuideLengthMm,
+    registrationMarks,
+    registrationMarksPortrait,
     rightAlignRows,
     darkenThreshold,
     darkenContrast,
@@ -81,6 +83,11 @@ export async function exportProxyPagesToPdf({
     darkenAmount,
     darkenBrightness,
     darkenAutoDetect,
+    // Back-specific positioning
+    useCustomBackOffset,
+    cardBackPositionX,
+    cardBackPositionY,
+    perCardBackOffsets,
   } = pdfSettings;
 
   const perPage = Math.max(1, columns * rows);
@@ -269,11 +276,18 @@ export async function exportProxyPagesToPdf({
                       perCardGuideStyle,
                       guidePlacement,
                       cutGuideLengthMm,
+                      registrationMarks,
+                      registrationMarksPortrait,
                       // Pass normalized source settings directly (no legacy conversion)
                       sourceSettings,
                       withBleedSourceAmount,
                       // Right-align incomplete rows for backs export
                       rightAlignRows,
+                      // Back-specific positioning
+                      useCustomBackOffset,
+                      cardBackPositionX,
+                      cardBackPositionY,
+                      perCardBackOffsets,
                       // Pre-rendered effect cache (filtered to this page's cards only)
                       effectCacheById: pageEffectCache,
                     };

@@ -49,6 +49,12 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     cardPositionX: number;
     cardPositionY: number;
 
+    // Back-specific positioning
+    useCustomBackOffset: boolean;
+    cardBackPositionX: number;
+    cardBackPositionY: number;
+    perCardBackOffsets: Record<number, { x: number; y: number; rotation: number }>;
+
     // Guide settings
     guideColor: string;
     guideWidthCssPx: number;
@@ -56,6 +62,10 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     perCardGuideStyle: 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-rounded-rect' | 'dashed-rounded-rect' | 'solid-squared-rect' | 'dashed-squared-rect' | 'none';
     guidePlacement: 'inside' | 'outside' | 'center';
     cutGuideLengthMm: number;
+
+    // Silhouette registration marks
+    registrationMarks: 'none' | '3' | '4';
+    registrationMarksPortrait: boolean;
 
     // Right-align incomplete rows (for backs export)
     rightAlignRows?: boolean;
@@ -117,6 +127,11 @@ export function serializePdfSettingsForWorker(): WorkerPdfSettings {
         cardSpacingMm: state.cardSpacingMm,
         cardPositionX: state.cardPositionX,
         cardPositionY: state.cardPositionY,
+        // Back-specific positioning
+        useCustomBackOffset: state.useCustomBackOffset,
+        cardBackPositionX: state.cardBackPositionX,
+        cardBackPositionY: state.cardBackPositionY,
+        perCardBackOffsets: state.perCardBackOffsets,
         // Guides
         guideColor: state.guideColor,
         guideWidthCssPx: state.guideWidth,
@@ -124,5 +139,7 @@ export function serializePdfSettingsForWorker(): WorkerPdfSettings {
         perCardGuideStyle: state.perCardGuideStyle,
         guidePlacement: state.guidePlacement,
         cutGuideLengthMm: state.cutGuideLengthMm,
+        registrationMarks: state.registrationMarks,
+        registrationMarksPortrait: state.registrationMarksPortrait,
     };
 }

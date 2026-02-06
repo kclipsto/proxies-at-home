@@ -20,6 +20,10 @@ export function GuidesSection() {
     const setGuidePlacement = useSettingsStore((state) => state.setGuidePlacement);
     const cutGuideLengthMm = useSettingsStore((state) => state.cutGuideLengthMm);
     const setCutGuideLengthMm = useSettingsStore((state) => state.setCutGuideLengthMm);
+    const registrationMarks = useSettingsStore((state) => state.registrationMarks);
+    const setRegistrationMarks = useSettingsStore((state) => state.setRegistrationMarks);
+    const registrationMarksPortrait = useSettingsStore((state) => state.registrationMarksPortrait);
+    const setRegistrationMarksPortrait = useSettingsStore((state) => state.setRegistrationMarksPortrait);
 
     const bleedEdge = useSettingsStore((state) => state.bleedEdge);
     const bleedEdgeWidth = useSettingsStore((state) => state.bleedEdgeWidth);
@@ -406,6 +410,143 @@ export function GuidesSection() {
                     <option value="edges">Edges Only</option>
                     <option value="none">None</option>
                 </Select>
+            </div>
+
+            {/* Silhouette Registration Marks */}
+            <div>
+                <div className="mb-2 flex items-center gap-2">
+                    <Label htmlFor="registrationMarks">Silhouette Registration Marks</Label>
+                    <AutoTooltip content="Adds registration marks for Silhouette Cameo print & cut. 3-point uses marks in 3 corners, 4-point adds a mark in the bottom-right for better accuracy on distorted prints." />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                    {/* None option */}
+                    <button
+                        onClick={() => setRegistrationMarks('none')}
+                        className={`p-2 rounded-lg border transition-colors flex flex-col items-center gap-1 ${
+                            registrationMarks === 'none'
+                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
+                                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                    >
+                        <svg width="32" height="42" viewBox="0 0 40 52" className="flex-shrink-0">
+                            <rect x="4" y="4" width="32" height="44" fill="white" stroke="#ccc" strokeWidth="1" />
+                            <rect x="10" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                            <rect x="22" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                            <rect x="10" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                            <rect x="22" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                        </svg>
+                        <span className={`text-xs font-medium ${registrationMarks === 'none' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>
+                            None
+                        </span>
+                    </button>
+
+                    {/* 3-point option */}
+                    <button
+                        onClick={() => setRegistrationMarks('3')}
+                        className={`p-2 rounded-lg border transition-colors flex flex-col items-center gap-1 ${
+                            registrationMarks === '3'
+                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
+                                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                    >
+                        <div className="h-[42px] flex items-center justify-center">
+                            {registrationMarksPortrait ? (
+                                /* Portrait: tall page, dot top-left, L's at top-right and bottom-left */
+                                <svg width="32" height="42" viewBox="0 0 40 52" className="flex-shrink-0">
+                                    <rect x="4" y="4" width="32" height="44" fill="white" stroke="#ccc" strokeWidth="1" />
+                                    <rect x="6" y="6" width="4" height="4" fill="black" />
+                                    <path d="M34,6 L34,10 M34,6 L30,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M6,46 L6,42 M6,46 L10,46" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <rect x="10" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="22" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="10" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="22" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                </svg>
+                            ) : (
+                                /* Landscape: wide page, dot top-left, L's at top-right and bottom-left */
+                                <svg width="42" height="32" viewBox="0 0 52 40" className="flex-shrink-0">
+                                    <rect x="4" y="4" width="44" height="32" fill="white" stroke="#ccc" strokeWidth="1" />
+                                    <rect x="6" y="6" width="4" height="4" fill="black" />
+                                    <path d="M46,6 L46,10 M46,6 L42,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M6,34 L6,30 M6,34 L10,34" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <rect x="12" y="10" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="12" y="22" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="26" y="10" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="26" y="22" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                </svg>
+                            )}
+                        </div>
+                        <span className={`text-xs font-medium ${registrationMarks === '3' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>
+                            3-Point
+                        </span>
+                    </button>
+
+                    {/* 4-point option */}
+                    <button
+                        onClick={() => setRegistrationMarks('4')}
+                        className={`p-2 rounded-lg border transition-colors flex flex-col items-center gap-1 ${
+                            registrationMarks === '4'
+                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
+                                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                    >
+                        <div className="h-[42px] flex items-center justify-center">
+                            {registrationMarksPortrait ? (
+                                /* Portrait: tall page, all 4 corners are L-shapes */
+                                <svg width="32" height="42" viewBox="0 0 40 52" className="flex-shrink-0">
+                                    <rect x="4" y="4" width="32" height="44" fill="white" stroke="#ccc" strokeWidth="1" />
+                                    <path d="M6,6 L6,10 M6,6 L10,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M34,6 L34,10 M34,6 L30,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M6,46 L6,42 M6,46 L10,46" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M34,46 L34,42 M34,46 L30,46" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <rect x="10" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="22" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="10" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="22" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                </svg>
+                            ) : (
+                                /* Landscape: wide page, all 4 corners are L-shapes */
+                                <svg width="42" height="32" viewBox="0 0 52 40" className="flex-shrink-0">
+                                    <rect x="4" y="4" width="44" height="32" fill="white" stroke="#ccc" strokeWidth="1" />
+                                    <path d="M6,6 L6,10 M6,6 L10,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M46,6 L46,10 M46,6 L42,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M6,34 L6,30 M6,34 L10,34" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M46,34 L46,30 M46,34 L42,34" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <rect x="12" y="10" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="12" y="22" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="26" y="10" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="26" y="22" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                </svg>
+                            )}
+                        </div>
+                        <span className={`text-xs font-medium ${registrationMarks === '4' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>
+                            4-Point
+                        </span>
+                    </button>
+                </div>
+                {/* Portrait/Landscape toggle - only show when marks are enabled */}
+                {registrationMarks !== 'none' && (
+                    <div className="mt-2 flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+                        <button
+                            onClick={() => setRegistrationMarksPortrait(false)}
+                            className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${!registrationMarksPortrait
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                        >
+                            Landscape
+                        </button>
+                        <button
+                            onClick={() => setRegistrationMarksPortrait(true)}
+                            className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${registrationMarksPortrait
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                        >
+                            Portrait
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
