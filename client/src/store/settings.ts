@@ -75,6 +75,10 @@ export type Store = {
   setCardBackPositionX: (mm: number) => void;
   cardBackPositionY: number;
   setCardBackPositionY: (mm: number) => void;
+  // Per-card back offset settings (indexed by grid position)
+  perCardBackOffsets: Record<number, { x: number; y: number; rotation: number }>;
+  setPerCardBackOffset: (index: number, offset: { x: number; y: number; rotation: number }) => void;
+  clearPerCardBackOffsets: () => void;
   dpi: number;
   setDpi: (value: number) => void;
   cutLineStyle: 'none' | 'edges' | 'full';
@@ -172,6 +176,7 @@ const defaultPageSettings = {
   useCustomBackOffset: false,
   cardBackPositionX: 0,
   cardBackPositionY: 0,
+  perCardBackOffsets: {} as Record<number, { x: number; y: number; rotation: number }>,
   zoom: 1,
   dpi: 900,
   cutLineStyle: "full" as "full" | "edges" | "none",
@@ -401,6 +406,19 @@ export const useSettingsStore = create<Store>()((set) => ({
     recordSettingChange("cardBackPositionY", state.cardBackPositionY);
     return { cardBackPositionY: mm };
   }),
+  setPerCardBackOffset: (index, offset) => set((state) => {
+    recordSettingChange("perCardBackOffsets", state.perCardBackOffsets);
+    return {
+      perCardBackOffsets: {
+        ...state.perCardBackOffsets,
+        [index]: offset,
+      },
+    };
+  }),
+  clearPerCardBackOffsets: () => set((state) => {
+    recordSettingChange("perCardBackOffsets", state.perCardBackOffsets);
+    return { perCardBackOffsets: {} };
+  }),
   setDpi: (dpi) => set((state) => {
     recordSettingChange("dpi", state.dpi);
     return { dpi };
@@ -520,12 +538,14 @@ export const useSettingsStore = create<Store>()((set) => ({
       useCustomBackOffset: currentState.useCustomBackOffset,
       cardBackPositionX: currentState.cardBackPositionX,
       cardBackPositionY: currentState.cardBackPositionY,
+      perCardBackOffsets: currentState.perCardBackOffsets,
       dpi: currentState.dpi,
       cutLineStyle: currentState.cutLineStyle,
       perCardGuideStyle: currentState.perCardGuideStyle,
       guidePlacement: currentState.guidePlacement,
       cutGuideLengthMm: currentState.cutGuideLengthMm,
       registrationMarks: currentState.registrationMarks,
+      registrationMarksPortrait: currentState.registrationMarksPortrait,
       globalLanguage: currentState.globalLanguage,
       sortBy: currentState.sortBy,
       sortOrder: currentState.sortOrder,

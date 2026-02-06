@@ -260,10 +260,6 @@ export function ExportActions({ cards }: Props) {
       const pdfSettings = serializePdfSettingsForWorker();
       const startTime = performance.now();
 
-      const useCustomBackOffset = useSettingsStore.getState().useCustomBackOffset;
-      const cardBackPositionX = useSettingsStore.getState().cardBackPositionX;
-      const cardBackPositionY = useSettingsStore.getState().cardBackPositionY;
-
       // Determine cards to export based on mode
       let cardsToExport: CardOption[] = [];
       let filenameSuffix = '';
@@ -345,10 +341,6 @@ export function ExportActions({ cards }: Props) {
 
           // Export backs (right-aligned incomplete rows) - get buffer
           const pdfSettingsForBacks = { ...pdfSettings, rightAlignRows: true };
-          if (useCustomBackOffset) {
-            pdfSettingsForBacks.cardPositionX = cardBackPositionX;
-            pdfSettingsForBacks.cardPositionY = cardBackPositionY;
-          }
           const backsBuffer = await exportProxyPagesToPdf({
             cards: backCards,
             imagesById,
@@ -402,10 +394,6 @@ export function ExportActions({ cards }: Props) {
           filenameSuffix = '_backs';
           // Pass rightAlignRows for backs export
           pdfSettings.rightAlignRows = true;
-          if (useCustomBackOffset) {
-            pdfSettings.cardPositionX = cardBackPositionX;
-            pdfSettings.cardPositionY = cardBackPositionY;
-          }
           break;
       }
 

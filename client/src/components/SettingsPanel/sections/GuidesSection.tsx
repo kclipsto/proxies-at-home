@@ -490,18 +490,35 @@ export function GuidesSection() {
                                 : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
                     >
-                        <svg width="32" height="42" viewBox="0 0 40 52" className="flex-shrink-0">
-                            <rect x="4" y="4" width="32" height="44" fill="white" stroke="#ccc" strokeWidth="1" />
-                            {/* All 4 corners are L-shapes */}
-                            <path d="M6,6 L6,10 M6,6 L10,6" stroke="black" strokeWidth="1.5" fill="none" />
-                            <path d="M34,6 L34,10 M34,6 L30,6" stroke="black" strokeWidth="1.5" fill="none" />
-                            <path d="M6,46 L6,42 M6,46 L10,46" stroke="black" strokeWidth="1.5" fill="none" />
-                            <path d="M34,46 L34,42 M34,46 L30,46" stroke="black" strokeWidth="1.5" fill="none" />
-                            <rect x="10" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
-                            <rect x="22" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
-                            <rect x="10" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
-                            <rect x="22" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
-                        </svg>
+                        <div className="h-[42px] flex items-center justify-center">
+                            {registrationMarksPortrait ? (
+                                /* Portrait: tall page, all 4 corners are L-shapes */
+                                <svg width="32" height="42" viewBox="0 0 40 52" className="flex-shrink-0">
+                                    <rect x="4" y="4" width="32" height="44" fill="white" stroke="#ccc" strokeWidth="1" />
+                                    <path d="M6,6 L6,10 M6,6 L10,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M34,6 L34,10 M34,6 L30,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M6,46 L6,42 M6,46 L10,46" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M34,46 L34,42 M34,46 L30,46" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <rect x="10" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="22" y="12" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="10" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="22" y="26" width="8" height="11" fill="#e5e7eb" rx="0.5" />
+                                </svg>
+                            ) : (
+                                /* Landscape: wide page, all 4 corners are L-shapes */
+                                <svg width="42" height="32" viewBox="0 0 52 40" className="flex-shrink-0">
+                                    <rect x="4" y="4" width="44" height="32" fill="white" stroke="#ccc" strokeWidth="1" />
+                                    <path d="M6,6 L6,10 M6,6 L10,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M46,6 L46,10 M46,6 L42,6" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M6,34 L6,30 M6,34 L10,34" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <path d="M46,34 L46,30 M46,34 L42,34" stroke="black" strokeWidth="1.5" fill="none" />
+                                    <rect x="12" y="10" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="12" y="22" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="26" y="10" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                    <rect x="26" y="22" width="11" height="8" fill="#e5e7eb" rx="0.5" />
+                                </svg>
+                            )}
+                        </div>
                         <span className={`text-xs font-medium ${registrationMarks === '4' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>
                             4-Point
                         </span>

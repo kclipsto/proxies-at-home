@@ -403,7 +403,12 @@ self.onmessage = async (event: MessageEvent) => {
             // Right-align incomplete rows (for backs export)
             rightAlignRows,
             // Pre-rendered effect cache (cardUuid -> Blob)
-            effectCacheById
+            effectCacheById,
+            // Back-specific positioning
+            useCustomBackOffset,
+            cardBackPositionX,
+            cardBackPositionY,
+            perCardBackOffsets
         } = settings;
 
         const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
@@ -498,6 +503,9 @@ self.onmessage = async (event: MessageEvent) => {
             imageCardHeightPx: number;
             bleedPx: number;
             isBlank: boolean;  // True for cardback_builtin_blank cards (no guides)
+            rotation: number;  // Rotation in degrees
+            offsetX: number;  // Final X offset applied after rotation
+            offsetY: number;  // Final Y offset applied after rotation
         };
 
         // PHASE 1: Prepare cards with LIMITED CONCURRENCY to avoid memory exhaustion
@@ -524,12 +532,37 @@ self.onmessage = async (event: MessageEvent) => {
             }
 
             // Card position at top-left of slot, centered within if smaller
-            const slotX = startX + colOffsets[col] + rightAlignOffsetPx;
-            const slotY = startY + rowOffsets[row];
+            let slotX = startX + colOffsets[col] + rightAlignOffsetPx;
+            let slotY = startY + rowOffsets[row];
             const centerOffsetInSlotX = (slotWidth - cardLayout.cardWidthPx) / 2;
             const centerOffsetInSlotY = (slotHeight - cardLayout.cardHeightPx) / 2;
             const x = slotX + centerOffsetInSlotX;
             const y = slotY + centerOffsetInSlotY;
+
+            // Debug position calculation for first row
+            // Store back offsets separately (will be applied LAST during drawing)
+            const isBackCard = card.imageId?.startsWith('cardback_');
+            let cardRotation = 0;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            if (isBackCard) {
+                // Collect global back offset (only if custom back offset is enabled)
+                if (useCustomBackOffset) {
+                    offsetX += MM_TO_PX(cardBackPositionX || 0, DPI);
+                    offsetY += MM_TO_PX(cardBackPositionY || 0, DPI);
+                }
+
+                // Collect per-card offset (always apply if it exists)
+                if (perCardBackOffsets) {
+                    const perCardOffset = perCardBackOffsets[idx];
+                    if (perCardOffset) {
+                        offsetX += MM_TO_PX(perCardOffset.x, DPI);
+                        offsetY += MM_TO_PX(perCardOffset.y, DPI);
+                        cardRotation = perCardOffset.rotation;
+                    }
+                }
+            }
 
             let finalCardCanvas: OffscreenCanvas | ImageBitmap;
             const imageInfo = card.imageId ? imagesById.get(card.imageId) : undefined;
@@ -584,7 +617,7 @@ self.onmessage = async (event: MessageEvent) => {
             // exportBleedWidth reflects the bleed the image was GENERATED at (e.g., target 1mm),
             // NOT existingBleedMm (the card's original built-in bleed before trimming, e.g., 3.175mm)
             const imageBleedWidthMm = imageInfo?.exportBleedWidth ?? targetBleedMm;
-            const imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
+            let imageBleedPx = MM_TO_PX(imageBleedWidthMm, DPI);
 
             // Cache is valid if we have the blob at the right DPI
             // For cardbacks (which don't track exportDpi), accept if exportBlob exists
@@ -596,8 +629,14 @@ self.onmessage = async (event: MessageEvent) => {
             const bleedDifferencePx = slotBleedPx - imageBleedPx;
             const centerOffsetX = bleedDifferencePx;
             const centerOffsetY = bleedDifferencePx;
-            const imageCardWidthPx = contentWidthInPx + 2 * imageBleedPx;
-            const imageCardHeightPx = contentHeightInPx + 2 * imageBleedPx;
+            let imageCardWidthPx = contentWidthInPx + 2 * imageBleedPx;
+            let imageCardHeightPx = contentHeightInPx + 2 * imageBleedPx;
+
+            // Debug logging for bleed asymmetry investigation
+            // Log first card and all cards in first row to check for accumulating errors
+            // Cache key for canvas caching (declare here so it's accessible in both paths and after trimming)
+            const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${effectiveDarkenMode}` : null;
+            let fromCanvasCache = false; // Track if we retrieved from canvas cache (to avoid re-caching)
 
             if (isCacheValid) {
                 // Fast path: use pre-processed blob directly
@@ -627,12 +666,24 @@ self.onmessage = async (event: MessageEvent) => {
                 }
 
                 finalCardCanvas = bitmap;
+
+                // IMPORTANT: For cached blobs, use ACTUAL bitmap dimensions for bleed calculation
+                // The cached blob might have been created with different bleed settings
+                // so we need to infer the actual bleed from the bitmap size, not from settings
+                const actualImageBleedPx = (bitmap.width - contentWidthInPx) / 2;
+                if (actualImageBleedPx !== imageBleedPx) {
+                    debugLog(`[PDF Worker] Card ${idx}: Cached blob bleed mismatch! Expected ${imageBleedPx}px, got ${actualImageBleedPx}px`);
+                    // Override imageBleedPx with actual value to ensure correct trimming
+                    imageBleedPx = actualImageBleedPx;
+                    imageCardWidthPx = bitmap.width;
+                    imageCardHeightPx = bitmap.height;
+                }
             } else {
-                // Check cache
-                const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${effectiveDarkenMode}` : null;
+                // Check canvas cache
                 if (cacheKey && canvasCache.has(cacheKey)) {
-                    debugLog(`[PDF Worker] Card ${idx}: Using canvas cache`);
-                    finalCardCanvas = canvasCache.get(cacheKey)!;
+                    const cached = canvasCache.get(cacheKey)!;
+                    finalCardCanvas = cached;
+                    fromCanvasCache = true; // Mark that we got it from cache
                 } else {
                     let src = imageInfo?.originalBlob ? URL.createObjectURL(imageInfo.originalBlob) : imageInfo?.sourceUrl;
                     let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -753,10 +804,7 @@ self.onmessage = async (event: MessageEvent) => {
                             }
                         }
 
-                        // Cache the result (only cache OffscreenCanvas, not ImageBitmap)
-                        if (cacheKey && finalCardCanvas instanceof OffscreenCanvas) {
-                            canvasCache.set(cacheKey, finalCardCanvas);
-                        }
+                        // DON'T cache here - we cache AFTER trimming to cache the final result
                     } finally {
                         if (cleanupTimeout) clearTimeout(cleanupTimeout);
                         if (src?.startsWith("blob:")) URL.revokeObjectURL(src);
@@ -764,18 +812,72 @@ self.onmessage = async (event: MessageEvent) => {
                 }
             }
 
+            // Pre-trim images to exact target dimensions
+            // This ensures all cards (regardless of source or processing path) have identical dimensions
+            let trimmedCanvas = finalCardCanvas;
+
+            // IMPORTANT: Use actual canvas dimensions, not calculated ones
+            // (cached canvases may have different dimensions than calculated values)
+            let trimmedWidth = finalCardCanvas.width;
+            let trimmedHeight = finalCardCanvas.height;
+
+            // Use the actual card layout dimensions as the target (don't recalculate)
+            // This ensures trimmed canvas matches the layout system's pixel calculations
+            const expectedWidth = cardLayout.cardWidthPx;
+            const expectedHeight = cardLayout.cardHeightPx;
+
+            // Trim if actual dimensions don't match expected (handles both excess bleed AND rounding differences)
+            if (finalCardCanvas.width !== expectedWidth || finalCardCanvas.height !== expectedHeight) {
+                // Use layout dimensions as target
+                trimmedWidth = expectedWidth;
+                trimmedHeight = expectedHeight;
+
+                // Create trimmed canvas
+                const trimCanvas = new OffscreenCanvas(trimmedWidth, trimmedHeight);
+                const trimCtx = trimCanvas.getContext('2d');
+                if (!trimCtx) throw new Error('Failed to get 2d context for trim canvas');
+
+                // Calculate how much to trim from each side (centers the content)
+                // Use actual canvas dimensions, not calculated ones (handles WebGL rounding differences)
+                const actualWidth = finalCardCanvas.width;
+                const actualHeight = finalCardCanvas.height;
+                const trimOffsetX = (actualWidth - trimmedWidth) / 2;
+                const trimOffsetY = (actualHeight - trimmedHeight) / 2;
+
+                // Draw the centered portion of the source image
+                trimCtx.drawImage(
+                    finalCardCanvas,
+                    trimOffsetX, trimOffsetY, trimmedWidth, trimmedHeight,  // source rect
+                    0, 0, trimmedWidth, trimmedHeight  // dest rect
+                );
+
+                trimmedCanvas = trimCanvas;
+            }
+
+            // Cache the TRIMMED result (only cache OffscreenCanvas, not ImageBitmap)
+            // This ensures cached canvases have the correct final dimensions
+            // Skip if we already retrieved this from cache (no need to re-cache)
+            if (cacheKey && trimmedCanvas instanceof OffscreenCanvas && !fromCanvasCache) {
+                canvasCache.set(cacheKey, trimmedCanvas);
+            }
+
             return {
-                canvas: finalCardCanvas,
+                canvas: trimmedCanvas,
                 x,
                 y,
                 cardWidthPx: cardLayout.cardWidthPx,
                 cardHeightPx: cardLayout.cardHeightPx,
-                centerOffsetX,
-                centerOffsetY,
-                imageCardWidthPx,
-                imageCardHeightPx,
+                // If we trimmed, centerOffset should be 0 since the image is now exact size
+                centerOffsetX: trimmedWidth === imageCardWidthPx ? centerOffsetX : 0,
+                centerOffsetY: trimmedHeight === imageCardHeightPx ? centerOffsetY : 0,
+                // Use trimmed dimensions for drawing
+                imageCardWidthPx: trimmedWidth,
+                imageCardHeightPx: trimmedHeight,
                 bleedPx: cardLayout.bleedPx,
                 isBlank: card.imageId === 'cardback_builtin_blank',
+                rotation: cardRotation,
+                offsetX,
+                offsetY,
             };
         }, MAX_CONCURRENT_CARDS);
 
@@ -785,6 +887,20 @@ self.onmessage = async (event: MessageEvent) => {
             // Skip drawing blank cards entirely (leave transparent/page background)
             if (!prepared.isBlank) {
                 ctx.save();
+
+                // Apply final offset (this is applied LAST after all other transforms)
+                if (prepared.offsetX !== 0 || prepared.offsetY !== 0) {
+                    ctx.translate(prepared.offsetX, prepared.offsetY);
+                }
+
+                // Apply rotation if needed
+                if (prepared.rotation !== 0) {
+                    const centerX = prepared.x + prepared.cardWidthPx / 2;
+                    const centerY = prepared.y + prepared.cardHeightPx / 2;
+                    ctx.translate(centerX, centerY);
+                    ctx.rotate(prepared.rotation * Math.PI / 180);
+                    ctx.translate(-centerX, -centerY);
+                }
                 ctx.beginPath();
                 ctx.rect(prepared.x, prepared.y, prepared.cardWidthPx, prepared.cardHeightPx);
                 ctx.clip();
@@ -797,9 +913,26 @@ self.onmessage = async (event: MessageEvent) => {
 
                 // Stamp per-card guide overlay (skip for blank cards)
                 if (perCardGuideCanvas) {
+                    ctx.save();
+
+                    // Apply final offset (this is applied LAST after all other transforms)
+                    if (prepared.offsetX !== 0 || prepared.offsetY !== 0) {
+                        ctx.translate(prepared.offsetX, prepared.offsetY);
+                    }
+
+                    // Apply rotation for guides too
+                    if (prepared.rotation !== 0) {
+                        const centerX = prepared.x + prepared.cardWidthPx / 2;
+                        const centerY = prepared.y + prepared.cardHeightPx / 2;
+                        ctx.translate(centerX, centerY);
+                        ctx.rotate(prepared.rotation * Math.PI / 180);
+                        ctx.translate(-centerX, -centerY);
+                    }
+
                     const guideOffsetX = prepared.bleedPx - bleedPxForGuide;
                     const guideOffsetY = prepared.bleedPx - bleedPxForGuide;
                     ctx.drawImage(perCardGuideCanvas, prepared.x + guideOffsetX, prepared.y + guideOffsetY);
+                    ctx.restore();
                 }
             }
 

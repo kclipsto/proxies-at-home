@@ -49,6 +49,12 @@ export interface WorkerPdfSettings extends WorkerBleedSettings {
     cardPositionX: number;
     cardPositionY: number;
 
+    // Back-specific positioning
+    useCustomBackOffset: boolean;
+    cardBackPositionX: number;
+    cardBackPositionY: number;
+    perCardBackOffsets: Record<number, { x: number; y: number; rotation: number }>;
+
     // Guide settings
     guideColor: string;
     guideWidthCssPx: number;
@@ -121,6 +127,11 @@ export function serializePdfSettingsForWorker(): WorkerPdfSettings {
         cardSpacingMm: state.cardSpacingMm,
         cardPositionX: state.cardPositionX,
         cardPositionY: state.cardPositionY,
+        // Back-specific positioning
+        useCustomBackOffset: state.useCustomBackOffset,
+        cardBackPositionX: state.cardBackPositionX,
+        cardBackPositionY: state.cardBackPositionY,
+        perCardBackOffsets: state.perCardBackOffsets,
         // Guides
         guideColor: state.guideColor,
         guideWidthCssPx: state.guideWidth,

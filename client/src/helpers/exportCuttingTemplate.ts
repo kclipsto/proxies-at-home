@@ -4,6 +4,7 @@
  */
 
 import { baseCardWidthMm, baseCardHeightMm } from './layout';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 // MTG card corner radius
 const CARD_CORNER_RADIUS_MM = 2.5;
@@ -18,6 +19,7 @@ export interface CuttingTemplateSettings {
     positionOffsetXMm: number;
     positionOffsetYMm: number;
     portrait: boolean;
+    perCardOffsets?: Record<number, { x: number; y: number; rotation: number }>;
 }
 
 /**
@@ -105,10 +107,10 @@ function calculateCardPositions(settings: CuttingTemplateSettings): Array<{ x: n
 export function generateCuttingTemplateSVG(settings: CuttingTemplateSettings): string {
     const { pageWidthMm, pageHeightMm, columns, portrait } = settings;
 
-    // Calculate card positions based on original (landscape) page dimensions
+    // Calculate card positions
     const positions = calculateCardPositions(settings);
 
-    // For portrait mode, swap SVG dimensions
+    // For portrait mode, swap SVG dimensions to rotate the layout
     const svgWidth = portrait ? pageHeightMm : pageWidthMm;
     const svgHeight = portrait ? pageWidthMm : pageHeightMm;
 
@@ -189,9 +191,11 @@ export function downloadCuttingTemplate(settings: CuttingTemplateSettings): void
     const url = URL.createObjectURL(blob);
 
     const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait } = settings;
+    console.log('[SVG Export] Settings:', { pageWidthMm, pageHeightMm, portrait, columns, rows });
     const pageName = getPageSizeName(pageWidthMm, pageHeightMm);
     const orientation = portrait ? 'portrait' : 'landscape';
     const filename = `cutting_template_${pageName}_${columns}x${rows}_${bleedMm}mm_bleed_${orientation}.svg`;
+    console.log('[SVG Export] Filename:', filename);
 
     const link = document.createElement('a');
     link.href = url;
@@ -230,4 +234,422 @@ function getPageSizeName(widthMm: number, heightMm: number): string {
     }
 
     return `${Math.round(widthMm)}x${Math.round(heightMm)}mm`;
+}
+
+/**
+ * Draw a rounded rectangle by drawing edges and corner arcs separately
+ */
+function drawRoundedRect(
+    page: ReturnType<PDFDocument['addPage']>,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+    color: [number, number, number],
+    lineWidth: number
+) {
+    const r = Math.min(radius, width / 2, height / 2);
+    const rgbColor = rgb(...color);
+
+    // Draw four straight edges
+    // Top edge (horizontal line from left corner to right corner)
+    page.drawLine({
+        start: { x: x + r, y: y },
+        end: { x: x + width - r, y: y },
+        thickness: lineWidth,
+        color: rgbColor,
+    });
+
+    // Right edge
+    page.drawLine({
+        start: { x: x + width, y: y + r },
+        end: { x: x + width, y: y + height - r },
+        thickness: lineWidth,
+        color: rgbColor,
+    });
+
+    // Bottom edge
+    page.drawLine({
+        start: { x: x + width - r, y: y + height },
+        end: { x: x + r, y: y + height },
+        thickness: lineWidth,
+        color: rgbColor,
+    });
+
+    // Left edge
+    page.drawLine({
+        start: { x: x, y: y + height - r },
+        end: { x: x, y: y + r },
+        thickness: lineWidth,
+        color: rgbColor,
+    });
+
+    // Draw rounded corners using quarter circles
+    const segments = 12; // Number of line segments per corner for smooth curves
+
+    // Helper function to draw a quarter circle arc
+    const drawArc = (centerX: number, centerY: number, startAngle: number) => {
+        for (let i = 0; i < segments; i++) {
+            const angle1 = startAngle + (i / segments) * (Math.PI / 2);
+            const angle2 = startAngle + ((i + 1) / segments) * (Math.PI / 2);
+
+            const x1 = centerX + r * Math.cos(angle1);
+            const y1 = centerY + r * Math.sin(angle1);
+            const x2 = centerX + r * Math.cos(angle2);
+            const y2 = centerY + r * Math.sin(angle2);
+
+            page.drawLine({
+                start: { x: x1, y: y1 },
+                end: { x: x2, y: y2 },
+                thickness: lineWidth,
+                color: rgbColor,
+            });
+        }
+    };
+
+    // Top-left corner (starts at 180° = PI, goes to 270° = 3PI/2)
+    drawArc(x + r, y + r, Math.PI);
+
+    // Top-right corner (starts at 270° = 3PI/2, goes to 360° = 0)
+    drawArc(x + width - r, y + r, 3 * Math.PI / 2);
+
+    // Bottom-right corner (starts at 0°, goes to 90° = PI/2)
+    drawArc(x + width - r, y + height - r, 0);
+
+    // Bottom-left corner (starts at 90° = PI/2, goes to 180° = PI)
+    drawArc(x + r, y + height - r, Math.PI / 2);
+}
+
+/**
+ * Draw card placeholders on a page
+ */
+function drawCardPlaceholders(
+    page: ReturnType<PDFDocument['addPage']>,
+    positions: Array<{ x: number; y: number }>,
+    columns: number,
+    pageWidthMm: number,
+    pageHeightMm: number,
+    portrait: boolean,
+    helveticaFont: any,
+    helveticaBoldFont: any,
+    pageLabel: string,
+    perCardOffsets?: Record<number, { x: number; y: number; rotation: number }>,
+    showLabels = true
+) {
+    const MM_TO_PT = 2.83465;
+    const pdfWidth = pageWidthMm;
+    const pdfHeight = pageHeightMm;
+
+    positions.forEach((pos, index) => {
+        const row = Math.floor(index / columns);
+        const col = index % columns;
+
+        // Use positions and dimensions directly (no rotation for test PDF)
+        let x = pos.x;
+        let y = pos.y;
+        let w = baseCardWidthMm;
+        let h = baseCardHeightMm;
+
+        // Apply per-card offsets if provided
+        const cardOffset = perCardOffsets?.[index];
+        if (cardOffset) {
+            x += cardOffset.x;
+            y += cardOffset.y; // Positive = down, negative = up
+        }
+
+        // Convert to PDF coordinates (PDF origin is bottom-left)
+        let pdfX = x * MM_TO_PT;
+        let pdfY = (pdfHeight - y - h) * MM_TO_PT;
+        const pdfW = w * MM_TO_PT;
+        const pdfH = h * MM_TO_PT;
+
+        const rotation = cardOffset?.rotation || 0;
+
+        // Draw rounded rectangle matching SVG style
+        const radius = CARD_CORNER_RADIUS_MM * MM_TO_PT;
+
+        if (rotation !== 0) {
+            // For rotated cards, draw rectangle with properly rounded corners
+            const centerX = pdfX + pdfW / 2;
+            const centerY = pdfY + pdfH / 2;
+            // Negate angle for clockwise rotation (PDF Y-axis points up)
+            const angleRad = (-rotation * Math.PI) / 180;
+            const cosA = Math.cos(angleRad);
+            const sinA = Math.sin(angleRad);
+
+            const halfW = pdfW / 2;
+            const halfH = pdfH / 2;
+
+            // Helper to rotate a point around center
+            const rotatePoint = (dx: number, dy: number): [number, number] => {
+                const rotX = dx * cosA - dy * sinA;
+                const rotY = dx * sinA + dy * cosA;
+                return [centerX + rotX, centerY + rotY];
+            };
+
+            // Draw four straight edges
+            // Top edge
+            const topLeft = rotatePoint(-halfW + radius, -halfH);
+            const topRight = rotatePoint(halfW - radius, -halfH);
+            page.drawLine({
+                start: { x: topLeft[0], y: topLeft[1] },
+                end: { x: topRight[0], y: topRight[1] },
+                thickness: 0.5,
+                color: rgb(1, 0, 0),
+            });
+
+            // Right edge
+            const rightTop = rotatePoint(halfW, -halfH + radius);
+            const rightBottom = rotatePoint(halfW, halfH - radius);
+            page.drawLine({
+                start: { x: rightTop[0], y: rightTop[1] },
+                end: { x: rightBottom[0], y: rightBottom[1] },
+                thickness: 0.5,
+                color: rgb(1, 0, 0),
+            });
+
+            // Bottom edge
+            const bottomRight = rotatePoint(halfW - radius, halfH);
+            const bottomLeft = rotatePoint(-halfW + radius, halfH);
+            page.drawLine({
+                start: { x: bottomRight[0], y: bottomRight[1] },
+                end: { x: bottomLeft[0], y: bottomLeft[1] },
+                thickness: 0.5,
+                color: rgb(1, 0, 0),
+            });
+
+            // Left edge
+            const leftBottom = rotatePoint(-halfW, halfH - radius);
+            const leftTop = rotatePoint(-halfW, -halfH + radius);
+            page.drawLine({
+                start: { x: leftBottom[0], y: leftBottom[1] },
+                end: { x: leftTop[0], y: leftTop[1] },
+                thickness: 0.5,
+                color: rgb(1, 0, 0),
+            });
+
+            // Draw rounded corners using multiple line segments for smooth arcs
+            const arcSegments = 8;
+            const drawCornerArc = (centerOffsetX: number, centerOffsetY: number, startAngle: number) => {
+                const arcCenter = rotatePoint(centerOffsetX, centerOffsetY);
+
+                for (let i = 0; i < arcSegments; i++) {
+                    const a1 = startAngle + (i / arcSegments) * (Math.PI / 2);
+                    const a2 = startAngle + ((i + 1) / arcSegments) * (Math.PI / 2);
+
+                    // Arc points in local space
+                    const p1Local = [radius * Math.cos(a1), radius * Math.sin(a1)];
+                    const p2Local = [radius * Math.cos(a2), radius * Math.sin(a2)];
+
+                    // Rotate arc points by card rotation
+                    const p1x = p1Local[0] * cosA - p1Local[1] * sinA;
+                    const p1y = p1Local[0] * sinA + p1Local[1] * cosA;
+                    const p2x = p2Local[0] * cosA - p2Local[1] * sinA;
+                    const p2y = p2Local[0] * sinA + p2Local[1] * cosA;
+
+                    page.drawLine({
+                        start: { x: arcCenter[0] + p1x, y: arcCenter[1] + p1y },
+                        end: { x: arcCenter[0] + p2x, y: arcCenter[1] + p2y },
+                        thickness: 0.5,
+                        color: rgb(1, 0, 0),
+                    });
+                }
+            };
+
+            // Draw four corner arcs
+            drawCornerArc(-halfW + radius, -halfH + radius, Math.PI);        // Top-left
+            drawCornerArc(halfW - radius, -halfH + radius, 3 * Math.PI / 2); // Top-right
+            drawCornerArc(halfW - radius, halfH - radius, 0);                // Bottom-right
+            drawCornerArc(-halfW + radius, halfH - radius, Math.PI / 2);     // Bottom-left
+
+            // Update pdfX, pdfY to center for label positioning
+            pdfX = centerX - pdfW / 2;
+            pdfY = centerY - pdfH / 2;
+        } else {
+            // No rotation - draw normal rounded rectangle
+            drawRoundedRect(page, pdfX, pdfY, pdfW, pdfH, radius, [1, 0, 0], 0.5);
+        }
+
+        // Draw labels only if requested (for back page only)
+        if (showLabels) {
+            // Draw card number and position labels
+            const cardNumber = (index + 1).toString();
+            const positionLabel = `R${row + 1} C${col + 1}`;
+
+            // Card number (large, bold, centered)
+            const numberFontSize = 24;
+            const numberWidth = helveticaBoldFont.widthOfTextAtSize(cardNumber, numberFontSize);
+            const numberX = pdfX + (pdfW - numberWidth) / 2;
+            const numberY = pdfY + pdfH / 2 + 5;
+
+            page.drawText(cardNumber, {
+                x: numberX,
+                y: numberY,
+                size: numberFontSize,
+                font: helveticaBoldFont,
+                color: rgb(0.4, 0.4, 0.4),
+            });
+
+            // Position label (smaller, below number)
+            const labelFontSize = 10;
+            const labelWidth = helveticaFont.widthOfTextAtSize(positionLabel, labelFontSize);
+            const labelX = pdfX + (pdfW - labelWidth) / 2;
+            const labelY = pdfY + pdfH / 2 - 15;
+
+            page.drawText(positionLabel, {
+                x: labelX,
+                y: labelY,
+                size: labelFontSize,
+                font: helveticaFont,
+                color: rgb(0.5, 0.5, 0.5),
+            });
+
+            // Show offset values if card has any offsets
+            if (cardOffset) {
+                const offsetX = cardOffset.x || 0;
+                const offsetY = cardOffset.y || 0;
+                const rotation = cardOffset.rotation || 0;
+
+                const offsetInfoSize = 7;
+                let offsetY_text = pdfY + pdfH - 15;
+
+                // X offset
+                if (offsetX !== 0) {
+                    const xText = `X: ${offsetX >= 0 ? '+' : ''}${offsetX.toFixed(2)}mm`;
+                    const xTextWidth = helveticaFont.widthOfTextAtSize(xText, offsetInfoSize);
+                    const xTextX = pdfX + (pdfW - xTextWidth) / 2;
+
+                    page.drawText(xText, {
+                        x: xTextX,
+                        y: offsetY_text,
+                        size: offsetInfoSize,
+                        font: helveticaFont,
+                        color: rgb(0.2, 0.6, 0.2),
+                    });
+                    offsetY_text -= 9;
+                }
+
+                // Y offset
+                if (offsetY !== 0) {
+                    const yText = `Y: ${offsetY >= 0 ? '+' : ''}${offsetY.toFixed(2)}mm`;
+                    const yTextWidth = helveticaFont.widthOfTextAtSize(yText, offsetInfoSize);
+                    const yTextX = pdfX + (pdfW - yTextWidth) / 2;
+
+                    page.drawText(yText, {
+                        x: yTextX,
+                        y: offsetY_text,
+                        size: offsetInfoSize,
+                        font: helveticaFont,
+                        color: rgb(0.2, 0.6, 0.2),
+                    });
+                    offsetY_text -= 9;
+                }
+
+                // Rotation
+                if (rotation !== 0) {
+                    const rotText = `R: ${rotation >= 0 ? '+' : ''}${rotation.toFixed(1)}°`;
+                    const rotTextWidth = helveticaFont.widthOfTextAtSize(rotText, offsetInfoSize);
+                    const rotTextX = pdfX + (pdfW - rotTextWidth) / 2;
+
+                    page.drawText(rotText, {
+                        x: rotTextX,
+                        y: offsetY_text,
+                        size: offsetInfoSize,
+                        font: helveticaFont,
+                        color: rgb(0.8, 0.4, 0.0),
+                    });
+                }
+            }
+        }
+    });
+
+    // Draw page label in bottom right corner
+    const pageLabelFontSize = 14;
+    const pageLabelWidth = helveticaFont.widthOfTextAtSize(pageLabel, pageLabelFontSize);
+
+    page.drawText(pageLabel, {
+        x: (pdfWidth * MM_TO_PT) - pageLabelWidth - 20,
+        y: 20,
+        size: pageLabelFontSize,
+        font: helveticaFont,
+        color: rgb(0.3, 0.3, 0.3),
+    });
+}
+
+/**
+ * Export the cutting template as a two-page duplex PDF for alignment checking
+ */
+export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettings): Promise<void> {
+    const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait, perCardOffsets } = settings;
+
+    // Calculate card positions
+    const positions = calculateCardPositions(settings);
+
+    // Use page dimensions directly (no rotation for test PDF)
+    const pdfWidth = pageWidthMm;
+    const pdfHeight = pageHeightMm;
+
+    // Create PDF document
+    const pdfDoc = await PDFDocument.create();
+
+    // Embed fonts
+    const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const helveticaBoldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    // Convert mm to points
+    const MM_TO_PT = 2.83465;
+
+    // Create FRONT page (baseline - no labels, no offsets)
+    const frontPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
+    drawCardPlaceholders(
+        frontPage,
+        positions,
+        columns,
+        pageWidthMm,
+        pageHeightMm,
+        portrait,
+        helveticaFont,
+        helveticaBoldFont,
+        'front',
+        undefined, // No offsets on front - it's the baseline
+        false // Don't show labels on front
+    );
+
+    // Create BACK page (with labels and offsets applied)
+    const backPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
+    drawCardPlaceholders(
+        backPage,
+        positions,
+        columns,
+        pageWidthMm,
+        pageHeightMm,
+        portrait,
+        helveticaFont,
+        helveticaBoldFont,
+        'back',
+        perCardOffsets, // Apply back offsets
+        true // Show labels on back
+    );
+
+    // Save PDF
+    const pdfBytes = await pdfDoc.save();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+
+    const pageName = getPageSizeName(pageWidthMm, pageHeightMm);
+    const orientation = portrait ? 'portrait' : 'landscape';
+    const hasOffsets = perCardOffsets && Object.keys(perCardOffsets).length > 0;
+    const offsetSuffix = hasOffsets ? '_with_offsets' : '';
+    const filename = `cutting_template_${pageName}_${columns}x${rows}_${bleedMm}mm_bleed_${orientation}_duplex${offsetSuffix}.pdf`;
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
