@@ -28,26 +28,28 @@ interface UseRegistrationMarksProps {
 }
 
 /**
- * Draw an L-shape mark at the given position
+ * Draw an L-shape mark at the given position using filled rectangles
+ * Simulates "square" line cap by extending geometry by half thickness
  */
 function drawLShape(
     g: Graphics,
     x: number,
     y: number,
     armLength: number,
+    thickness: number,
     verticalDir: 'up' | 'down',
     horizontalDir: 'left' | 'right'
 ): void {
-    const vEnd = verticalDir === 'down' ? y + armLength : y - armLength;
-    const hEnd = horizontalDir === 'right' ? x + armLength : x - armLength;
+    const w = thickness;
+    const L = armLength;
 
-    // Vertical arm
-    g.moveTo(x, y);
-    g.lineTo(x, vEnd);
+    const vx = x - w / 2;
+    const vy = verticalDir === 'down' ? y - w / 2 : y - L - w / 2;
+    g.rect(vx, vy, w, L + w);
 
-    // Horizontal arm
-    g.moveTo(x, y);
-    g.lineTo(hEnd, y);
+    const hx = horizontalDir === 'right' ? x - w / 2 : x - L - w / 2;
+    const hy = y - w / 2;
+    g.rect(hx, hy, L + w, w);
 }
 
 /**
@@ -111,21 +113,20 @@ export function useRegistrationMarks({
                 if (registrationMarks === '3') {
                     // 3-point: solid black square at bottom-left
                     g.rect(bottomLeftX, bottomLeftY - squareSizePx, squareSizePx, squareSizePx);
-                    g.fill({ color: 0x000000 });
                 } else {
                     // 4-point: L-shape at bottom-left (up + right)
-                    drawLShape(g, bottomLeftX, bottomLeftY, armLengthPx, 'up', 'right');
+                    drawLShape(g, bottomLeftX, bottomLeftY, armLengthPx, lineWidthPx, 'up', 'right');
                 }
 
                 // Top-left: L-shape (down + right)
-                drawLShape(g, topLeftX, topLeftY, armLengthPx, 'down', 'right');
+                drawLShape(g, topLeftX, topLeftY, armLengthPx, lineWidthPx, 'down', 'right');
 
                 // Bottom-right: L-shape (up + left)
-                drawLShape(g, bottomRightX, bottomRightY, armLengthPx, 'up', 'left');
+                drawLShape(g, bottomRightX, bottomRightY, armLengthPx, lineWidthPx, 'up', 'left');
 
                 // Top-right: L-shape (only for 4-point, down + left)
                 if (registrationMarks === '4') {
-                    drawLShape(g, topRightX, topRightY, armLengthPx, 'down', 'left');
+                    drawLShape(g, topRightX, topRightY, armLengthPx, lineWidthPx, 'down', 'left');
                 }
             } else {
                 // Landscape mode: standard mark positions
@@ -133,27 +134,26 @@ export function useRegistrationMarks({
                 if (registrationMarks === '3') {
                     // 3-point: solid black square at top-left
                     g.rect(topLeftX, topLeftY, squareSizePx, squareSizePx);
-                    g.fill({ color: 0x000000 });
                 } else {
                     // 4-point: L-shape at top-left (down + right)
-                    drawLShape(g, topLeftX, topLeftY, armLengthPx, 'down', 'right');
+                    drawLShape(g, topLeftX, topLeftY, armLengthPx, lineWidthPx, 'down', 'right');
                 }
 
                 // Top-right: L-shape (down + left)
-                drawLShape(g, topRightX, topRightY, armLengthPx, 'down', 'left');
+                drawLShape(g, topRightX, topRightY, armLengthPx, lineWidthPx, 'down', 'left');
 
                 // Bottom-left: L-shape (up + right)
-                drawLShape(g, bottomLeftX, bottomLeftY, armLengthPx, 'up', 'right');
+                drawLShape(g, bottomLeftX, bottomLeftY, armLengthPx, lineWidthPx, 'up', 'right');
 
                 // Bottom-right: L-shape (only for 4-point, up + left)
                 if (registrationMarks === '4') {
-                    drawLShape(g, bottomRightX, bottomRightY, armLengthPx, 'up', 'left');
+                    drawLShape(g, bottomRightX, bottomRightY, armLengthPx, lineWidthPx, 'up', 'left');
                 }
             }
         });
 
-        // Stroke all the L-shapes at once
-        g.stroke({ color: 0x000000, width: lineWidthPx });
+        // Fill all shapes at once (black)
+        g.fill({ color: 0x000000 });
 
         if (app) {
             app.render();

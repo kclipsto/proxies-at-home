@@ -3,8 +3,9 @@
  * The SVG can be imported into Silhouette Studio and saved as a .studio3 file.
  */
 
+import { debugLog } from './debug';
 import { baseCardWidthMm, baseCardHeightMm } from './layout';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, type PDFFont } from 'pdf-lib';
 
 // MTG card corner radius
 const CARD_CORNER_RADIUS_MM = 2.5;
@@ -191,11 +192,11 @@ export function downloadCuttingTemplate(settings: CuttingTemplateSettings): void
     const url = URL.createObjectURL(blob);
 
     const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait } = settings;
-    console.log('[SVG Export] Settings:', { pageWidthMm, pageHeightMm, portrait, columns, rows });
+    debugLog('[SVG Export] Settings:', { pageWidthMm, pageHeightMm, portrait, columns, rows });
     const pageName = getPageSizeName(pageWidthMm, pageHeightMm);
     const orientation = portrait ? 'portrait' : 'landscape';
     const filename = `cutting_template_${pageName}_${columns}x${rows}_${bleedMm}mm_bleed_${orientation}.svg`;
-    console.log('[SVG Export] Filename:', filename);
+    debugLog('[SVG Export] Filename:', filename);
 
     const link = document.createElement('a');
     link.href = url;
@@ -330,9 +331,8 @@ function drawCardPlaceholders(
     columns: number,
     pageWidthMm: number,
     pageHeightMm: number,
-    portrait: boolean,
-    helveticaFont: any,
-    helveticaBoldFont: any,
+    helveticaFont: PDFFont,
+    helveticaBoldFont: PDFFont,
     pageLabel: string,
     perCardOffsets?: Record<number, { x: number; y: number; rotation: number }>,
     showLabels = true
@@ -348,8 +348,8 @@ function drawCardPlaceholders(
         // Use positions and dimensions directly (no rotation for test PDF)
         let x = pos.x;
         let y = pos.y;
-        let w = baseCardWidthMm;
-        let h = baseCardHeightMm;
+        const w = baseCardWidthMm;
+        const h = baseCardHeightMm;
 
         // Apply per-card offsets if provided
         const cardOffset = perCardOffsets?.[index];
@@ -608,7 +608,6 @@ export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettin
         columns,
         pageWidthMm,
         pageHeightMm,
-        portrait,
         helveticaFont,
         helveticaBoldFont,
         'front',
@@ -624,7 +623,6 @@ export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettin
         columns,
         pageWidthMm,
         pageHeightMm,
-        portrait,
         helveticaFont,
         helveticaBoldFont,
         'back',

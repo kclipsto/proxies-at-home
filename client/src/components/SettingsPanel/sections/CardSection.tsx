@@ -5,7 +5,7 @@ import { useNormalizedInput, usePositionInput } from "@/hooks/useInputHooks";
 import { AutoTooltip } from "@/components/common";
 import { useMemo, useState } from "react";
 import { PerCardOffsetModal } from "@/components/PerCardOffsetModal";
-import { LightbulbIcon, WrenchIcon } from "lucide-react";
+import { WrenchIcon } from "lucide-react";
 
 const INCH_TO_MM = 25.4;
 const CARD_W_IN = 2.5;
@@ -73,19 +73,19 @@ export function CardSection() {
         <div className="space-y-4">
             <div className="flex flex-col space-y-2">
                 <Label className="font-bold">Advanced Positioning</Label>
-          <div className="flex items-center gap-2 pt-2">
-                <Button
-                    color="green"
-                    onClick={() => setShowPerCardModal(true)}
-                    className="flex-1 gap-2"
-                >
-                    <WrenchIcon className="h-5 w-5" />
-                    Card Back Alignement Tool
-                </Button>
-                <AutoTooltip content="Adjust position and rotation for each card back individually. Use this to fine-tune alignment for each position in the grid." />
+                <div className="flex items-center gap-2 pt-2">
+                    <Button
+                        color="green"
+                        onClick={() => setShowPerCardModal(true)}
+                        className="flex-1 gap-2"
+                    >
+                        <WrenchIcon className="h-5 w-5" />
+                        Card Back Alignement Tool
+                    </Button>
+                    <AutoTooltip content="Adjust position and rotation for each card back individually. Use this to fine-tune alignment for each position in the grid." />
+                </div>
             </div>
-            </div>
-  
+
             <div>
 
                 <div className="flex flex-col space-y-2">
@@ -202,7 +202,7 @@ export function CardSection() {
                                 />
                             </div>
                         </div>
- 
+
                     </>
                 )}
             </div>

@@ -260,6 +260,7 @@ export function useImageProcessing({
           currentImage?.displayBlob &&
           currentImage?.displayBlobDarkened &&
           currentImage.exportBleedWidth === expectedBleedWidth &&
+          currentImage.exportDpi === dpi && // Check if export DPI matches current setting
           (card.hasBuiltInBleed === undefined
             ? currentImage.generatedHasBuiltInBleed !== undefined
             : currentImage.generatedHasBuiltInBleed === card.hasBuiltInBleed) &&

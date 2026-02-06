@@ -219,7 +219,38 @@ const REG_MARK_ARM_LENGTH_MM = 8.382;   // 0.33" length of L-shape arms (Silhoue
 const REG_MARK_LINE_WIDTH_MM = 0.9906; // 0.039" thickness of L-shape lines
 
 /**
- * Draw Silhouette registration marks on a canvas
+ * Create a reusable L-shape stamp to avoid stroking directly on the huge page canvas
+ * (which causes WebGL context loss in Chrome at high DPIs)
+ */
+function createLShapeStamp(armLengthPx: number, lineWidthPx: number): OffscreenCanvas {
+    // Pad dimensions to account for line width (stroke is centered)
+    // We only need the "Down + Right" L-shape, we'll rotate it for others
+    const w = Math.ceil(armLengthPx + lineWidthPx);
+    const canvas = new OffscreenCanvas(w, w);
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = lineWidthPx;
+    ctx.lineCap = 'square';
+
+    // Draw L-shape (Down + Right)
+    // Origin is at (lineWidth/2, lineWidth/2) to keep entire stroke visible
+    const offset = lineWidthPx / 2;
+
+    ctx.beginPath();
+    // Vertical (Down)
+    ctx.moveTo(offset, offset);
+    ctx.lineTo(offset, offset + armLengthPx);
+    // Horizontal (Right)
+    ctx.moveTo(offset, offset);
+    ctx.lineTo(offset + armLengthPx, offset);
+    ctx.stroke();
+
+    return canvas;
+}
+
+/**
+ * Draw Silhouette registration marks on a canvas using stamps
  * 3-point:
  *   - Top-left: solid black square (origin mark)
  *   - Top-right: L-shape (vertical down, horizontal left)
@@ -239,12 +270,14 @@ function drawSilhouetteRegistrationMarks(
     const armLengthPx = MM_TO_PX(REG_MARK_ARM_LENGTH_MM, dpi);
     const lineWidthPx = MM_TO_PX(REG_MARK_LINE_WIDTH_MM, dpi);
 
+    // Create the stamp ONCE
+    const lShapeStamp = createLShapeStamp(armLengthPx, lineWidthPx);
+    const stampOffset = lineWidthPx / 2; // The visual corner of the stamp is at this offset
+
     ctx.fillStyle = '#000000';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = lineWidthPx;
-    ctx.lineCap = 'square';
 
     // Position coordinates
+    // These coords represent the corner/intersection point of the mark
     const topLeftX = offsetPx;
     const topLeftY = offsetPx;
     const topRightX = pageWidthPx - offsetPx;
@@ -254,59 +287,56 @@ function drawSilhouetteRegistrationMarks(
     const bottomRightX = pageWidthPx - offsetPx;
     const bottomRightY = pageHeightPx - offsetPx;
 
-    // Helper to draw L-shape
-    const drawLShape = (x: number, y: number, vDir: 'up' | 'down', hDir: 'left' | 'right') => {
-        const vEnd = vDir === 'down' ? y + armLengthPx : y - armLengthPx;
-        const hEnd = hDir === 'right' ? x + armLengthPx : x - armLengthPx;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x, vEnd);
-        ctx.moveTo(x, y);
-        ctx.lineTo(hEnd, y);
-        ctx.stroke();
+    // Helper to draw L-shape Stamp with rotation
+    // The stamp is a "Down + Right" L-shape
+    const drawStamp = (x: number, y: number, rotationDeg: number) => {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rotationDeg * Math.PI / 180);
+        // Draw image offset by the stamp's internal padding so the visual corner is at (0,0) (which is x,y)
+        ctx.drawImage(lShapeStamp, -stampOffset, -stampOffset);
+        ctx.restore();
     };
 
     if (portrait) {
         // Portrait mode: marks rotated for paper loaded in portrait orientation
-        // Square (3-point) at bottom-left, L's at top-left, bottom-right, (and top-right for 4-point)
+        // Square (3-point) at bottom-left
         if (markCount === '3') {
-            // 3-point: solid black square at bottom-left
             ctx.fillRect(bottomLeftX, bottomLeftY - squareSizePx, squareSizePx, squareSizePx);
         } else {
-            // 4-point: L-shape at bottom-left (up + right)
-            drawLShape(bottomLeftX, bottomLeftY, 'up', 'right');
+            // 4-point: L-shape at bottom-left (up + right) -> Rotate -90 (or 270)
+            drawStamp(bottomLeftX, bottomLeftY, -90);
         }
 
-        // Top-left: L-shape (down + right)
-        drawLShape(topLeftX, topLeftY, 'down', 'right');
+        // Top-left: L-shape (down + right) -> No rotation
+        drawStamp(topLeftX, topLeftY, 0);
 
-        // Bottom-right: L-shape (up + left)
-        drawLShape(bottomRightX, bottomRightY, 'up', 'left');
+        // Bottom-right: L-shape (up + left) -> Rotate 180
+        drawStamp(bottomRightX, bottomRightY, 180);
 
-        // Top-right: L-shape (only for 4-point, down + left)
+        // Top-right: L-shape (only for 4-point, down + left) -> Rotate 90
         if (markCount === '4') {
-            drawLShape(topRightX, topRightY, 'down', 'left');
+            drawStamp(topRightX, topRightY, 90);
         }
     } else {
         // Landscape mode: standard mark positions
-        // Square (3-point) at top-left, L's at top-right, bottom-left, (and bottom-right for 4-point)
+        // Square (3-point) at top-left
         if (markCount === '3') {
-            // 3-point: solid black square at top-left
             ctx.fillRect(topLeftX, topLeftY, squareSizePx, squareSizePx);
         } else {
-            // 4-point: L-shape at top-left (down + right)
-            drawLShape(topLeftX, topLeftY, 'down', 'right');
+            // 4-point: L-shape at top-left (down + right) -> No rotation
+            drawStamp(topLeftX, topLeftY, 0);
         }
 
-        // Top-right: L-shape (down + left)
-        drawLShape(topRightX, topRightY, 'down', 'left');
+        // Top-right: L-shape (down + left) -> Rotate 90
+        drawStamp(topRightX, topRightY, 90);
 
-        // Bottom-left: L-shape (up + right)
-        drawLShape(bottomLeftX, bottomLeftY, 'up', 'right');
+        // Bottom-left: L-shape (up + right) -> Rotate -90 (or 270)
+        drawStamp(bottomLeftX, bottomLeftY, -90);
 
-        // Bottom-right: L-shape (only for 4-point, up + left)
+        // Bottom-right: L-shape (only for 4-point, up + left) -> Rotate 180
         if (markCount === '4') {
-            drawLShape(bottomRightX, bottomRightY, 'up', 'left');
+            drawStamp(bottomRightX, bottomRightY, 180);
         }
     }
 }
@@ -532,8 +562,8 @@ self.onmessage = async (event: MessageEvent) => {
             }
 
             // Card position at top-left of slot, centered within if smaller
-            let slotX = startX + colOffsets[col] + rightAlignOffsetPx;
-            let slotY = startY + rowOffsets[row];
+            const slotX = startX + colOffsets[col] + rightAlignOffsetPx;
+            const slotY = startY + rowOffsets[row];
             const centerOffsetInSlotX = (slotWidth - cardLayout.cardWidthPx) / 2;
             const centerOffsetInSlotY = (slotHeight - cardLayout.cardHeightPx) / 2;
             const x = slotX + centerOffsetInSlotX;
@@ -635,7 +665,8 @@ self.onmessage = async (event: MessageEvent) => {
             // Debug logging for bleed asymmetry investigation
             // Log first card and all cards in first row to check for accumulating errors
             // Cache key for canvas caching (declare here so it's accessible in both paths and after trimming)
-            const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${effectiveDarkenMode}` : null;
+            // INCLUDE DPI IN KEY: Reusing a 900 DPI canvas for 1200 DPI export results in pixelation/upscaling
+            const cacheKey = card.imageId ? `${card.imageId}-${targetBleedMm.toFixed(2)}-${effectiveDarkenMode}-${DPI}` : null;
             let fromCanvasCache = false; // Track if we retrieved from canvas cache (to avoid re-caching)
 
             if (isCacheValid) {
