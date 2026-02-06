@@ -1,4 +1,4 @@
-import { Modal, ModalHeader, ModalBody, ModalFooter, Label, Button, TextInput } from "flowbite-react";
+import { Modal, ModalHeader, ModalBody, ModalFooter, Label, Button, TextInput, Checkbox } from "flowbite-react";
 import { useState, useCallback, useMemo } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { baseCardWidthMm, baseCardHeightMm } from "@/helpers/layout";
@@ -29,6 +29,7 @@ export function PerCardOffsetModal({ isOpen, onClose }: PerCardOffsetModalProps)
   const cardPositionY = useSettingsStore((state) => state.cardPositionY);
 
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [includeCutGuides, setIncludeCutGuides] = useState(true);
 
   // Convert bleed to mm
   const bleedMm = bleedEdge
@@ -90,13 +91,14 @@ export function PerCardOffsetModal({ isOpen, onClose }: PerCardOffsetModalProps)
 
     // Add per-card offsets to settings
     settings.perCardOffsets = perCardBackOffsets;
+    settings.includeCutGuides = includeCutGuides;
 
     await downloadCuttingTemplatePDF(settings);
   }, [
     pageWidth, pageHeight, pageUnit, pageOrientation, columns, rows,
     bleedEdge, bleedEdgeWidth, bleedEdgeUnit,
     cardSpacingMm, cardPositionX, cardPositionY,
-    perCardBackOffsets
+    perCardBackOffsets, includeCutGuides
   ]);
 
   // Scale for display - make cards visible and clickable (roughly 180px wide for standard card)
@@ -314,13 +316,25 @@ export function PerCardOffsetModal({ isOpen, onClose }: PerCardOffsetModalProps)
         </div>
       </ModalBody>
       <ModalFooter>
-        <div className="flex justify-between w-full">
-          <Button color="gray" onClick={handleExportTemplate}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            Export Test Template (PDF)
-          </Button>
+        <div className="flex justify-between items-center w-full">
+          <div className="flex items-center gap-4">
+            <Button color="gray" onClick={handleExportTemplate}>
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              Export Test Template (PDF)
+            </Button>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="includeCutGuides"
+                checked={includeCutGuides}
+                onChange={(e) => setIncludeCutGuides(e.target.checked)}
+              />
+              <Label htmlFor="includeCutGuides" className="cursor-pointer select-none text-sm">
+                Include cut guides
+              </Label>
+            </div>
+          </div>
           <Button onClick={onClose}>Done</Button>
         </div>
       </ModalFooter>

@@ -434,10 +434,6 @@ self.onmessage = async (event: MessageEvent) => {
             rightAlignRows,
             // Pre-rendered effect cache (cardUuid -> Blob)
             effectCacheById,
-            // Back-specific positioning
-            useCustomBackOffset,
-            cardBackPositionX,
-            cardBackPositionY,
             perCardBackOffsets
         } = settings;
 
@@ -569,28 +565,17 @@ self.onmessage = async (event: MessageEvent) => {
             const x = slotX + centerOffsetInSlotX;
             const y = slotY + centerOffsetInSlotY;
 
-            // Debug position calculation for first row
-            // Store back offsets separately (will be applied LAST during drawing)
             const isBackCard = card.imageId?.startsWith('cardback_');
             let cardRotation = 0;
             let offsetX = 0;
             let offsetY = 0;
 
-            if (isBackCard) {
-                // Collect global back offset (only if custom back offset is enabled)
-                if (useCustomBackOffset) {
-                    offsetX += MM_TO_PX(cardBackPositionX || 0, DPI);
-                    offsetY += MM_TO_PX(cardBackPositionY || 0, DPI);
-                }
-
-                // Collect per-card offset (always apply if it exists)
-                if (perCardBackOffsets) {
-                    const perCardOffset = perCardBackOffsets[idx];
-                    if (perCardOffset) {
-                        offsetX += MM_TO_PX(perCardOffset.x, DPI);
-                        offsetY += MM_TO_PX(perCardOffset.y, DPI);
-                        cardRotation = perCardOffset.rotation;
-                    }
+            if (isBackCard && perCardBackOffsets) {
+                const perCardOffset = perCardBackOffsets[idx];
+                if (perCardOffset) {
+                    offsetX = MM_TO_PX(perCardOffset.x, DPI);
+                    offsetY = MM_TO_PX(perCardOffset.y, DPI);
+                    cardRotation = perCardOffset.rotation;
                 }
             }
 

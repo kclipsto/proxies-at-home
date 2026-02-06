@@ -21,6 +21,7 @@ export interface CuttingTemplateSettings {
     positionOffsetYMm: number;
     portrait: boolean;
     perCardOffsets?: Record<number, { x: number; y: number; rotation: number }>;
+    includeCutGuides?: boolean;
 }
 
 /**
@@ -322,6 +323,51 @@ function drawRoundedRect(
     drawArc(x + r, y + height - r, Math.PI / 2);
 }
 
+function drawPageCutGuides(
+    page: ReturnType<PDFDocument['addPage']>,
+    positions: Array<{ x: number; y: number }>,
+    columns: number,
+    pageWidthMm: number,
+    pageHeightMm: number,
+    guideColor: [number, number, number] = [0, 0, 0],
+    lineWidth: number = 0.3
+) {
+    const MM_TO_PT = 2.83465;
+    const pdfHeight = pageHeightMm;
+
+    const xCuts = new Set<number>();
+    const yCuts = new Set<number>();
+
+    positions.forEach((pos) => {
+        xCuts.add(pos.x);
+        xCuts.add(pos.x + baseCardWidthMm);
+        yCuts.add(pos.y);
+        yCuts.add(pos.y + baseCardHeightMm);
+    });
+
+    const rgbColor = rgb(...guideColor);
+
+    for (const x of xCuts) {
+        const pdfX = x * MM_TO_PT;
+        page.drawLine({
+            start: { x: pdfX, y: 0 },
+            end: { x: pdfX, y: pdfHeight * MM_TO_PT },
+            thickness: lineWidth,
+            color: rgbColor,
+        });
+    }
+
+    for (const y of yCuts) {
+        const pdfY = (pdfHeight - y) * MM_TO_PT;
+        page.drawLine({
+            start: { x: 0, y: pdfY },
+            end: { x: pageWidthMm * MM_TO_PT, y: pdfY },
+            thickness: lineWidth,
+            color: rgbColor,
+        });
+    }
+}
+
 /**
  * Draw card placeholders on a page
  */
@@ -581,7 +627,7 @@ function drawCardPlaceholders(
  * Export the cutting template as a two-page duplex PDF for alignment checking
  */
 export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettings): Promise<void> {
-    const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait, perCardOffsets } = settings;
+    const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait, perCardOffsets, includeCutGuides = true } = settings;
 
     // Calculate card positions
     const positions = calculateCardPositions(settings);
@@ -602,6 +648,9 @@ export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettin
 
     // Create FRONT page (baseline - no labels, no offsets)
     const frontPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
+    if (includeCutGuides) {
+        drawPageCutGuides(frontPage, positions, columns, pageWidthMm, pageHeightMm);
+    }
     drawCardPlaceholders(
         frontPage,
         positions,
@@ -617,6 +666,9 @@ export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettin
 
     // Create BACK page (with labels and offsets applied)
     const backPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
+    if (includeCutGuides) {
+        drawPageCutGuides(backPage, positions, columns, pageWidthMm, pageHeightMm);
+    }
     drawCardPlaceholders(
         backPage,
         positions,
