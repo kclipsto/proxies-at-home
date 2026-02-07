@@ -1,6 +1,6 @@
 {
   "name": "mtg-proxy-builder",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Proxxied",
   "main": "electron/dist/main.js",
   "private": true,
@@ -88,7 +88,7 @@
     }
   },
   "keywords": [],
-  "author": "Nathan <nathan@example.com>",
+  "author": "kclipsto <kclipsto@users.noreply.github.com>",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {

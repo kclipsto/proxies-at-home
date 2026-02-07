@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'release/v*'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -16,6 +17,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   # Determine version and release type
@@ -35,75 +37,96 @@ jobs:
 
       - name: Determine version and bump type
         id: version
+        env:
+          INPUT_PROMOTE_STABLE: ${{ github.event.inputs.promote_stable }}
+        run: ./scripts/determine-version.sh
+
+  # Build first (Validation)
+  build:
+    needs: [prepare]
+    if: always() && needs.prepare.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install client dependencies
+        run: npm ci --prefix client
+
+      - name: Install server dependencies
+        run: npm ci --prefix server
+
+      - name: Build client
+        run: npm run build --prefix client
+
+      - name: Build server
+        run: npm run build --prefix server
+
+      - name: Compile Electron TypeScript
+        run: npx tsc -p electron/tsconfig.json
+
+      # Handle better-sqlite3 native module for Windows
+      - name: Install Windows prebuild for better-sqlite3
+        if: matrix.platform == 'win'
         run: |
-          # Check if this is a promote-only workflow dispatch
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.promote_stable }}" == "true" ]]; then
-            echo "Promote stable workflow triggered"
-            CURRENT_VERSION=$(jq -r .version package.json)
-            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            echo "update_stable=true" >> $GITHUB_OUTPUT
-            echo "is_promote_only=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          cd server/node_modules/better-sqlite3
+          ELECTRON_VERSION=$(jq -r '.devDependencies.electron' ../../../package.json | sed 's/\^//')
+          echo "Using Electron version: $ELECTRON_VERSION"
+          npx prebuild-install --platform win32 --arch x64 --runtime electron --target $ELECTRON_VERSION
+        shell: bash
 
-          echo "is_promote_only=false" >> $GITHUB_OUTPUT
+      # Build Electron app
+      - name: Build Electron (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # If triggered by tag, use tag version
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            # Major releases also update stable
-            MAJOR=$(echo "$VERSION" | cut -d. -f1)
-            OLD_VERSION=$(git show HEAD~1:package.json 2>/dev/null | jq -r .version || echo "0.0.0")
-            OLD_MAJOR=$(echo "$OLD_VERSION" | cut -d. -f1)
-            if [[ "$MAJOR" != "$OLD_MAJOR" ]]; then
-              echo "update_stable=true" >> $GITHUB_OUTPUT
-            else
-              echo "update_stable=false" >> $GITHUB_OUTPUT
-            fi
-            exit 0
-          fi
+      - name: Build Electron (Linux)
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # Branch push - analyze commit for version bump type
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          echo "Commit message: $COMMIT_MSG"
+      # Upload artifacts for release job
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxxied-setup-${{ matrix.platform }}
+          path: |
+            dist-app/*.exe
+            dist-app/*.AppImage
+            dist-app/*.deb
+            dist-app/*.blockmap
+            dist-app/latest*.yml
+          if-no-files-found: ignore
 
-          CURRENT_VERSION=$(jq -r .version package.json)
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION%%-*}"
-
-          # Check for explicit overrides first
-          if echo "$COMMIT_MSG" | grep -qiE '#major|BREAKING CHANGE'; then
-            echo "Major bump detected"
-            MAJOR=$((MAJOR + 1))
-            MINOR=0
-            PATCH=0
-            UPDATE_STABLE=true
-          elif echo "$COMMIT_MSG" | grep -qi '#patch'; then
-            echo "Explicit patch bump"
-            PATCH=$((PATCH + 1))
-            UPDATE_STABLE=false
-          elif echo "$COMMIT_MSG" | grep -qiE '^feat(\(.+\))?:'; then
-            echo "Feature commit - minor bump"
-            MINOR=$((MINOR + 1))
-            PATCH=0
-            UPDATE_STABLE=false
-          else
-            echo "Default patch bump"
-            PATCH=$((PATCH + 1))
-            UPDATE_STABLE=false
-          fi
-
-          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "should_release=true" >> $GITHUB_OUTPUT
-          echo "update_stable=$UPDATE_STABLE" >> $GITHUB_OUTPUT
-
-  # Update version in package.json and push (only for branch pushes)
+  # Update version and create RELEASE BRANCH (only for main branch pushes)
   update-version:
-    needs: prepare
-    if: "needs.prepare.outputs.should_release == 'true' && !startsWith(github.ref, 'refs/tags/') && !contains(github.event.head_commit.message, 'chore: bump version')"
+    needs: [prepare, build]
+    # Run only on main, if release is needed, and build succeeded
+    if: "needs.prepare.outputs.should_release == 'true' && github.ref == 'refs/heads/main' && needs.build.result == 'success'"
     runs-on: ubuntu-latest
     outputs:
       release_notes: ${{ steps.changelog.outputs.notes }}
@@ -141,34 +164,12 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Generate release notes with Gemini
+      - name: Generate release notes
         id: changelog
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          NEW_VERSION="${{ needs.prepare.outputs.version }}"
           COMMITS="${{ steps.commits.outputs.commits }}"
           
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "GEMINI_API_KEY not set, using commit list as notes"
-            {
-              echo "notes<<EOF"
-              echo "### Changes"
-              echo ""
-              echo "$COMMITS" | sed 's/^/- /'
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          PROMPT=$(printf "Generate release notes for version %s. Output ONLY the formatted notes - no introduction, no 'Here are the notes', just the categorized bullet points. Use markdown headers (###) for categories like Features, Fixes, etc. Be concise.\n\nCommits:\n%s" "$NEW_VERSION" "$COMMITS")
-          
-          NOTES=$(echo "$PROMPT" | timeout 60 npx --yes https://github.com/google-gemini/gemini-cli 2>/dev/null || echo "")
-          
-          if [ -z "$NOTES" ]; then
-            echo "Gemini failed, using commit list"
-            NOTES=$(printf "### Changes\n\n%s" "$(echo "$COMMITS" | sed 's/^/- /')")
-          fi
+          NOTES=$(printf "### Changes\n\n%s" "$(echo "$COMMITS" | sed 's/^/- /')")
           
           {
             echo "notes<<EOF"
@@ -190,7 +191,7 @@ jobs:
             printf "# Changelog\n\n%s" "$ENTRY" > CHANGELOG.md
           fi
 
-      - name: Create release branch and PR
+      - name: Create release branch and Push
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -210,117 +211,18 @@ jobs:
           # Push release branch
           git push origin "$BRANCH_NAME"
           
-          # Create PR
-          NOTES="${{ steps.changelog.outputs.notes }}"
-          PR_BODY="## Release v${NEW_VERSION}
-          
-          This PR bumps the version to ${NEW_VERSION} and updates the changelog.
-          
-          ### Release Notes
-          ${NOTES:-'No release notes generated.'}
-          
-          ---
-          *Merging this PR will trigger the build and release workflow.*"
-          
-          # Create PR and enable auto-merge
-          PR_URL=$(gh pr create \
-            --title "chore: release v${NEW_VERSION}" \
-            --body "$PR_BODY" \
-            --base main \
-            --head "$BRANCH_NAME")
-          
-          echo "Created PR: $PR_URL"
-          
-          # Enable auto-merge (requires auto-merge to be enabled in repo settings)
-          gh pr merge "$PR_URL" --auto --squash || echo "Auto-merge not available, PR requires manual merge"
-          
           echo "release_branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          
+          # Explicitly trigger workflow on new branch
+          # GITHUB_TOKEN pushes do not trigger workflows, so we use gh workflow run
+          echo "Triggering release workflow on $BRANCH_NAME..."
+          gh workflow run release.yml --ref "$BRANCH_NAME"
 
-  build:
-    needs: [prepare, update-version]
-    if: always() && needs.prepare.outputs.should_release == 'true' && (needs.update-version.result == 'success' || needs.update-version.result == 'skipped')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: win
-          - os: ubuntu-latest
-            platform: linux
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Pull latest (for branch builds)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        run: git pull origin ${{ github.ref_name }} || true
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install root dependencies
-        run: npm ci
-
-      - name: Install client dependencies
-        run: npm ci --prefix client
-
-      - name: Install server dependencies
-        run: npm ci --prefix server
-
-      - name: Build client
-        run: npm run build --prefix client
-
-      - name: Build server
-        run: npm run build --prefix server
-
-      - name: Compile Electron TypeScript
-        run: npx tsc -p electron/tsconfig.json
-
-      # Handle better-sqlite3 native module for Windows
-      - name: Install Windows prebuild for better-sqlite3
-        if: matrix.platform == 'win'
-        run: |
-          cd server/node_modules/better-sqlite3
-          npx prebuild-install --platform win32 --arch x64 --runtime electron --target 39.2.7
-        shell: bash
-
-      # Build Electron app
-      - name: Build Electron (Windows)
-        if: matrix.platform == 'win'
-        run: npx electron-builder --win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Electron (Linux)
-        if: matrix.platform == 'linux'
-        run: npx electron-builder --linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Upload artifacts for release job
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: proxxied-setup-${{ matrix.platform }}
-          path: |
-            dist-app/*.exe
-            dist-app/*.AppImage
-            dist-app/*.deb
-            dist-app/*.blockmap
-            dist-app/latest*.yml
-          if-no-files-found: ignore
-
+  # Create Release (runs on release branch OR tags, after build)
   release:
-    needs: [prepare, build, update-version]
-    if: always() && needs.prepare.outputs.should_release == 'true' && needs.build.result == 'success'
+    needs: [prepare, build]
+    # Run on release branches or tags, if build success
+    if: "always() && needs.prepare.outputs.should_release == 'true' && needs.build.result == 'success' && (startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/'))"
     runs-on: ubuntu-latest
 
     steps:
@@ -356,8 +258,8 @@ jobs:
           name: v${{ needs.prepare.outputs.version }}
           files: artifacts/*
           prerelease: false
-          body: ${{ needs.update-version.outputs.release_notes }}
-          generate_release_notes: ${{ needs.update-version.outputs.release_notes == '' }}
+          generate_release_notes: true 
+          target_commitish: ${{ github.ref }} 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -403,23 +305,3 @@ jobs:
 
       - name: Summary
         run: echo "Promoted ${{ steps.latest.outputs.tag }} to stable channel"
-
-  # Cleanup release branch after workflow completes
-  cleanup:
-    needs: [prepare, update-version, release]
-    if: always() && needs.update-version.result != 'skipped'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete release branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.update-version.outputs.version }}"
-          BRANCH_NAME="release/v${VERSION}"
-
-          echo "Attempting to delete branch: $BRANCH_NAME"
-
-          # Delete the branch if it exists (will fail silently if already deleted by merge)
-          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${BRANCH_NAME}" 2>/dev/null \
-            && echo "Deleted release branch: $BRANCH_NAME" \
-            || echo "Branch $BRANCH_NAME already deleted or does not exist"
