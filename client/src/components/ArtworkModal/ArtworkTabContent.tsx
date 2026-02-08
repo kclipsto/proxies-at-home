@@ -4,7 +4,7 @@ import { Search, Filter, Image, Settings } from "lucide-react";
 import { ToggleButtonGroup, CardGrid, ArtSourceToggle, FloatingZoomPanel, CardArtContent } from "../common";
 
 import { CardbackLibrary } from "./CardbackLibrary";
-import type { CardOption } from "../../../../shared/types";
+import type { CardOption, PrintInfo } from "../../../../shared/types";
 import { isCardbackId, type CardbackOption } from "@/helpers/cardbackLibrary";
 import type { MpcAutofillCard } from "@/helpers/mpcAutofillApi";
 
@@ -40,7 +40,7 @@ export interface ArtworkTabContentProps {
     displayData: {
         name?: string;
         imageUrls: string[] | undefined;
-        prints?: import("@/helpers/dfcHelpers").PrintInfo[];
+        prints?: PrintInfo[];
         id: string | undefined;
         // Single ID for sorting and highlighting - replaces selectedId + initialScryfallId
         selectedArtId: string | undefined;
@@ -209,6 +209,8 @@ export function ArtworkTabContent({
                                 isActive={artSource === 'scryfall'}
                                 cardTypeLine={modalCard.type_line}
                                 initialPrints={displayData.prints}
+                                filtersCollapsed={mpcFiltersCollapsed}
+                                onFilterCountChange={setActiveFilterCount}
                             />
                         </div>
                     )
@@ -279,8 +281,8 @@ export function ArtworkTabContent({
                         </div>
                     )}
 
-                    {/* Filter button - only for MPC, hidden for cardback library */}
-                    {!showCardbackLibraryGrid && artSource === 'mpc' && (
+                    {/* Filter button - for both MPC and Scryfall, hidden for cardback library */}
+                    {!showCardbackLibraryGrid && (artSource === 'mpc' || artSource === 'scryfall') && (
                         <button
                             onClick={() => onMpcFiltersCollapsedChange?.(!mpcFiltersCollapsed)}
                             className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed

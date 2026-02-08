@@ -2,7 +2,7 @@ import { type ImportIntent, parseLineToIntent } from "./importParsers";
 import { streamCards, type CardInfo } from "./streamCards";
 import { undoableAddCards } from "./undoableActions";
 import { addRemoteImage, createLinkedBackCardsBulk } from "./dbUtils";
-import { useSettingsStore, useProjectStore } from "@/store";
+import { useSettingsStore, useProjectStore, useUserPreferencesStore } from "@/store";
 import { getMpcAutofillImageUrl } from "./mpcAutofillApi";
 import { findBestMpcMatches } from "./mpcImportIntegration";
 import { isCardbackId } from "./cardbackLibrary";
@@ -22,6 +22,7 @@ export interface ImportSettings {
     globalLanguage: string;
     autoImportTokens: boolean;
     projectId: string;
+    favoriteScryfallSets?: string[];
 }
 
 export interface OrchestratorOptions {
@@ -70,6 +71,7 @@ export class ImportOrchestrator {
             globalLanguage: useSettingsStore.getState().globalLanguage ?? 'en',
             autoImportTokens: useSettingsStore.getState().autoImportTokens,
             projectId: useProjectStore.getState().currentProjectId!,
+            favoriteScryfallSets: useUserPreferencesStore.getState().preferences?.favoriteScryfallSets,
         };
 
         if (!settings.projectId) throw new Error("No active project");
@@ -409,6 +411,7 @@ export class ImportOrchestrator {
                     reportProgress(intents.length);
                 },
                 projectId: settings.projectId,
+                preferredSets: settings.favoriteScryfallSets,
             });
         } finally {
             // Clean up managed controller from the Set

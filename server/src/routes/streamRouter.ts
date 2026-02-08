@@ -208,7 +208,11 @@ streamRouter.post("/cards", async (req: Request, res: Response) => {
       }
     } else {
       // Art mode: Batch fetch for speed (original behavior)
-      const batchResults = await batchFetchCards(cardQueries, language);
+      const preferredSets = (Array.isArray(req.body.preferredSets) ? req.body.preferredSets : []) as string[];
+      // Filter out invalid set codes
+      const validPreferredSets = preferredSets.filter(s => typeof s === 'string' && s.length >= 3 && s.length <= 5);
+
+      const batchResults = await batchFetchCards(cardQueries, language, validPreferredSets);
 
       let processed = 0;
       for (const ci of cardQueries) {

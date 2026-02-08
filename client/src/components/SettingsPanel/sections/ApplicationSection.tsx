@@ -82,6 +82,7 @@ export function ApplicationSection() {
             await db.cardMetadataCache.clear();
             await db.mpcSearchCache.clear();
             await db.imageCache.clear();
+            await db.scryfallSetsCache.clear();
 
             // Clear localStorage preferences that should reset with app data
             localStorage.removeItem("cardback-delete-confirm-disabled");
