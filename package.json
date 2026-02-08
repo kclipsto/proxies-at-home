@@ -1,6 +1,6 @@
 {
   "name": "mtg-proxy-builder",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Proxxied",
   "main": "electron/dist/main.js",
   "private": true,
