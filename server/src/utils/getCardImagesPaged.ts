@@ -229,7 +229,8 @@ interface CollectionResponse {
  */
 export async function batchFetchCards(
   cardInfos: CardInfo[],
-  language: string = "en"
+  language: string = "en",
+  preferredSets: string[] = []
 ): Promise<Map<string, ScryfallApiCard>> {
   const results = new Map<string, ScryfallApiCard>();
   if (!cardInfos || cardInfos.length === 0) return results;
@@ -277,6 +278,10 @@ export async function batchFetchCards(
       }
     } else {
       // Not found locally, need to fetch from Scryfall
+      // If preferredSets are provided, we skip local DB cache for name-only lookups
+      // to ensure we check Scryfall for the preferred printing first.
+      // Optimization: Only force fetch if we don't have a matching preferred printing in DB?
+      // For now, simpler to just treat as missing if we want to prioritize import.
       debugLog(
         `[batchFetchCards] Cache MISS for "${ci.name}" (set=${ci.set}, num=${ci.number})`
       );
@@ -453,6 +458,90 @@ export async function batchFetchCards(
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[Scryfall Batch] Batch ${batchIdx + 1} failed:`, msg);
+      }
+    }
+  }
+
+  // Optimize: If we have preferredSets, we should try to find those valid printings
+  // This is a "Smart Import" feature.
+  // We identify cards that were found (via name-only or otherwise) but might need a better printing.
+  if (preferredSets.length > 0) {
+    const cardsToCheckForUpgrade: CardInfo[] = [];
+
+    // Identify cards that were found but might not match preferred sets
+    for (const ci of cardInfos) {
+      // Skip if explicit set was requested
+      if (ci.set) continue;
+
+      const key = ci.name.toLowerCase();
+      const card = results.get(key);
+
+      if (card) {
+        // Check if current match is in a preferred set
+        if (card.set && preferredSets.includes(card.set)) {
+          debugLog(`[batchFetchCards] "${ci.name}" already matches preferred set ${card.set}`);
+          continue;
+        }
+
+        // Not in preferred set, queue for upgrade check
+        cardsToCheckForUpgrade.push(ci);
+      }
+    }
+
+    if (cardsToCheckForUpgrade.length > 0) {
+      debugLog(`[batchFetchCards] Checking ${cardsToCheckForUpgrade.length} cards for preferred set versions: ${preferredSets.join(', ')}`);
+
+      // We can't batch this easily with Scryfall (OR queries with set filters is complex).
+      // However, we can use a clever OR query:
+      // (name:"Sol Ring" (set:LEA OR set:MPS)) OR (name:"Giant Growth" (set:LEA OR set:MPS))
+      // Keep batch size small.
+
+      const UPGRADE_BATCH_SIZE = 10;
+      const setFilterClause = `(${preferredSets.map(s => `set:${s}`).join(' OR ')})`;
+
+      for (let i = 0; i < cardsToCheckForUpgrade.length; i += UPGRADE_BATCH_SIZE) {
+        const batch = cardsToCheckForUpgrade.slice(i, i + UPGRADE_BATCH_SIZE);
+        await delayScryfallRequest();
+
+        try {
+          // Query: (name:"A" OR name:"B") (set:X OR set:Y)
+          // This finds ANY of the names if they exist in ANY of the preferred sets
+          const nameClauses = batch.map(ci => `name:"${ci.name.replace(/"/g, '\\"')}"`).join(' OR ');
+          const q = `(${nameClauses}) ${setFilterClause} include:extras unique:prints`;
+
+          debugLog(`[batchFetchCards] Preferred set query: ${q}`);
+
+          const response = await AX.get<ScryfallResponse>(
+            "https://api.scryfall.com/cards/search",
+            { params: { q } } // unique:prints implied by query? No, explicit param safer.
+          );
+
+          if (response.data?.data) {
+            for (const upgradeCard of response.data.data) {
+              if (!upgradeCard.name) continue;
+
+              // Found a preferred version!
+              // For "Smart Import", we prefer this over the default version.
+              // Update the results map.
+              // Note: Scryfall search returns defaults. If multiple preferred sets match, 
+              // Scryfall's default sort (released) usually wins, or we can sort explicitly?
+              // We trust Scryfall's order here.
+
+              const key = upgradeCard.name.toLowerCase();
+              const current = results.get(key);
+
+              // Only swap if it's actually a different set/printing
+              if (current?.set !== upgradeCard.set) {
+                debugLog(`[batchFetchCards] Upgrading "${upgradeCard.name}" from ${current?.set} to ${upgradeCard.set} (Preferred)`);
+                results.set(key, upgradeCard);
+                insertOrUpdateCard(upgradeCard);
+              }
+            }
+          }
+
+        } catch (e) {
+          debugLog(`[batchFetchCards] Preferred set lookup failed for batch`, e);
+        }
       }
     }
   }

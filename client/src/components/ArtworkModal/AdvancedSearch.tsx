@@ -157,8 +157,8 @@ export function AdvancedSearch({
                         />
                     </div>
 
-                    {/* Filter button - only for MPC */}
-                    {artSource === 'mpc' && (
+                    {/* Filter button - for both MPC and Scryfall */}
+                    {(artSource === 'mpc' || artSource === 'scryfall') && (
                         <button
                             onClick={() => setMpcFiltersCollapsed(prev => !prev)}
                             className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed

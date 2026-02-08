@@ -47,7 +47,10 @@ export type UndoableSettingKey =
     | "darkenAmount"
     | "darkenBrightness"
     | "darkenAutoDetect"
-    | "cutGuideLengthMm";
+    | "cutGuideLengthMm"
+    | "perCardBackOffsets"
+    | "registrationMarks"
+    | "registrationMarksPortrait";
 
 // Human-readable descriptions for each setting
 const settingDescriptions: Record<UndoableSettingKey, string> = {
@@ -91,6 +94,9 @@ const settingDescriptions: Record<UndoableSettingKey, string> = {
     darkenBrightness: "darken brightness",
     darkenAutoDetect: "auto detect darkness",
     cutGuideLengthMm: "cut guide length",
+    perCardBackOffsets: "card back offsets",
+    registrationMarks: "registration marks",
+    registrationMarksPortrait: "registration marks (portrait)",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

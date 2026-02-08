@@ -3,6 +3,7 @@
  */
 
 import { memo, useState, useEffect } from 'react';
+import { AutoTooltip } from './AutoTooltip';
 
 interface StyledSliderProps {
     label: string;
@@ -15,6 +16,13 @@ interface StyledSliderProps {
     defaultValue?: number;
     /** Multiplier used when displayValue shows percentage (e.g., 100 for values like 0.5 shown as "50%") */
     displayMultiplier?: number;
+    /** Step to use for input field (defaults to step if not provided) */
+    inputStep?: number;
+    /** Whether to allow input values outside min/max range */
+    allowOutOfRange?: boolean;
+    /** Optional hint text to display in an AutoTooltip */
+    hint?: string;
+    disabled?: boolean;
 }
 
 export const StyledSlider = memo(function StyledSlider({
@@ -25,19 +33,31 @@ export const StyledSlider = memo(function StyledSlider({
     max,
     step = 1,
     displayValue,
-    defaultValue,
+    defaultValue = 0,
     displayMultiplier = 1,
+    inputStep,
+    allowOutOfRange = false,
+    hint,
+    disabled = false,
 }: StyledSliderProps) {
+    const effectiveInputStep = inputStep ?? step;
+
     // Local state for text input to allow free typing
-    const [inputValue, setInputValue] = useState(displayValue ?? value.toFixed(step < 1 ? 2 : 0));
+    const [inputValue, setInputValue] = useState(displayValue ?? value.toFixed(effectiveInputStep < 1 ? 3 : 0));
     const [isEditing, setIsEditing] = useState(false);
 
     // Sync input value when external value changes (but not while editing)
     useEffect(() => {
         if (!isEditing) {
-            setInputValue(displayValue ?? value.toFixed(step < 1 ? 2 : 0));
+            // Determine decimal places based on step size
+            const decimalPlaces = (effectiveInputStep.toString().split('.')[1] || '').length;
+            const formattedValue = value.toFixed(decimalPlaces);
+            // Remove trailing zeros if it has a decimal point to avoid "1.500" for "1.5"
+            const cleanFormatted = formattedValue.includes('.') ? parseFloat(formattedValue).toString() : formattedValue;
+
+            setInputValue(displayValue ?? cleanFormatted);
         }
-    }, [value, displayValue, step, isEditing]);
+    }, [value, displayValue, effectiveInputStep, isEditing]);
 
     const handleDoubleClick = () => {
         if (defaultValue !== undefined) {
@@ -57,21 +77,34 @@ export const StyledSlider = memo(function StyledSlider({
     const commitValue = (rawValue: string) => {
         const cleanValue = rawValue.replace('%', '').replace('px', '').trim();
         const parsed = parseFloat(cleanValue);
+
         if (!isNaN(parsed)) {
             // Convert from display value to actual value
             const actualValue = parsed / displayMultiplier;
-            // Clamp to min/max
-            const clamped = Math.max(min, Math.min(max, actualValue));
+
+            // Clamp to min/max unless allowed out of range
+            const clamped = allowOutOfRange
+                ? actualValue
+                : Math.max(min, Math.min(max, actualValue));
+
             onChange(clamped);
+        } else if (defaultValue !== undefined) {
+            // Reset to default on invalid input? Or just revert? 
+            // Better to just revert to current prop value via effect, 
+            // but we need to toggle editing off first.
         }
         setIsEditing(false);
     };
 
     const handleInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-        commitValue(e.target.value);
+        if (!disabled) {
+            commitValue(e.target.value);
+        }
     };
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (disabled) return;
+
         if (e.key === 'Enter') {
             e.preventDefault();
             commitValue(inputValue);
@@ -79,15 +112,18 @@ export const StyledSlider = memo(function StyledSlider({
         } else if (e.key === 'Escape') {
             e.preventDefault();
             setIsEditing(false);
-            setInputValue(displayValue ?? value.toFixed(step < 1 ? 2 : 0));
+            // Revert will happen in useEffect
             (e.target as HTMLInputElement).blur();
         }
     };
 
     return (
-        <div className="flex flex-col gap-1.5">
+        <div className={`flex flex-col gap-1.5 px-1 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
             <div className="flex justify-between text-xs items-center">
-                <span className="text-gray-600 dark:text-gray-300 select-none">{label}</span>
+                <div className="flex items-center gap-1">
+                    <span className="text-gray-600 dark:text-gray-300 select-none">{label}</span>
+                    {hint && <AutoTooltip content={hint} />}
+                </div>
                 <input
                     type="text"
                     value={inputValue}
@@ -95,7 +131,8 @@ export const StyledSlider = memo(function StyledSlider({
                     onFocus={handleInputFocus}
                     onBlur={handleInputBlur}
                     onKeyDown={handleInputKeyDown}
-                    className="font-mono text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded w-14 text-right text-xs border-0 outline-none focus:ring-1 focus:ring-blue-500"
+                    disabled={disabled}
+                    className="font-mono text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded w-16 text-right text-xs border-0 outline-none focus:ring-1 focus:ring-blue-500"
                 />
             </div>
             <input
@@ -106,6 +143,7 @@ export const StyledSlider = memo(function StyledSlider({
                 value={value}
                 onChange={(e) => onChange(Number(e.target.value))}
                 onDoubleClick={handleDoubleClick}
+                disabled={disabled}
                 className="editor-slider"
                 title={defaultValue !== undefined ? "Double-click to reset to default" : undefined}
             />

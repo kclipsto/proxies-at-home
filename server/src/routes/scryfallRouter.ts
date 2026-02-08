@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import axios from "axios";
+import type { ScryfallSet } from "../../../shared/types.js";
 import crypto from "crypto";
 import { getDatabase } from "../db/db.js";
 import { debugLog } from "../utils/debug.js";
@@ -424,6 +425,61 @@ router.get("/prints", async (req: Request, res: Response) => {
             return res.status(err.response.status).json(err.response.data);
         }
         return res.status(500).json({ error: "Failed to fetch prints" });
+    }
+});
+
+/**
+ * GET /api/scryfall/sets
+ * Proxies Scryfall /sets
+ * Returns a simplified list of all sets.
+ */
+router.get("/sets", async (_req: Request, res: Response) => {
+    const queryHash = "all_sets"; // Global cache key for sets
+    const cached = getFromCache("sets", queryHash);
+
+    // Sets don't change often, cache for 24 hours
+    const SETS_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+    if (cached) {
+        return res.json(cached);
+    }
+
+    try {
+        const data = await rateLimitedRequest(() => scryfallAxios.get("/sets"));
+
+        // Transform and simplify the data to reduce payload size
+        // We only need code, name, icon_svg_uri, and released_at
+        const responseData = data as { object: string; data: ScryfallSet[] };
+        if (responseData && Array.isArray(responseData.data)) {
+            const simplifiedSets = responseData.data.map((set) => ({
+                id: set.id,
+                code: set.code,
+                name: set.name,
+                released_at: set.released_at,
+                icon_svg_uri: set.icon_svg_uri,
+                set_type: set.set_type,
+                card_count: set.card_count,
+                digital: set.digital
+            }));
+
+            const response = {
+                object: "list",
+                has_more: false,
+                data: simplifiedSets
+            };
+
+            storeInCache("sets", queryHash, response, SETS_CACHE_TTL);
+            return res.json(response);
+        }
+
+        // Fallback if data structure is unexpected
+        storeInCache("sets", queryHash, data, SETS_CACHE_TTL);
+        return res.json(data);
+    } catch (err) {
+        if (axios.isAxiosError(err) && err.response) {
+            return res.status(err.response.status).json(err.response.data);
+        }
+        return res.status(500).json({ error: "Failed to fetch sets" });
     }
 });
 

@@ -132,6 +132,13 @@ export interface UserPreferences {
   favoriteMpcTags?: string[];
   favoriteMpcDpi?: number | null;
   favoriteMpcSort?: 'name' | 'dpi' | 'source' | null;
+  favoriteMpcGroupBySource?: boolean;
+
+  // Global Scryfall Favorites
+  favoriteScryfallSets?: string[];
+  favoriteScryfallSort?: 'name' | 'released' | null;
+  favoriteScryfallGroupBySet?: boolean;
+  favoriteScryfallSearchMode?: 'cards' | 'prints' | null;
 
   // Global UI State
   settingsPanelState?: { order: string[], collapsed: Record<string, boolean> };
@@ -187,6 +194,7 @@ class ProxxiedDexie extends Dexie {
   mpcSearchCache!: Table<MpcSearchCacheEntry, [string, string]>;
   projects!: Table<Project, string>;
   userPreferences!: Table<UserPreferences, string>;
+  scryfallSetsCache!: Table<ScryfallSetsCacheEntry, string>;
 
   // Persistent custom image storage (content-addressed)
   user_images!: Table<UserImage, string>;
@@ -420,8 +428,8 @@ class ProxxiedDexie extends Dexie {
       user_images: '&hash', // Content-addressed by SHA-256 hash
     });
 
-    // Version 18: Add shareId index to projects for fast lookup
-    this.version(18).stores({
+    // Version 19: Add scryfallSetsCache table for caching sets list
+    this.version(19).stores({
       cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId, projectId',
       images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
       cardbacks: '&id',
@@ -433,6 +441,7 @@ class ProxxiedDexie extends Dexie {
       projects: '&id, shareId, lastOpenedAt',
       userPreferences: '&id',
       user_images: '&hash',
+      scryfallSetsCache: '&key, cachedAt',
     });
   }
 }
@@ -461,6 +470,14 @@ export interface MpcSearchCacheEntry {
   cardType: 'CARD' | 'CARDBACK' | 'TOKEN';
   cards: unknown[];        // MpcAutofillCard[] - use unknown to avoid circular deps
   cachedAt: number;        // Timestamp for TTL calculation
+}
+
+// Scryfall sets cache entry
+export interface ScryfallSetsCacheEntry {
+  key: 'sets';        // Singleton key
+  sets: unknown[];    // ScryfallSet[] - use unknown to avoid circular deps
+  cachedAt: number;   // When data was last checked/updated
+  dataHash: string;   // Hash of set codes for change detection
 }
 
 export const db = new ProxxiedDexie();

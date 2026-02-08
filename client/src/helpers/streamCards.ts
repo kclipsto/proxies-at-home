@@ -23,6 +23,8 @@ export interface StreamCardsOptions {
     signal: AbortSignal;
     /** Override preferred art source (if not specified, uses preferredArtSource from settings) */
     artSource?: 'scryfall' | 'mpc';
+    /** Preferred Scryfall sets to prioritize */
+    preferredSets?: string[];
     onProgress?: (processed: number, total: number) => void;
     onFirstCard?: () => void;
     onComplete?: () => void;
@@ -96,7 +98,7 @@ const cardKey = (info: CardInfo) =>
     `${normalizeDfcName(info.name).toLowerCase()}|${info.set?.toLowerCase() ?? ""}|${info.number ?? ""}`;
 
 export async function streamCards(options: StreamCardsOptions): Promise<StreamCardsResult> {
-    const { cardInfos, language, importType, signal, artSource, onProgress, onFirstCard, onComplete, projectId } = options;
+    const { cardInfos, language, importType, signal, artSource, preferredSets, onProgress, onFirstCard, onComplete, projectId } = options;
 
     // Get initial max order to compute starting positions for all cards
     const initialMaxOrder = (await db.cards.orderBy("order").last())?.order ?? 0;
@@ -364,7 +366,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
     await fetchEventSource(`${API_BASE}/api/stream/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardQueries: uniqueInfos, language }),
+        body: JSON.stringify({ cardQueries: uniqueInfos, language, preferredSets }),
         signal,
         onopen: async (res) => {
             if (!res.ok) {
