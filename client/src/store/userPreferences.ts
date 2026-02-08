@@ -12,6 +12,12 @@ interface UserPreferencesState {
     toggleFavoriteMpcTag: (tag: string) => Promise<void>;
     setFavoriteMpcDpi: (dpi: number | null) => Promise<void>;
     setFavoriteMpcSort: (sort: 'name' | 'dpi' | 'source' | null) => Promise<void>;
+    setFavoriteMpcGroupBySource: (enabled: boolean) => Promise<void>;
+
+    toggleFavoriteScryfallSet: (set: string) => Promise<void>;
+    setFavoriteScryfallSort: (sort: 'name' | 'released' | null) => Promise<void>;
+    setFavoriteScryfallGroupBySet: (enabled: boolean) => Promise<void>;
+    setFavoriteScryfallSearchMode: (mode: 'cards' | 'prints' | null) => Promise<void>;
 
     // UI State Actions
     setSettingsPanelState: (state: { order: string[], collapsed: Record<string, boolean> }) => Promise<void>;
@@ -47,6 +53,8 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
                     favoriteMpcTags: [],
                     favoriteMpcDpi: null,
                     favoriteMpcSort: null,
+                    favoriteScryfallSets: [],
+                    favoriteScryfallSort: null,
                 };
                 await db.userPreferences.add(prefs);
             }
@@ -54,6 +62,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
             // Ensure new fields exist on old records
             if (!prefs.favoriteMpcSources) prefs.favoriteMpcSources = [];
             if (!prefs.favoriteMpcTags) prefs.favoriteMpcTags = [];
+            if (!prefs.favoriteScryfallSets) prefs.favoriteScryfallSets = [];
 
             // Ensure UI fields exist
             const defaultOrder = ['projects', 'layout', 'bleed', 'card', 'guides', 'darken', 'filterSort', 'export', 'application'];
@@ -159,6 +168,8 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
             favoriteMpcTags: currentPrefs?.favoriteMpcTags || [],
             favoriteMpcDpi: currentPrefs?.favoriteMpcDpi ?? null,
             favoriteMpcSort: currentPrefs?.favoriteMpcSort ?? null,
+            favoriteScryfallSets: currentPrefs?.favoriteScryfallSets || [],
+            favoriteScryfallSort: currentPrefs?.favoriteScryfallSort ?? null,
         };
 
         await db.userPreferences.put(newPrefs);
@@ -279,6 +290,56 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
         const prefs = get().preferences;
         if (!prefs) return;
         const newPrefs = { ...prefs, filterSectionCollapsed: collapsed };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    toggleFavoriteScryfallSet: async (setKey: string) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const current = prefs.favoriteScryfallSets || [];
+        const updated = current.includes(setKey)
+            ? current.filter(s => s !== setKey)
+            : [...current, setKey];
+
+        const newPrefs = { ...prefs, favoriteScryfallSets: updated };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setFavoriteScryfallSort: async (sort: 'name' | 'released' | null) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const newPrefs = { ...prefs, favoriteScryfallSort: sort };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setFavoriteScryfallGroupBySet: async (enabled: boolean) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const newPrefs = { ...prefs, favoriteScryfallGroupBySet: enabled };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setFavoriteScryfallSearchMode: async (mode: 'cards' | 'prints' | null) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const newPrefs = { ...prefs, favoriteScryfallSearchMode: mode };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setFavoriteMpcGroupBySource: async (enabled: boolean) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const newPrefs = { ...prefs, favoriteMpcGroupBySource: enabled };
         await db.userPreferences.put(newPrefs);
         set({ preferences: newPrefs });
     }

@@ -78,6 +78,7 @@ export type Store = {
   // Per-card back offset settings (indexed by grid position)
   perCardBackOffsets: Record<number, { x: number; y: number; rotation: number }>;
   setPerCardBackOffset: (index: number, offset: { x: number; y: number; rotation: number }) => void;
+  bulkSetPerCardBackOffsets: (indices: number[], offset: { x: number; y: number; rotation: number }) => void;
   clearPerCardBackOffsets: () => void;
   dpi: number;
   setDpi: (value: number) => void;
@@ -414,6 +415,14 @@ export const useSettingsStore = create<Store>()((set) => ({
         [index]: offset,
       },
     };
+  }),
+  bulkSetPerCardBackOffsets: (indices, offset) => set((state) => {
+    recordSettingChange("perCardBackOffsets", state.perCardBackOffsets);
+    const newOffsets = { ...state.perCardBackOffsets };
+    indices.forEach((index) => {
+      newOffsets[index] = offset;
+    });
+    return { perCardBackOffsets: newOffsets };
   }),
   clearPerCardBackOffsets: () => set((state) => {
     recordSettingChange("perCardBackOffsets", state.perCardBackOffsets);

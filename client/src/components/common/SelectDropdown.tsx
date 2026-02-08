@@ -191,23 +191,29 @@ export function SelectDropdown({
                     onClick={onToggle}
                     className={`no-active-translate flex items-center h-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-0 whitespace-nowrap overflow-hidden ${className.includes('w-full') ? 'w-full justify-between' : ''}`}
                 >
-                    {/* Split button: Label on left with separator */}
-                    {label && (
-                        <>
+                    {/* Split button: Left side (Label + Separator) */}
+                    {label ? (
+                        <div className="h-full flex items-center">
                             <span className="h-full flex items-center px-2 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-600">
                                 {label}
                             </span>
                             <span className="w-px h-full bg-gray-300 dark:bg-gray-500" />
-                        </>
+                        </div>
+                    ) : (
+                        null
                     )}
-                    {/* Value section */}
-                    <span className="h-full flex items-center gap-1 px-2 text-gray-900 dark:text-white truncate">
-                        {renderButtonContent()}
-                    </span>
-                    {/* Chevron - separate for justify-between to push it right */}
-                    <span className="h-full flex items-center px-2">
-                        {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
-                    </span>
+
+                    {/* Right side (Value + Chevron) */}
+                    <div className="h-full flex items-center min-w-0 flex-1 justify-end">
+                        {/* Value section - grows/shrinks */}
+                        <span className={`h-full flex items-center gap-1 px-2 text-gray-900 dark:text-white truncate ${!label ? 'pl-2' : ''} ${className.includes('w-full') ? 'flex-1' : ''}`}>
+                            {renderButtonContent()}
+                        </span>
+                        {/* Chevron */}
+                        <span className="h-full flex items-center px-2 text-gray-500">
+                            {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </span>
+                    </div>
                 </button>
                 {isOpen && createPortal(
                     <div

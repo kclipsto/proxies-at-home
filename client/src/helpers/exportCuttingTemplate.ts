@@ -22,6 +22,7 @@ export interface CuttingTemplateSettings {
     portrait: boolean;
     perCardOffsets?: Record<number, { x: number; y: number; rotation: number }>;
     includeCutGuides?: boolean;
+    previewBackOnly?: boolean;
 }
 
 /**
@@ -326,7 +327,7 @@ function drawRoundedRect(
 function drawPageCutGuides(
     page: ReturnType<PDFDocument['addPage']>,
     positions: Array<{ x: number; y: number }>,
-    columns: number,
+    // columns parameter removed
     pageWidthMm: number,
     pageHeightMm: number,
     guideColor: [number, number, number] = [0, 0, 0],
@@ -562,7 +563,7 @@ function drawCardPlaceholders(
 
                 // X offset
                 if (offsetX !== 0) {
-                    const xText = `X: ${offsetX >= 0 ? '+' : ''}${offsetX.toFixed(2)}mm`;
+                    const xText = `X: ${offsetX >= 0 ? '+' : ''}${offsetX.toFixed(3)}mm`;
                     const xTextWidth = helveticaFont.widthOfTextAtSize(xText, offsetInfoSize);
                     const xTextX = pdfX + (pdfW - xTextWidth) / 2;
 
@@ -578,7 +579,7 @@ function drawCardPlaceholders(
 
                 // Y offset
                 if (offsetY !== 0) {
-                    const yText = `Y: ${offsetY >= 0 ? '+' : ''}${offsetY.toFixed(2)}mm`;
+                    const yText = `Y: ${offsetY >= 0 ? '+' : ''}${offsetY.toFixed(3)}mm`;
                     const yTextWidth = helveticaFont.widthOfTextAtSize(yText, offsetInfoSize);
                     const yTextX = pdfX + (pdfW - yTextWidth) / 2;
 
@@ -626,8 +627,11 @@ function drawCardPlaceholders(
 /**
  * Export the cutting template as a two-page duplex PDF for alignment checking
  */
-export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettings): Promise<void> {
-    const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait, perCardOffsets, includeCutGuides = true } = settings;
+/**
+ * Generate the cutting template PDF as a Blob
+ */
+export async function generateCuttingTemplatePDFBlob(settings: CuttingTemplateSettings): Promise<Blob> {
+    const { pageWidthMm, pageHeightMm, columns, perCardOffsets, includeCutGuides = true, previewBackOnly = false } = settings;
 
     // Calculate card positions
     const positions = calculateCardPositions(settings);
@@ -647,27 +651,30 @@ export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettin
     const MM_TO_PT = 2.83465;
 
     // Create FRONT page (baseline - no labels, no offsets)
-    const frontPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
-    if (includeCutGuides) {
-        drawPageCutGuides(frontPage, positions, columns, pageWidthMm, pageHeightMm);
+    // Skipped if previewBackOnly is true
+    if (!previewBackOnly) {
+        const frontPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
+        if (includeCutGuides) {
+            drawPageCutGuides(frontPage, positions, pageWidthMm, pageHeightMm);
+        }
+        drawCardPlaceholders(
+            frontPage,
+            positions,
+            columns,
+            pageWidthMm,
+            pageHeightMm,
+            helveticaFont,
+            helveticaBoldFont,
+            'front',
+            undefined, // No offsets on front - it's the baseline
+            false // Don't show labels on front
+        );
     }
-    drawCardPlaceholders(
-        frontPage,
-        positions,
-        columns,
-        pageWidthMm,
-        pageHeightMm,
-        helveticaFont,
-        helveticaBoldFont,
-        'front',
-        undefined, // No offsets on front - it's the baseline
-        false // Don't show labels on front
-    );
 
     // Create BACK page (with labels and offsets applied)
     const backPage = pdfDoc.addPage([pdfWidth * MM_TO_PT, pdfHeight * MM_TO_PT]);
     if (includeCutGuides) {
-        drawPageCutGuides(backPage, positions, columns, pageWidthMm, pageHeightMm);
+        drawPageCutGuides(backPage, positions, pageWidthMm, pageHeightMm);
     }
     drawCardPlaceholders(
         backPage,
@@ -685,8 +692,17 @@ export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettin
     // Save PDF
     const pdfBytes = await pdfDoc.save();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+    return new Blob([pdfBytes as any], { type: 'application/pdf' });
+}
+
+/**
+ * Export the cutting template as a two-page duplex PDF for alignment checking
+ */
+export async function downloadCuttingTemplatePDF(settings: CuttingTemplateSettings): Promise<void> {
+    const blob = await generateCuttingTemplatePDFBlob(settings);
     const url = URL.createObjectURL(blob);
+
+    const { pageWidthMm, pageHeightMm, columns, rows, bleedMm, portrait, perCardOffsets } = settings;
 
     const pageName = getPageSizeName(pageWidthMm, pageHeightMm);
     const orientation = portrait ? 'portrait' : 'landscape';

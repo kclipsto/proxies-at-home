@@ -242,9 +242,8 @@ export function useMpcSearch(
             });
     }, [cards, favoriteMpcTags]);
 
-    // Grouped by source
+    // Grouped by source - always computed so it's available when groupBySource is toggled on
     const groupedBySource = useMemo(() => {
-        if (sortBy !== "source") return null;
         const groups = new Map<string, MpcAutofillCard[]>();
         for (const card of filteredCards) {
             const existing = groups.get(card.sourceName) || [];
@@ -252,7 +251,7 @@ export function useMpcSearch(
             groups.set(card.sourceName, existing);
         }
         return groups;
-    }, [filteredCards, sortBy]);
+    }, [filteredCards]);
 
     // Filter handlers
     const toggleSource = useCallback((source: string) => {

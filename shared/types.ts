@@ -140,6 +140,7 @@ export interface ScryfallCard {
   cmc?: number;
   type_line?: string;
   rarity?: string;
+  released_at?: string;
   layout?: string; // Card layout (e.g., 'transform', 'modal_dfc', 'normal')
   prints?: PrintInfo[];
   // DFC support: face information
@@ -180,4 +181,15 @@ export interface TokenPart {
   name: string; // Token name (e.g., "Rat", "Soldier")
   type_line?: string; // Type line of the token
   uri?: string; // Scryfall URI to fetch full token data
+}
+
+export interface ScryfallSet {
+  id: string;
+  code: string;
+  name: string;
+  released_at: string;
+  icon_svg_uri: string;
+  set_type: string;
+  card_count: number;
+  digital: boolean;
 }
