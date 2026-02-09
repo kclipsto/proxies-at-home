@@ -247,6 +247,14 @@ export function CardArtContent({
   const faceNames = useMemo(() => {
     if (uniqueFaces.length <= 1) return uniqueFaces;
 
+    // In prints mode (browsing all versions of a card), maintain distinct Front/Back identity
+    // based on the canonical API order (Front=0, Back=1).
+    // Sorting by query match would swap them if the user searches for the back face name,
+    // causing the "Back" tab to filter for the Front face name.
+    if (mode === "prints") {
+      return uniqueFaces;
+    }
+
     const sorted = [...uniqueFaces].sort((a, b) => {
       const aMatches = a.toLowerCase() === query.toLowerCase();
       const bMatches = b.toLowerCase() === query.toLowerCase();
@@ -256,7 +264,7 @@ export function CardArtContent({
     });
 
     return sorted;
-  }, [uniqueFaces, query]);
+  }, [uniqueFaces, query, mode]);
 
   // Use shared stable sort logic for both sources
 
