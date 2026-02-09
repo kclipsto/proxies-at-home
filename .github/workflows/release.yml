@@ -53,6 +53,8 @@ jobs:
             platform: win
           - os: ubuntu-latest
             platform: linux
+          - os: macos-latest
+            platform: mac
 
     runs-on: ${{ matrix.os }}
 
@@ -109,6 +111,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build Electron (Mac)
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Upload artifacts for release job
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -118,6 +126,8 @@ jobs:
             dist-app/*.exe
             dist-app/*.AppImage
             dist-app/*.deb
+            dist-app/*.dmg
+            dist-app/*.zip
             dist-app/*.blockmap
             dist-app/latest*.yml
           if-no-files-found: ignore

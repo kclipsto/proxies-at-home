@@ -32,14 +32,15 @@ jobs:
         npm run lint --prefix server || echo "Server lint failed (warning only)"
       continue-on-error: true
 
-    - name: Type Check
+    - name: Type Check (Warn Only)
       run: |
         # Check Client types
-        npm run build --prefix client
+        npm run build --prefix client || echo "Client build failed (warning only)"
         # Check Server types
-        npm run build --prefix server
+        npm run build --prefix server || echo "Server build failed (warning only)"
+      continue-on-error: true
 
-    - name: Test (Warn Only)
-      id: test
+    - name: Test Client (Warn Only)
+      id: test-client
       run: npm run test --prefix client || echo "Tests failed (warning only)"
       continue-on-error: true

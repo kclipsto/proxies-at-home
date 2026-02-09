@@ -1,6 +1,6 @@
 {
   "name": "mtg-proxy-builder",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Proxxied",
   "main": "electron/dist/main.js",
   "private": true,
@@ -18,7 +18,8 @@
     "release:minor": "node scripts/release.mjs --minor",
     "release:major": "node scripts/release.mjs --major",
     "release:promote": "node scripts/release.mjs --promote-stable",
-    "release:revert": "node scripts/release.mjs --revert"
+    "release:revert": "node scripts/release.mjs --revert",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@babel/preset-typescript": "^7.28.5",
