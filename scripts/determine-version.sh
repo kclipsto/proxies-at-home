@@ -72,29 +72,40 @@ fi
 CURRENT_VERSION=$(jq -r .version package.json)
 IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION%%-*}"
 
-# Check for explicit overrides first
-if echo "$COMMIT_MSG" | grep -qiE '#major|BREAKING CHANGE'; then
-  echo "Major bump detected"
-  MAJOR=$((MAJOR + 1))
-  MINOR=0
-  PATCH=0
-  UPDATE_STABLE=true
-elif echo "$COMMIT_MSG" | grep -qi '#patch'; then
-  echo "Explicit patch bump"
-  PATCH=$((PATCH + 1))
-  UPDATE_STABLE=false
+# Check for explicit overrides and determine version bump
+SHOULD_RELEASE=false
+UPDATE_STABLE=false
+
+# 1. Determine Version Bump
+if echo "$COMMIT_MSG" | grep -qiE '#major[-_]release|#major|BREAKING CHANGE'; then
+    echo "Major bump detected - Releasing"
+    MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+    SHOULD_RELEASE=true
+    UPDATE_STABLE=true # Major always stable
+elif echo "$COMMIT_MSG" | grep -qiE '#minor[-_]release|#minor'; then
+    echo "Explicit minor bump detected - Releasing"
+    MINOR=$((MINOR + 1)); PATCH=0
+    SHOULD_RELEASE=true
+elif echo "$COMMIT_MSG" | grep -qiE '#patch[-_]release|#patch'; then
+    echo "Explicit patch bump - Releasing"
+    PATCH=$((PATCH + 1))
+    SHOULD_RELEASE=true
 elif echo "$COMMIT_MSG" | grep -qiE '^feat(\(.+\))?:'; then
-  echo "Feature commit - minor bump"
-  MINOR=$((MINOR + 1))
-  PATCH=0
-  UPDATE_STABLE=false
+    echo "Feature commit - minor bump (No Release)"
+    MINOR=$((MINOR + 1)); PATCH=0
 else
-  echo "Default patch bump"
-  PATCH=$((PATCH + 1))
-  UPDATE_STABLE=false
+    echo "Default patch bump (No Release)"
+    PATCH=$((PATCH + 1))
+fi
+
+# 2. Check for Independent Release Triggers/Modifiers
+if echo "$COMMIT_MSG" | grep -qiE '#stable[-_]release|#stable'; then
+    echo "Stable tag detected - forcing stable channel update and Releasing"
+    SHOULD_RELEASE=true
+    UPDATE_STABLE=true
 fi
 
 NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-echo "should_release=true" >> $GITHUB_OUTPUT
+echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
 echo "update_stable=$UPDATE_STABLE" >> $GITHUB_OUTPUT
