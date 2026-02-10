@@ -7,7 +7,7 @@
     "build": "vite build",
     "build:prerender": "react-static-prerender --with-build && sed -i 's|http://localhost:[0-9]\\+/|./|g' static-pages/index.html",
     "lint": "eslint .",
-    "test": "vitest run --silent",
+    "test": "vitest run -c vite.config.ts",
     "test:ui": "vitest --ui --coverage.enabled=true",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

@@ -85,7 +85,9 @@ describe('Mpc', () => {
     });
 
     it('should handle malformed URLs gracefully', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
       expect(extractDriveId('http://[invalid-url]')).toBeUndefined();
+      consoleSpy.mockRestore();
     });
   });
 

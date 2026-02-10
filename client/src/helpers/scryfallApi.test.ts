@@ -348,6 +348,7 @@ describe("scryfallApi", () => {
     });
 
     it("should return card with original images if print fetch fails", async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
       // 1. Mock Search Response
       const mockSearchResponse = {
         data: {
@@ -371,6 +372,7 @@ describe("scryfallApi", () => {
       expect(result).not.toBeNull();
       expect(result?.name).toBe("Sol Ring");
       expect(result?.imageUrls).toEqual(["http://example.com/sol-ring.jpg"]); // Fallback to original
+      consoleSpy.mockRestore();
     });
 
     it("should return card with original images if response is not ok", async () => {

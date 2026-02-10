@@ -127,6 +127,7 @@ describe("moxfieldApi", () => {
         });
 
         it("should throw error for 404 response", async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
             mockFetch.mockResolvedValue({
                 ok: false,
                 status: 404,
@@ -134,9 +135,11 @@ describe("moxfieldApi", () => {
             });
 
             await expect(fetchMoxfieldDeck("notfound")).rejects.toThrow("Deck not found");
+            consoleSpy.mockRestore();
         });
 
         it("should throw error for other HTTP errors", async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
             mockFetch.mockResolvedValue({
                 ok: false,
                 status: 500,
@@ -144,6 +147,7 @@ describe("moxfieldApi", () => {
             });
 
             await expect(fetchMoxfieldDeck("abc123")).rejects.toThrow("Failed to fetch deck: 500");
+            consoleSpy.mockRestore();
         });
     });
 

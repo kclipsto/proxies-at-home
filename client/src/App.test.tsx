@@ -22,6 +22,23 @@ vi.mock('@/helpers/imageProcessor', () => ({
     },
 }));
 
+// Mock UserPreferences to avoid Dexie DB calls on load
+vi.mock('@/store/userPreferences', () => ({
+    useUserPreferencesStore: Object.assign(
+        vi.fn(() => ({
+            theme: 'dark',
+            load: vi.fn(),
+        })),
+        {
+            getState: () => ({
+                theme: 'dark',
+                load: vi.fn(),
+            }),
+            subscribe: vi.fn(),
+        }
+    ),
+}));
+
 import App from './App';
 
 // Helper to wrap App with Suspense for lazy loading

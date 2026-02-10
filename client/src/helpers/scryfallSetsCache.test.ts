@@ -12,6 +12,8 @@ vi.mock('../db', () => ({
             update: vi.fn(),
             clear: vi.fn(),
         },
+        isOpen: vi.fn().mockReturnValue(false),
+        close: vi.fn(),
     },
 }));
 

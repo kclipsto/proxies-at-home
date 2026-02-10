@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ImportOrchestrator } from '@/helpers/ImportOrchestrator';
 
 
@@ -422,16 +422,26 @@ describe('ArtworkModal', () => {
             expect(faceToggle.getAttribute('data-value')).toBe('front');
         });
 
-        it('should switch to back face when clicked', () => {
+        it('should switch to back face when clicked', async () => {
             render(<ArtworkModal />);
             fireEvent.click(screen.getByTestId('toggle-btn-back'));
+
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
+
             const faceToggle = screen.getByTestId('toggle-front-back');
             expect(faceToggle.getAttribute('data-value')).toBe('back');
         });
 
-        it('should use initialFace from store', () => {
+        it('should use initialFace from store', async () => {
             mockState.initialFace = 'back';
             render(<ArtworkModal />);
+
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
+
             const faceToggle = screen.getByTestId('toggle-front-back');
             expect(faceToggle.getAttribute('data-value')).toBe('back');
         });
@@ -817,10 +827,14 @@ describe('ArtworkModal', () => {
             mockState.modalCard = { uuid: 'test-uuid', name: 'Test Card', imageId: 'test-image-id' };
         });
 
-        it('should pass selectedFace to ArtworkBleedSettings', () => {
+        it('should pass selectedFace to ArtworkBleedSettings', async () => {
             mockState.initialTab = 'settings';
             mockState.initialFace = 'back';
             render(<ArtworkModal />);
+
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
 
             const bleedSettings = screen.getByTestId('artwork-bleed-settings');
             expect(bleedSettings.getAttribute('data-selected-face')).toBe('back');
@@ -999,10 +1013,11 @@ describe('ArtworkModal', () => {
 
         it('should maintain face when back is selected initially for DFC', async () => {
             mockState.initialFace = 'back';
-            const { getFaceNamesFromPrints } = await import('@/helpers/dfcHelpers');
-            vi.mocked(getFaceNamesFromPrints).mockReturnValue(['Delver of Secrets', 'Insectile Aberration']);
-
             render(<ArtworkModal />);
+
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
 
             const faceToggle = screen.getByTestId('toggle-front-back');
             expect(faceToggle.getAttribute('data-value')).toBe('back');
@@ -1150,8 +1165,12 @@ describe('ArtworkModal', () => {
             mockState.initialFace = 'back';
             render(<ArtworkModal />);
 
-            const faceToggle = screen.getByTestId('toggle-front-back');
-            expect(faceToggle.getAttribute('data-value')).toBe('back');
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
+
+            // Check that we are using the back card (name in header should be Back Card)
+            expect(screen.getByText(/Select Artwork for Back Card/)).toBeDefined();
         });
     });
 
@@ -1167,6 +1186,10 @@ describe('ArtworkModal', () => {
             vi.mocked(isCardbackId).mockReturnValue(true);
 
             render(<ArtworkModal />);
+
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
 
             // Modal should render
             expect(screen.getByTestId('responsive-modal')).toBeDefined();

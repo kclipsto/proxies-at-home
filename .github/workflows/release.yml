@@ -35,10 +35,26 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Extract PR body for tag scanning
+        id: pr_body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oP '\(#\K[0-9]+(?=\))' || true)
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found PR #$PR_NUMBER, fetching body..."
+            PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body' 2>/dev/null || echo "")
+            echo "pr_body<<EOF" >> $GITHUB_OUTPUT
+            echo "$PR_BODY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
       - name: Determine version and bump type
         id: version
         env:
           INPUT_PROMOTE_STABLE: ${{ github.event.inputs.promote_stable }}
+          PR_BODY: ${{ steps.pr_body.outputs.pr_body }}
         run: ./scripts/determine-version.sh
 
   # Build first (Validation)

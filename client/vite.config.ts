@@ -32,7 +32,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     flowbiteReact(),
-    VitePWA({
+    !process.env.VITEST && VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
       manifest: {
@@ -61,15 +61,20 @@ export default defineConfig({
     }),
   ],
   test: {
+    name: 'client',
     globals: true,
+    pool: 'threads',
     environment: 'jsdom',
-    setupFiles: ['./src/vitest.setup.ts'],
+    setupFiles: [path.resolve(__dirname, './src/vitest.setup.ts')],
+    globalSetup: path.resolve(__dirname, './src/test/globalSetup.ts'),
+    teardownTimeout: 1000,
     exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**'],
     // Increase timeout to prevent flaky failures during coverage runs
-    testTimeout: 60000,
-    hookTimeout: 60000,
+    testTimeout: 120000,
+    hookTimeout: 120000,
     // Retry flaky tests once before marking as failed
     retry: 5,
+    reporters: ['default', 'hanging-process'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

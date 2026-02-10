@@ -14,7 +14,18 @@ import type { ResolvedCardData } from './cardConverter';
 import * as dbUtilsModule from './dbUtils';
 
 // Mock dependencies that are imported directly by the Orchestrator
-vi.mock('./scryfallApi');
+vi.mock('./scryfallApi', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('./scryfallApi')>();
+    return {
+        ...actual,
+        fetchCardsMetadataBatch: vi.fn(() => Promise.resolve(new Map())),
+        fetchCardWithPrints: vi.fn(() => Promise.resolve(undefined)),
+        // Keep other mocks if necessary, or rely on actual implementation for simpler logic
+        // But the previous mock was implicit auto-mock? No, it was explicit line 17: vi.mock('./scryfallApi')
+        // Which mocks everything as undefined? No, Vitest auto-mocks exports.
+        // Let's stick to partial mock to be safe.
+    };
+});
 vi.mock('./mpcAutofillApi');
 vi.mock('./cardConverter');
 vi.mock('./dbUtils', () => ({
@@ -99,6 +110,7 @@ describe('ImportOrchestrator', () => {
     });
 
     it('reproduction: fails to add back face for localImageId DFC intents without enrichment', async () => {
+        const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
         // Setup mocks
         const addSpy = vi.spyOn(undoableActionsModule, 'undoableAddCards').mockResolvedValue([{ uuid: 'test-uuid', order: 0 } as CardOption]);
         // Mock batchSearchMpcAutofill to avoid crash in findBestMpcMatches
@@ -142,6 +154,7 @@ describe('ImportOrchestrator', () => {
 
         // Metadata fetch should happen now
         expect(metadataSpy).toHaveBeenCalled();
+        consoleSpy.mockRestore();
     });
 
     it('routes MPC intents to streamCards with artSource="mpc"', async () => {

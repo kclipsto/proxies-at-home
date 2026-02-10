@@ -10,12 +10,9 @@ describe('determine-version.sh', () => {
     let githubOutputFile: string;
 
     beforeEach(() => {
-        // Create temp directory for current test
         tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'version-test-'));
         scriptPath = path.resolve(__dirname, 'determine-version.sh');
         githubOutputFile = path.join(tempDir, 'github_output');
-
-        // Setup git repo in temp dir
         execSync('git init', { cwd: tempDir, stdio: 'ignore' });
         execSync('git config user.email "test@example.com"', { cwd: tempDir, stdio: 'ignore' });
         execSync('git config user.name "Test User"', { cwd: tempDir, stdio: 'ignore' });
@@ -26,18 +23,13 @@ describe('determine-version.sh', () => {
         fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
-    const runScript = (currentVersion: string, commitMsg: string, eventName = 'push', ref = 'refs/heads/main', promoteStable = 'false') => {
-        // Write package.json
+    const runScript = (currentVersion: string, commitMsg: string, eventName = 'push', ref = 'refs/heads/main', promoteStable = 'false', prBody = '') => {
         fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ version: currentVersion }));
         execSync('git add package.json', { cwd: tempDir, stdio: 'ignore' });
         execSync('git commit -m "setup"', { cwd: tempDir, stdio: 'ignore' });
-
-        // Create dummy change and commit with analyzed message
         fs.writeFileSync(path.join(tempDir, 'dummy'), 'change');
         execSync('git add dummy', { cwd: tempDir, stdio: 'ignore' });
         execSync(`git commit -m "${commitMsg}"`, { cwd: tempDir, stdio: 'ignore' });
-
-        // Run script
         try {
             execSync(`bash "${scriptPath}"`, {
                 cwd: tempDir,
@@ -47,18 +39,15 @@ describe('determine-version.sh', () => {
                     GITHUB_REF: ref,
                     INPUT_PROMOTE_STABLE: promoteStable,
                     GITHUB_OUTPUT: githubOutputFile,
-                    // Ensure git commands use the temp repo
                     GIT_DIR: path.join(tempDir, '.git'),
-                    GIT_WORK_TREE: tempDir
+                    GIT_WORK_TREE: tempDir,
+                    PR_BODY: prBody
                 },
-                stdio: 'ignore' // Suppress logs during test
+                stdio: 'ignore'
             });
         } catch (e) {
-            // Script failure should fail test
             throw new Error(`Script failed: ${e}`);
         }
-
-        // Read output
         if (fs.existsSync(githubOutputFile)) {
             const content = fs.readFileSync(githubOutputFile, 'utf-8');
             const versionMatch = content.match(/version=(.*)/);
@@ -94,48 +83,48 @@ describe('determine-version.sh', () => {
         expect(result.updateStable).toBe('false');
     });
 
-    it('should release Minor explicit with #minor-release', () => {
-        const result = runScript('0.0.2', 'chore: update #minor-release');
+    it('should release Minor with release:minor', () => {
+        const result = runScript('0.0.2', 'chore: update release:minor');
         expect(result.version).toBe('0.1.0');
         expect(result.shouldRelease).toBe('true');
         expect(result.updateStable).toBe('false');
     });
 
-    it('should release Patch explicit with #patch-release', () => {
-        const result = runScript('0.0.2', 'feat: small tweak #patch-release');
+    it('should release Patch with release:patch', () => {
+        const result = runScript('0.0.2', 'feat: small tweak release:patch');
         expect(result.version).toBe('0.0.3');
         expect(result.shouldRelease).toBe('true');
         expect(result.updateStable).toBe('false');
     });
 
-    it('should release Patch explicit with #patch_release (underscore)', () => {
-        const result = runScript('0.0.2', 'feat: small tweak #patch_release');
-        expect(result.version).toBe('0.0.3');
-        expect(result.shouldRelease).toBe('true');
-        expect(result.updateStable).toBe('false');
-    });
-
-    it('should release Major explicit with #major-release', () => {
-        const result = runScript('0.0.2', 'feat: break #major-release');
+    it('should release Major with release:major', () => {
+        const result = runScript('0.0.2', 'feat: break release:major');
         expect(result.version).toBe('1.0.0');
         expect(result.shouldRelease).toBe('true');
         expect(result.updateStable).toBe('true');
     });
 
-    it('should trigger stable update with #stable-release', () => {
-        const result = runScript('0.0.2', 'fix: critical #stable-release');
+    it('should trigger stable update with release:stable', () => {
+        const result = runScript('0.0.2', 'fix: critical release:stable');
         expect(result.version).toBe('0.0.3');
+        expect(result.shouldRelease).toBe('true');
+        expect(result.updateStable).toBe('true');
+    });
+
+    it('should handle release:stable combined with release:minor', () => {
+        const result = runScript('0.0.2', 'feat: big change release:minor release:stable');
+        expect(result.version).toBe('0.1.0');
         expect(result.shouldRelease).toBe('true');
         expect(result.updateStable).toBe('true');
     });
 
     it('should detect release tags in commit body (multiline)', () => {
         const msg = `fix: a bug
-    
-    This is a detailed description.
-    It spans multiple lines.
-    
-    #minor-release`;
+
+This is a detailed description.
+It spans multiple lines.
+
+release:minor`;
         const result = runScript('0.0.2', msg);
         expect(result.version).toBe('0.1.0');
         expect(result.shouldRelease).toBe('true');
@@ -144,12 +133,45 @@ describe('determine-version.sh', () => {
 
     it('should detect stable tag in commit body (multiline)', () => {
         const msg = `fix: a bug
-    
-    Detailed description.
-    
-    #stable-release`;
+
+Detailed description.
+
+release:stable`;
         const result = runScript('0.0.2', msg);
         expect(result.version).toBe('0.0.3');
+        expect(result.shouldRelease).toBe('true');
+        expect(result.updateStable).toBe('true');
+    });
+
+    it('should still detect BREAKING CHANGE for major bump', () => {
+        const result = runScript('0.0.2', 'feat: BREAKING CHANGE something');
+        expect(result.version).toBe('1.0.0');
+        expect(result.shouldRelease).toBe('true');
+        expect(result.updateStable).toBe('true');
+    });
+
+    it('should skip release for sync merge commits', () => {
+        const result = runScript('0.1.0', 'chore: bump version to 0.1.0');
+        expect(result.shouldRelease).toBe('false');
+    });
+
+    it('should detect release:stable in PR body', () => {
+        const result = runScript('0.0.2', 'fix: some fix (#99)', 'push', 'refs/heads/main', 'false', 'PR description here\nrelease:stable');
+        expect(result.version).toBe('0.0.3');
+        expect(result.shouldRelease).toBe('true');
+        expect(result.updateStable).toBe('true');
+    });
+
+    it('should detect release:patch in PR body', () => {
+        const result = runScript('0.0.2', 'fix: some fix (#99)', 'push', 'refs/heads/main', 'false', 'release:patch');
+        expect(result.version).toBe('0.0.3');
+        expect(result.shouldRelease).toBe('true');
+        expect(result.updateStable).toBe('false');
+    });
+
+    it('should detect release:minor in PR body with release:stable in commit', () => {
+        const result = runScript('0.0.2', 'feat: big change release:stable', 'push', 'refs/heads/main', 'false', 'release:minor');
+        expect(result.version).toBe('0.1.0');
         expect(result.shouldRelease).toBe('true');
         expect(result.updateStable).toBe('true');
     });

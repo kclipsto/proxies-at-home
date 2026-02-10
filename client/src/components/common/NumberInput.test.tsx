@@ -49,7 +49,7 @@ describe('NumberInput', () => {
 
     describe('value handling', () => {
         it('should pass value prop to input', () => {
-            render(<NumberInput value={5} />);
+            render(<NumberInput value={5} readOnly />);
             const input = screen.getByTestId('text-input') as HTMLInputElement;
             expect(input.value).toBe('5');
         });

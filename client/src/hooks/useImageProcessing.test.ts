@@ -13,6 +13,12 @@ vi.mock("../db", () => ({
       update: vi.fn(),
       put: vi.fn(),
     },
+    user_images: {
+      get: vi.fn(),
+    },
+    cards: {
+      update: vi.fn(),
+    },
   },
 }));
 
@@ -128,6 +134,7 @@ describe("useImageProcessing", () => {
   });
 
   it("should handle image processing failure", async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
     (db.images.get as Mock).mockResolvedValue({ sourceUrl: "http://example.com/img.png" });
     mockProcess.mockRejectedValue(new Error("Processing failed"));
 
@@ -146,6 +153,7 @@ describe("useImageProcessing", () => {
     // With imageId-keyed loading state, check using getLoadingState
     expect(result.current.getLoadingState(card.imageId)).toBe("error");
     expect(db.images.put).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it("reprocessSelectedImages should process multiple cards", async () => {
@@ -225,6 +233,7 @@ describe("useImageProcessing", () => {
   });
 
   it("should handle process returning error object", async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
     (db.images.get as Mock).mockResolvedValue({ sourceUrl: "http://example.com/img.png" });
     mockProcess.mockResolvedValue({ error: "Processing failed gracefully" });
 
@@ -243,9 +252,11 @@ describe("useImageProcessing", () => {
     // With imageId-keyed loading state, check using getLoadingState
     expect(result.current.getLoadingState(card.imageId)).toBe("error");
     expect(db.images.put).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it("reprocessSelectedImages should handle errors", async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
     const cards = [{ ...card, uuid: '1', imageId: 'img1' }];
     (db.images.get as Mock).mockResolvedValue({ sourceUrl: 'https://example.com/url1' });
     mockProcess.mockResolvedValue({ error: "Processing failed" });
@@ -264,6 +275,7 @@ describe("useImageProcessing", () => {
 
     expect(mockProcess).toHaveBeenCalledTimes(1);
     expect(db.images.put).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   describe("in-flight deduplication", () => {

@@ -76,6 +76,7 @@ vi.mock('@/db', () => ({
         cardMetadataCache: { clear: vi.fn() },
         mpcSearchCache: { clear: vi.fn() },
         imageCache: { clear: vi.fn() },
+        scryfallSetsCache: { clear: vi.fn() },
     },
 }));
 
@@ -173,7 +174,9 @@ describe('ApplicationSection', () => {
                 expect(db.images.clear).toHaveBeenCalled();
                 expect(db.settings.clear).toHaveBeenCalled();
                 expect(db.cardMetadataCache.clear).toHaveBeenCalled();
+                expect(db.cardMetadataCache.clear).toHaveBeenCalled();
                 expect(db.mpcSearchCache.clear).toHaveBeenCalled();
+                expect(db.scryfallSetsCache.clear).toHaveBeenCalled();
 
                 // 4. LocalStorage
                 expect(mockRemoveItem).toHaveBeenCalledWith('cardback-delete-confirm-disabled');

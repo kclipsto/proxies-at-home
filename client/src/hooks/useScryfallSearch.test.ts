@@ -1,6 +1,6 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useScryfallSearch } from './useScryfallSearch';
+import { useScryfallSearch, resetGlobalSearchCache } from './useScryfallSearch';
 
 // Mock dependencies
 vi.mock('@/helpers/cardInfoHelper', () => ({
@@ -36,6 +36,7 @@ vi.mock('@/helpers/scryfallApi', () => ({
             lang: card.lang,
         }));
     }),
+    constructScryfallQuery: vi.fn((query: string) => query),
 }));
 
 vi.mock('@/helpers/debug', () => ({
@@ -57,14 +58,17 @@ describe('useScryfallSearch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         global.fetch = vi.fn();
+        resetGlobalSearchCache();
     });
 
     describe('initial state', () => {
-        it('should return empty results and not loading initially', () => {
+        it('should return empty results and not loading initially', async () => {
             const { result } = renderHook(() => useScryfallSearch(''));
 
-            expect(result.current.cards).toEqual([]);
+            // The hook might have an initial effect run
             expect(result.current.isLoading).toBe(false);
+
+            expect(result.current.cards).toEqual([]);
             expect(result.current.hasSearched).toBe(false);
             expect(result.current.hasResults).toBe(false);
         });
@@ -72,40 +76,41 @@ describe('useScryfallSearch', () => {
 
     describe('autoSearch option', () => {
         it('should not search when autoSearch is false', async () => {
-            renderHook(() => useScryfallSearch('Sol Ring', { autoSearch: false }));
+            const { result } = renderHook(() => useScryfallSearch('Unique AutoSearch', { autoSearch: false }));
 
-            // Wait for potential debounce
-            await new Promise(r => setTimeout(r, 600));
+            // Wait for debounce (500ms) + buffer
+            await new Promise(resolve => setTimeout(resolve, 600));
 
             expect(global.fetch).not.toHaveBeenCalled();
+            expect(result.current.isLoading).toBe(false);
         });
     });
 
-    describe('search behavior (real timers)', () => {
+    describe('search behavior', () => {
         it('should debounce and call search API', async () => {
             (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
                 ok: true,
                 json: () => Promise.resolve({ data: [] }),
             });
 
-            renderHook(() => useScryfallSearch('Lightning Bolt'));
+            const { result } = renderHook(() => useScryfallSearch('Unique Lightning Bolt'));
 
-            // Wait for debounce + API call
-            await vi.waitFor(() => {
-                expect(global.fetch).toHaveBeenCalled();
+            // Wait for debounce and search completion
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/scryfall/search?q=Unique%20Lightning%20Bolt'),
+                    expect.anything()
+                );
             }, { timeout: 3000 });
 
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/api/scryfall/search?q=Lightning%20Bolt'),
-                expect.anything()
-            );
+            expect(result.current.isLoading).toBe(false);
         });
 
         it('should update cards on successful search', async () => {
             const mockCards = {
                 data: [
                     {
-                        name: 'Sol Ring',
+                        name: 'Unique Sol Ring',
                         set: 'cmd',
                         set_name: 'Commander',
                         collector_number: '129',
@@ -120,14 +125,15 @@ describe('useScryfallSearch', () => {
                 json: () => Promise.resolve(mockCards),
             });
 
-            const { result } = renderHook(() => useScryfallSearch('Sol Ring'));
+            const { result } = renderHook(() => useScryfallSearch('Unique Sol Ring'));
 
-            await vi.waitFor(() => {
+            // Wait for debounce and result
+            await waitFor(() => {
                 expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            }, { timeout: 3000 });
 
             expect(result.current.cards.length).toBe(1);
-            expect(result.current.cards[0].name).toBe('Sol Ring');
+            expect(result.current.cards[0].name).toBe('Unique Sol Ring');
             expect(result.current.hasResults).toBe(true);
         });
     });
@@ -145,27 +151,29 @@ describe('useScryfallSearch', () => {
                 }),
             });
 
-            renderHook(() => useScryfallSearch('[CMD-129]'));
+            const { result } = renderHook(() => useScryfallSearch('[CMD-129]'));
 
-            await vi.waitFor(() => {
-                expect(global.fetch).toHaveBeenCalled();
+            // Wait for debounce and callback
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/scryfall/cards/cmd/129'),
+                    expect.anything()
+                );
             }, { timeout: 3000 });
 
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/api/scryfall/cards/cmd/129'),
-                expect.anything()
-            );
+            expect(result.current.isLoading).toBe(false);
         });
     });
 
     describe('incomplete syntax', () => {
         it('should not search when query has incomplete tag syntax', async () => {
-            renderHook(() => useScryfallSearch('Sol ['));
+            const { result } = renderHook(() => useScryfallSearch('Sol ['));
 
-            // Wait for potential debounce
-            await new Promise(r => setTimeout(r, 600));
+            // Advance timers
+            await new Promise(resolve => setTimeout(resolve, 600));
 
             expect(global.fetch).not.toHaveBeenCalled();
+            expect(result.current.isLoading).toBe(false);
         });
     });
 
@@ -175,9 +183,14 @@ describe('useScryfallSearch', () => {
 
             const { result } = renderHook(() => useScryfallSearch('Error Test'));
 
-            await vi.waitFor(() => {
-                expect(result.current.isLoading).toBe(false);
+            // Wait for debounce and fetch attempt
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalled();
             }, { timeout: 1000 });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
 
             expect(result.current.cards).toEqual([]);
         });
@@ -189,9 +202,14 @@ describe('useScryfallSearch', () => {
 
             const { result } = renderHook(() => useScryfallSearch('Unknown Card'));
 
-            await vi.waitFor(() => {
-                expect(result.current.isLoading).toBe(false);
+            // Wait for debounce and fetch attempt
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalled();
             }, { timeout: 1000 });
+
+            await waitFor(() => {
+                expect(result.current.isLoading).toBe(false);
+            });
 
             expect(result.current.cards).toEqual([]);
         });
@@ -204,17 +222,17 @@ describe('useScryfallSearch', () => {
                 json: () => Promise.resolve({ data: [] }),
             });
 
-            renderHook(() => useScryfallSearch('is:mdfc'));
+            const { result } = renderHook(() => useScryfallSearch('is:mdfc'));
 
-            await vi.waitFor(() => {
-                expect(global.fetch).toHaveBeenCalled();
+            // Wait for debounce and callback
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/scryfall/search?q=is%3Amdfc'),
+                    expect.anything()
+                );
             }, { timeout: 3000 });
 
-            // Should pass through as-is, not wrapped in quotes
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/api/scryfall/search?q=is%3Amdfc'),
-                expect.anything()
-            );
+            expect(result.current.isLoading).toBe(false);
         });
 
         it('should pass through complex syntax like is:legend set:ecc unchanged', async () => {
@@ -223,17 +241,17 @@ describe('useScryfallSearch', () => {
                 json: () => Promise.resolve({ data: [] }),
             });
 
-            renderHook(() => useScryfallSearch('is:legend set:ecc'));
+            const { result } = renderHook(() => useScryfallSearch('is:legend set:ecc'));
 
-            await vi.waitFor(() => {
-                expect(global.fetch).toHaveBeenCalled();
+            // Wait for debounce and callback
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/scryfall/search?q=is%3Alegend%20set%3Aecc'),
+                    expect.anything()
+                );
             }, { timeout: 3000 });
 
-            // Should pass through as-is, NOT become !"is:legend" set:ecc
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/api/scryfall/search?q=is%3Alegend%20set%3Aecc'),
-                expect.anything()
-            );
+            expect(result.current.isLoading).toBe(false);
         });
 
         it('should pass through c: color syntax unchanged', async () => {
@@ -242,16 +260,17 @@ describe('useScryfallSearch', () => {
                 json: () => Promise.resolve({ data: [] }),
             });
 
-            renderHook(() => useScryfallSearch('c:r t:creature'));
+            const { result } = renderHook(() => useScryfallSearch('c:r t:creature'));
 
-            await vi.waitFor(() => {
-                expect(global.fetch).toHaveBeenCalled();
+            // Wait for debounce and callback
+            await waitFor(() => {
+                expect(global.fetch).toHaveBeenCalledWith(
+                    expect.stringContaining('/api/scryfall/search?q=c%3Ar%20t%3Acreature'),
+                    expect.anything()
+                );
             }, { timeout: 3000 });
 
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/api/scryfall/search?q=c%3Ar%20t%3Acreature'),
-                expect.anything()
-            );
+            expect(result.current.isLoading).toBe(false);
         });
     });
 });

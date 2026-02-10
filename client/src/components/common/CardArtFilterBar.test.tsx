@@ -15,14 +15,31 @@ vi.mock('@/store', () => ({
 }));
 
 vi.mock('@/helpers/scryfallApi', () => ({
-    fetchScryfallSets: vi.fn(),
+    fetchScryfallSets: vi.fn(() => Promise.resolve([])),
 }));
 
-// Mock SelectDropdown and MultiSelectDropdown to simplify testing (avoid complex portal/state logic in unit test)
-// But integration testing them is also good. For now, let's keep them real or shallow mock if too complex.
-// Let's use real components but mock the icon imports if needed? No, vitest handles svgs usually.
-// Actually, SelectDropdown uses portals which can be tricky in some test envs, but normally fine with adequate setup.
-// Let's rely on real implementation if possible.
+// Mock SelectDropdown to simplify testing and avoid portal/listener issues
+vi.mock('./SelectDropdown', () => ({
+    SelectDropdown: ({ label, buttonText, onToggle, isOpen, children }: { label?: string; buttonText: string; onToggle: () => void; isOpen: boolean; children: React.ReactNode }) => (
+        <div>
+            <button onClick={onToggle}>
+                {label && <span>{label}</span>}
+                <span>{buttonText}</span>
+            </button>
+            {isOpen && <div data-testid="dropdown-content">{children}</div>}
+        </div>
+    ),
+    // Export MultiSelectDropdown as the same mock if it's just an alias
+    MultiSelectDropdown: ({ label, buttonText, onToggle, isOpen, children }: { label?: string; buttonText: string; onToggle: () => void; isOpen: boolean; children: React.ReactNode }) => (
+        <div>
+            <button onClick={onToggle}>
+                {label && <span>{label}</span>}
+                <span>{buttonText}</span>
+            </button>
+            {isOpen && <div data-testid="dropdown-content">{children}</div>}
+        </div>
+    ),
+}));
 
 describe('CardArtFilterBar', () => {
     const mockToggleFavoriteScryfallSet = vi.fn();
@@ -84,6 +101,11 @@ describe('CardArtFilterBar', () => {
 
             render(<CardArtFilterBar {...defaultProps} />);
 
+            // Wait for sets to load
+            await waitFor(() => {
+                expect(fetchScryfallSets).toHaveBeenCalled();
+            });
+
             // Check for Sort Dropdown label (default released)
             expect(screen.getByText('Release Date')).toBeInTheDocument();
 
@@ -103,6 +125,10 @@ describe('CardArtFilterBar', () => {
 
             render(<CardArtFilterBar {...defaultProps} />);
 
+            await waitFor(() => {
+                expect(fetchScryfallSets).toHaveBeenCalled();
+            });
+
             // Open Set dropdown
             const setButton = screen.getByText('Set').closest('button');
             fireEvent.click(setButton!);
@@ -119,6 +145,10 @@ describe('CardArtFilterBar', () => {
             ]);
 
             render(<CardArtFilterBar {...defaultProps} />);
+
+            await waitFor(() => {
+                expect(fetchScryfallSets).toHaveBeenCalled();
+            });
 
             // Open Set dropdown
             const setButton = screen.getByText('Set').closest('button');
@@ -167,17 +197,26 @@ describe('CardArtFilterBar', () => {
             onToggleGroupBySource: vi.fn(),
         };
 
-        it('renders MPC filter controls', () => {
+        it('renders MPC filter controls', async () => {
             render(<CardArtFilterBar {...defaultProps} />);
+            // Even in MPC mode, some hooks might trigger. Wait for stability or just ensure it renders.
+            await waitFor(() => {
+                const dpiElements = screen.getAllByText('DPI');
+                expect(dpiElements.length).toBeGreaterThan(0);
+                expect(dpiElements[0]).toBeInTheDocument();
+            });
 
-            expect(screen.getByText('DPI')).toBeInTheDocument();
+            expect(screen.getAllByText('DPI')[0]).toBeInTheDocument();
             expect(screen.getByText('Source')).toBeInTheDocument();
             expect(screen.getByText('Tags')).toBeInTheDocument();
             expect(screen.getByText('Sort')).toBeInTheDocument();
         });
 
-        it('shows sources in dropdown', () => {
+        it('shows sources in dropdown', async () => {
             render(<CardArtFilterBar {...defaultProps} />);
+            await waitFor(() => {
+                expect(screen.getByText('Source')).toBeInTheDocument();
+            });
 
             // Open Source dropdown
             const sourceButton = screen.getByText('Source').closest('button');

@@ -237,6 +237,13 @@ class EffectProcessor {
             this.notifyActivityChange(false);
         }
     }
+    static destroyInstance() {
+        if (EffectProcessor.instance) {
+            EffectProcessor.instance.destroy();
+            // @ts-expect-error - we need to clear the instance
+            EffectProcessor.instance = undefined;
+        }
+    }
 }
 
 /**
@@ -245,6 +252,14 @@ class EffectProcessor {
  */
 export function getEffectProcessor(): EffectProcessor {
     return EffectProcessor.getInstance();
+}
+
+/**
+ * Destroy the EffectProcessor singleton and terminate all workers.
+ * Used for testing cleanup.
+ */
+export function destroyEffectProcessor(): void {
+    EffectProcessor.destroyInstance();
 }
 
 // --- Hash and Cache Key Functions ---
