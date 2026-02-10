@@ -488,22 +488,17 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
       return;
     }
 
-    // Single Card Logic
-    const oldIndex = localCardsRef.current.findIndex((c) => c.uuid === active.id);
-    const newIndex = localCardsRef.current.findIndex((c) => c.uuid === over.id);
+    // Single Card Logic — localCardsRef is already in the correct order
+    // from handleDragOver, so no additional arrayMove is needed.
+    const finalCards = localCardsRef.current;
+    const finalIndex = finalCards.findIndex((c) => c.uuid === active.id);
+    if (finalIndex === -1) return;
 
-    if (oldIndex === -1 || newIndex === -1) return;
+    setLocalCards(finalCards);
+    lastOptimisticOrder.current = finalCards.map((c) => c.uuid);
 
-    // Calculate the new layout locally to ensure we have the correct neighbors
-    // regardless of whether the visual state (localCards) has caught up yet
-    const projectedCards = arrayMove(localCardsRef.current, oldIndex, newIndex);
-
-    // Update local state immediately to match projection
-    setLocalCards(projectedCards);
-    lastOptimisticOrder.current = projectedCards.map((c) => c.uuid);
-
-    const prevCard = projectedCards[newIndex - 1];
-    const nextCard = projectedCards[newIndex + 1];
+    const prevCard = finalCards[finalIndex - 1];
+    const nextCard = finalCards[finalIndex + 1];
 
     let newOrder: number;
 
