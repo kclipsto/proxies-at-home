@@ -486,20 +486,8 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                     projectId,
                 });
 
-                // Fidelity: If a preferred image ID was specified (from Share), use it
-                if (entry?.info.preferredImageId) {
-                    try {
-                        const url = entry.info.preferredImageId;
-                        // Use addRemoteImage to cache it locally (deduplicated)
-                        // If it's a URL, this fetches and saves it. If it's a Scryfall URL, same.
-                        const resolvedId = await addRemoteImage([url], quantity);
-                        if (resolvedId) {
-                            cardsToAdd.forEach(c => c.imageId = resolvedId);
-                        }
-                    } catch (e) {
-                        console.warn(`[streamCards] Failed to resolve preferredImageId`, e);
-                    }
-                }
+                // Fidelity: preferredImageId is handled per-instance below
+                // to support different art selections for cards with the same printing
 
                 // Custom DFC Link Handling (Priority Overwrite)
                 // If the intent specified a custom back (MPC ID, Built-in, or Scryfall Set/Num), handle it here
@@ -553,12 +541,24 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                 if (cardsToAdd.length > 0) {
                     if (placeholderUuids && placeholderUuids.length > 0) {
                         // Update existing placeholder cards with Scryfall data
-                        const cardData = cardsToAdd[0]; // Get template from first card
+                        const cardData = cardsToAdd[0];
+                        const instances = entry?.instances ?? [];
                         await db.transaction('rw', db.cards, async () => {
-                            for (const uuid of placeholderUuids) {
+                            for (let i = 0; i < placeholderUuids.length; i++) {
+                                const uuid = placeholderUuids[i];
+                                let imageId = cardData.imageId;
+                                const instancePref = instances[i]?.preferredImageId;
+                                if (instancePref) {
+                                    try {
+                                        const resolved = await addRemoteImage([instancePref], 1);
+                                        if (resolved) imageId = resolved;
+                                    } catch (e) {
+                                        console.warn(`[streamCards] Failed to resolve preferredImageId for placeholder`, e);
+                                    }
+                                }
                                 await db.cards.update(uuid, {
                                     name: cardData.name,
-                                    imageId: cardData.imageId,
+                                    imageId,
                                     set: cardData.set,
                                     number: cardData.number,
                                     lang: cardData.lang,
@@ -570,7 +570,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                                     token_parts: cardData.token_parts,
                                     needs_token: cardData.needs_token,
                                     isToken: cardData.isToken,
-                                    hasBuiltInBleed: false, // Scryfall images don't have built-in bleed
+                                    hasBuiltInBleed: false,
                                     needsEnrichment: false,
                                 });
                             }
@@ -588,7 +588,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                         }
                     } else {
                         // No existing placeholders - add new cards for each instance
-                        const instances = entry?.instances ?? [{ order: 0 }];
+                        const instances: Array<{ order?: number; preferredImageId?: string }> = entry?.instances ?? [{ order: 0 }];
 
                         // Type definition matching convertScryfallToCardOptions return type
                         type CardAddData = Omit<CardOption, "uuid" | "order"> & { order?: number; imageId?: string };
@@ -604,16 +604,32 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                             const template = cardsToAdd[0];
                             const templateBackTasks = backCardTasks.filter(t => t.frontIndex === 0);
 
+                            // Pre-resolve unique preferredImageIds to avoid duplicate fetches
+                            const preferredImageCache = new Map<string, string>();
+                            for (const instance of instances) {
+                                const pid = instance.preferredImageId;
+                                if (pid && !preferredImageCache.has(pid)) {
+                                    try {
+                                        const resolved = await addRemoteImage([pid], 1);
+                                        if (resolved) preferredImageCache.set(pid, resolved);
+                                    } catch (e) {
+                                        console.warn(`[streamCards] Failed to resolve preferredImageId`, e);
+                                    }
+                                }
+                            }
+
                             for (const instance of instances) {
                                 const newFrontIndex = allFrontCards.length;
+                                const instanceImageId = instance.preferredImageId
+                                    ? preferredImageCache.get(instance.preferredImageId)
+                                    : undefined;
 
-                                // Add front card
                                 allFrontCards.push({
                                     ...template,
-                                    order: instance.order // Specific order for this instance
+                                    order: instance.order,
+                                    ...(instanceImageId && { imageId: instanceImageId }),
                                 });
 
-                                // Add associated back tasks
                                 for (const task of templateBackTasks) {
                                     allBackTasks.push({
                                         ...task,

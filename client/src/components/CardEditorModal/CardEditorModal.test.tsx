@@ -209,6 +209,10 @@ describe('CardEditorModal', () => {
                 />
             );
 
+            await act(async () => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            });
+
             // Should still show Back
             expect(screen.getByText('Back')).toBeInTheDocument();
         });
@@ -328,52 +332,72 @@ describe('CardEditorModal', () => {
     });
 
     describe('preview controls', () => {
-        it('should toggle DPI settings', () => {
+        it('should toggle DPI settings', async () => {
             render(<CardEditorModal {...defaultProps} />);
             const dpiBtn = screen.getByTitle(/Click to switch to/);
             expect(dpiBtn).toHaveTextContent('display');
 
-            fireEvent.click(dpiBtn);
+            await act(async () => {
+                await act(async () => {
+                    fireEvent.click(dpiBtn);
+                });
+            });
 
             expect(dpiBtn).toHaveTextContent('export');
         });
 
-        it('should toggle Show Original', () => {
+        it('should toggle Show Original', async () => {
             render(<CardEditorModal {...defaultProps} />);
             const originalBtn = screen.getByTitle('Show original (no effects)');
 
-            fireEvent.click(originalBtn);
+            await act(async () => {
+                await act(async () => {
+                    fireEvent.click(originalBtn);
+                });
+            });
             expect(originalBtn).toHaveTextContent('Original');
 
-            fireEvent.click(originalBtn);
+            await act(async () => {
+                fireEvent.click(originalBtn);
+            });
             expect(originalBtn).toHaveTextContent('Adjusted');
         });
 
-        it('should handle zoom via wheel', () => {
+        it('should handle zoom via wheel', async () => {
             render(<CardEditorModal {...defaultProps} />);
             const previewWrapper = screen.getByTestId('pixi-preview').parentElement;
             const container = previewWrapper?.parentElement;
 
             if (container) {
-                fireEvent.wheel(container, { deltaY: -100 });
+                await act(async () => {
+                    fireEvent.wheel(container, { deltaY: -100 });
+                });
                 // Zoom handler executes. We verify no crash.
                 // Detailed state verification would require mocking ZoomControls to render props or store inspection.
                 expect(true).toBe(true);
             }
         });
 
-        it('should handle pan interaction', () => {
+        it('should handle pan interaction', async () => {
             render(<CardEditorModal {...defaultProps} />);
             const previewWrapper = screen.getByTestId('pixi-preview').parentElement;
             const container = previewWrapper?.parentElement;
 
             if (container && previewWrapper) {
                 // Must ensure correct sequence
-                fireEvent.mouseDown(container, { clientX: 100, clientY: 100 });
-                fireEvent.mouseMove(container, { clientX: 150, clientY: 150 });
+                await act(async () => {
+                    fireEvent.mouseDown(container, { clientX: 100, clientY: 100, buttons: 1 });
+                });
+
+                await act(async () => {
+                    fireEvent.mouseMove(container, { clientX: 150, clientY: 150, buttons: 1 });
+                });
 
                 // transform should have changed
-                expect(previewWrapper.style.transform).toContain('50px');
+                // transform should have changed
+                await waitFor(() => {
+                    expect(previewWrapper.style.transform).toContain('50px');
+                });
 
                 fireEvent.mouseUp(container);
             }
@@ -437,7 +461,7 @@ describe('CardEditorModal', () => {
             expect(setCollapsed).toHaveBeenCalled();
         });
 
-        it('should reorder sections on drag end', () => {
+        it('should reorder sections on drag end', async () => {
             const setOrder = vi.fn();
             (useUserPreferencesStore as unknown as Mock).mockImplementation((selector) => {
                 const state = {
@@ -454,23 +478,27 @@ describe('CardEditorModal', () => {
 
             render(<CardEditorModal {...defaultProps} />);
             const trigger = screen.getByTestId('trigger-drag-end');
-            fireEvent.click(trigger);
+            await act(async () => {
+                await act(async () => {
+                    fireEvent.click(trigger);
+                });
+            });
 
             expect(setOrder).toHaveBeenCalled();
         });
     });
 
     describe('logic coverage', () => {
-        it('should handle window resize for mobile detection', () => {
+        it('should handle window resize for mobile detection', async () => {
             render(<CardEditorModal {...defaultProps} />);
 
             // Trigger resize
-            act(() => {
+            await act(async () => {
                 global.innerWidth = 500;
                 global.dispatchEvent(new Event('resize'));
             });
             // Revert
-            act(() => {
+            await act(async () => {
                 global.innerWidth = 1024;
                 global.dispatchEvent(new Event('resize'));
             });
@@ -676,7 +704,7 @@ describe('CardEditorModal', () => {
     });
 
     describe('Double-click to reset pan', () => {
-        it('should reset pan position on double-click', () => {
+        it('should reset pan position on double-click', async () => {
             render(<CardEditorModal {...defaultProps} />);
 
             const previewWrapper = screen.getByTestId('pixi-preview').parentElement;
@@ -684,18 +712,28 @@ describe('CardEditorModal', () => {
 
             if (container) {
                 // First pan the image
-                fireEvent.mouseDown(container, { clientX: 100, clientY: 100 });
-                fireEvent.mouseMove(container, { clientX: 150, clientY: 150 });
+                await act(async () => {
+                    fireEvent.mouseDown(container, { clientX: 100, clientY: 100, buttons: 1 });
+                });
+                await act(async () => {
+                    fireEvent.mouseMove(container, { clientX: 150, clientY: 150, buttons: 1 });
+                });
                 fireEvent.mouseUp(container);
 
                 // Verify pan was applied
-                expect(previewWrapper?.style.transform).toContain('50px');
+                await waitFor(() => {
+                    expect(previewWrapper?.style.transform).toContain('50px');
+                });
 
                 // Double-click to reset
-                fireEvent.doubleClick(container);
+                await act(async () => {
+                    fireEvent.doubleClick(container);
+                });
 
                 // Pan should be reset to 0,0
-                expect(previewWrapper?.style.transform).toContain('0px');
+                await waitFor(() => {
+                    expect(previewWrapper?.style.transform).toContain('0px');
+                });
             }
         });
     });

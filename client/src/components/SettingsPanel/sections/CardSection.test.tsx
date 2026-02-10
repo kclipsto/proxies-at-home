@@ -18,6 +18,7 @@ const mockState = vi.hoisted(() => ({
     cardBackPositionX: 0,
     cardBackPositionY: 0,
     dpi: 600,
+    perCardBackOffsets: {},
 }));
 
 const mockSetters = vi.hoisted(() => ({
@@ -45,6 +46,11 @@ vi.mock('flowbite-react', () => ({
     Checkbox: ({ id, checked, onChange }: { id: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => (
         <input type="checkbox" id={id} checked={checked} onChange={onChange} data-testid={`checkbox-${id}`} />
     ),
+    Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
+    Modal: ({ children, show }: { children: React.ReactNode; show: boolean }) => show ? <div>{children}</div> : null,
+    ModalHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    ModalBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    ModalFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('@/components/common', () => ({

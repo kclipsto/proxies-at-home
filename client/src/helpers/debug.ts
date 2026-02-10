@@ -3,7 +3,8 @@
  * DEBUG is automatically true during `npm run dev` (Vite dev server).
  */
 
-export const DEBUG = import.meta.env.DEV;
+// Disable debug in production OR in test environment
+export const DEBUG = import.meta.env.DEV && import.meta.env.MODE !== 'test';
 
 /**
  * Log only in development mode. Use for verbose debugging output.

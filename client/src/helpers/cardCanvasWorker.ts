@@ -11,7 +11,7 @@ import { hasActiveAdjustments } from './adjustmentUtils';
 import { debugLog } from './debug';
 
 // WebGL Debug Logging
-const WEBGL_DEBUG = true;
+const WEBGL_DEBUG = import.meta.env.DEV && import.meta.env.MODE !== 'test';
 let webglContextCount = 0;
 let webglContextsCreated = 0;
 

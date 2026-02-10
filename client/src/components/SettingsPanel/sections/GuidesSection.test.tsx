@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 
 // Mock hoisted values
@@ -201,9 +201,12 @@ describe('GuidesSection', () => {
     describe('page cut guides', () => {
         it('should have Full Lines, Edges Only, and None options', () => {
             render(<GuidesSection />);
-            expect(screen.getByText('Full Lines')).toBeDefined();
-            expect(screen.getByText('Edges Only')).toBeDefined();
-            expect(screen.getByText('None')).toBeDefined();
+            const select = screen.getByTestId('cutLineStyle');
+            const scoped = within(select);
+
+            expect(scoped.getByText('Full Lines')).toBeDefined();
+            expect(scoped.getByText('Edges Only')).toBeDefined();
+            expect(scoped.getByText('None')).toBeDefined();
         });
 
         it('should call setCutLineStyle when changed', () => {

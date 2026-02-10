@@ -59,12 +59,12 @@ describe('StyledSlider', () => {
             expect(defaultProps.onChange).toHaveBeenCalledWith(50);
         });
 
-        it('should not throw on double click without defaultValue', () => {
+        it('should call onChange with 0 (default prop) on double click without defaultValue prop', () => {
             const propsNoDefault = { ...defaultProps, defaultValue: undefined };
             render(<StyledSlider {...propsNoDefault} />);
             const slider = screen.getByRole('slider');
             fireEvent.doubleClick(slider);
-            expect(defaultProps.onChange).not.toHaveBeenCalled();
+            expect(defaultProps.onChange).toHaveBeenCalledWith(0);
         });
     });
 

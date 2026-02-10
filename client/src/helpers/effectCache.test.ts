@@ -134,6 +134,9 @@ describe('effectCache', () => {
         it("should reject pending task on worker error", async () => {
             const processor = getEffectProcessor();
 
+            // Mock console.error to silence expected worker error
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+
             // Custom mock worker that errors
             global.Worker = class extends (MockWorker as unknown as { new(): Worker }) {
                 postMessage = vi.fn((_data: unknown) => {
@@ -149,6 +152,8 @@ describe('effectCache', () => {
 
             vi.advanceTimersByTime(100);
             await expect(p).rejects.toThrow("Worker crashed: Crash!");
+
+            consoleSpy.mockRestore();
         });
     });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { db } from '@/db';
 import { getAllCardbacks, BUILTIN_CARDBACKS, type CardbackOption } from './cardbackLibrary';
 
@@ -30,6 +30,7 @@ describe('Cardback Library', () => {
 
     describe('getAllCardbacks', () => {
         it('should include built-in cardbacks', async () => {
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
             // Pre-add builtin cardbacks to database
             for (const cardback of BUILTIN_CARDBACKS) {
                 await db.cardbacks.add({
@@ -42,6 +43,7 @@ describe('Cardback Library', () => {
             const cardbacks = await getAllCardbacks();
             const builtinCardbacks = cardbacks.filter((c: CardbackOption) => c.source === 'builtin');
             expect(builtinCardbacks.length).toBeGreaterThanOrEqual(1);
+            consoleSpy.mockRestore();
         });
 
         it('should include uploaded cardbacks', async () => {

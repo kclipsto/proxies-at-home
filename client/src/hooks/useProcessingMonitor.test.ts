@@ -21,6 +21,7 @@ vi.mock("@/helpers/effectCache", () => ({
     getEffectProcessor: () => ({
         onActivityChange: mockOnActivityChange,
     }),
+    destroyEffectProcessor: vi.fn(),
 }));
 
 vi.mock("@/helpers/importSession", () => ({

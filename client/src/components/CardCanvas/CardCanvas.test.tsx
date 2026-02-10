@@ -686,6 +686,7 @@ describe("CardCanvas", () => {
 
         describe("Context Loss Handling", () => {
             it("should handle webglcontextrestored", async () => {
+                const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
                 const testBlob = createTestBlob();
                 const { container } = render(
                     <CardCanvas
@@ -711,6 +712,7 @@ describe("CardCanvas", () => {
 
                 // It should try to get context again
                 expect(getContextSpy).toHaveBeenCalled();
+                consoleWarnSpy.mockRestore();
             });
 
             it("should handle error during re-initialization", () => {

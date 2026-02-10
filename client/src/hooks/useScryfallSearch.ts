@@ -31,7 +31,11 @@ export interface UseScryfallSearchOptions {
 }
 
 // Global cache shared across all instances - persists across mode switches
-const globalSearchCache: Record<string, ScryfallCard[]> = {};
+export const globalSearchCache: Record<string, ScryfallCard[]> = {};
+
+export const resetGlobalSearchCache = () => {
+  Object.keys(globalSearchCache).forEach((key) => delete globalSearchCache[key]);
+};
 
 /**
  * Hook for searching Scryfall cards with standardized return interface.
@@ -109,6 +113,11 @@ export function useScryfallSearch(
     }
 
     const performSearch = async () => {
+      if (!query || !query.trim()) {
+        setCards([]); // Clear cards if query is empty
+        return;
+      }
+
       currentQueryRef.current = query;
 
       // Skip if incomplete syntax
@@ -124,7 +133,9 @@ export function useScryfallSearch(
       const cacheKey = getCacheKey(query);
       if (!cacheKey) return;
 
-      if (lastSearchedQueryRef.current === cacheKey) return;
+      if (lastSearchedQueryRef.current === cacheKey) {
+        return;
+      }
       lastSearchedQueryRef.current = cacheKey;
 
       const { name: cleanedName, set, number } = extractCardInfo(trimmedQuery);
@@ -186,8 +197,10 @@ export function useScryfallSearch(
             );
           }
 
+          const searchUrl = `${API_BASE}/api/scryfall/search?q=${encodeURIComponent(searchQuery)}`;
+
           const res = await fetch(
-            `${API_BASE}/api/scryfall/search?q=${encodeURIComponent(searchQuery)}`,
+            searchUrl,
             {
               signal: controller.signal,
             }
@@ -244,7 +257,10 @@ export function useScryfallSearch(
       }
     };
 
-    const timeoutId = setTimeout(performSearch, 500);
+    const timeoutId = setTimeout(() => {
+      performSearch();
+    }, 500);
+
     return () => {
       clearTimeout(timeoutId);
       if (abortControllerRef.current) {

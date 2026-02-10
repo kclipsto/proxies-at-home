@@ -165,7 +165,10 @@ describe('PullToRefresh', () => {
 
             const cancelFn = vi.fn();
             const state = createDragState({ cancel: cancelFn, memo: 42 });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             expect(cancelFn).toHaveBeenCalled();
             expect(result).toBe(42);
@@ -184,7 +187,10 @@ describe('PullToRefresh', () => {
                 event: { pointerType: 'mouse', type: 'pointerdown' } as Partial<PointerEvent>,
                 movement: [0, 200],
             });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             // Should return undefined for mouse events
             expect(result).toBeUndefined();
@@ -202,7 +208,10 @@ describe('PullToRefresh', () => {
                 event: { type: 'mousedown' } as Partial<MouseEvent>,
                 movement: [0, 200],
             });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             expect(result).toBeUndefined();
         });
@@ -220,7 +229,9 @@ describe('PullToRefresh', () => {
                 first: true,
                 currentTarget: createMockElement(0),
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             expect(mockSpringApi.start).toHaveBeenCalled();
         });
@@ -244,7 +255,10 @@ describe('PullToRefresh', () => {
                 } as unknown as Partial<TouchEvent>,
                 memo: 10,
             });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             expect(cancelFn).toHaveBeenCalled();
             expect(result).toBe(10);
@@ -269,7 +283,10 @@ describe('PullToRefresh', () => {
                 } as Partial<PointerEvent>,
                 memo: 25,
             });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             expect(cancelFn).toHaveBeenCalled();
             expect(result).toBe(25);
@@ -288,7 +305,10 @@ describe('PullToRefresh', () => {
                 canceled: true,
                 memo: 15,
             });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             expect(mockSpringApi.start).toHaveBeenCalledWith({ y: 0 });
             expect(result).toBe(15);
@@ -309,7 +329,10 @@ describe('PullToRefresh', () => {
                 currentTarget: element,
                 movement: [0, 100],
             });
-            const result = capturedDragCallback!(state);
+            let result: number | undefined;
+            act(() => {
+                result = capturedDragCallback!(state);
+            });
 
             // memo should be set to the scroll position (50)
             expect(result).toBe(50);
@@ -329,7 +352,9 @@ describe('PullToRefresh', () => {
                 currentTarget: element,
                 movement: [0, 50],
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             // The hasScrollbar state is set internally
             expect(mockSpringApi.start).toHaveBeenCalled();
@@ -349,7 +374,9 @@ describe('PullToRefresh', () => {
                 currentTarget: element,
                 movement: [0, 50],
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             expect(mockSpringApi.start).toHaveBeenCalled();
         });
@@ -371,7 +398,9 @@ describe('PullToRefresh', () => {
                 movement: [0, 100],
                 memo: 0,
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             // Should apply resistance (100 * 0.5 = 50)
             expect(mockSpringApi.start).toHaveBeenCalledWith({ y: 50, immediate: true });
@@ -392,7 +421,9 @@ describe('PullToRefresh', () => {
                 movement: [0, 500], // Large pull
                 memo: 0,
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             // Should be capped at 150
             expect(mockSpringApi.start).toHaveBeenCalledWith({ y: 150, immediate: true });
@@ -413,7 +444,9 @@ describe('PullToRefresh', () => {
                 movement: [0, 200],
                 memo: 0,
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             // Should reset y to 0
             expect(mockSpringApi.start).toHaveBeenCalledWith({ y: 0 });
@@ -433,7 +466,9 @@ describe('PullToRefresh', () => {
                 movement: [0, 150], // Total movement
                 memo: 50, // Initial scroll was at 50
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             // Effective Y = 150 - 50 = 100, with resistance = 50
             expect(mockSpringApi.start).toHaveBeenCalledWith({ y: 50, immediate: true });
@@ -458,7 +493,9 @@ describe('PullToRefresh', () => {
                 movement: [0, 200],
                 memo: 0,
             });
-            capturedDragCallback!(state);
+            act(() => {
+                capturedDragCallback!(state);
+            });
 
             // Rerender to check state update
             rerender(

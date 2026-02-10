@@ -190,27 +190,7 @@ export function CardArtContent({
       hasInitializedScryfallFilters.current = true;
     }
   }, [favoriteScryfallSets]);
-  // Construct effective query including set filters
-  const effectiveQuery = useMemo(() => {
-    const queryTrimmed = query.trim();
-    // Check for explicit set syntax in query (set:, s:, e:, edition:) to avoid conflicts
-    const hasSetRestriction = /\b(set|s|e|edition):/i.test(queryTrimmed);
-
-    if (
-      artSource === "scryfall" &&
-      mode === "search" &&
-      scryfallSetFilters.size > 0 &&
-      !hasSetRestriction
-    ) {
-      const setQuery = Array.from(scryfallSetFilters)
-        .map((s) => `set:${s}`)
-        .join(" OR ");
-      return queryTrimmed ? `${queryTrimmed} (${setQuery})` : `(${setQuery})`;
-    }
-    return query;
-  }, [query, artSource, mode, scryfallSetFilters]);
-
-  const scryfallSearchData = useScryfallSearch(effectiveQuery, {
+  const scryfallSearchData = useScryfallSearch(query, {
     autoSearch: artSource === "scryfall" && mode === "search" && !!query.trim(),
     unique: scryfallSearchMode,
   });
@@ -688,6 +668,7 @@ export function CardArtContent({
         processedDisplayUrl={processedDisplayUrl ?? null}
         onSelectCard={onSelectCard}
         stripQuery={stripQuery}
+        query={query}
       />
     );
   };
@@ -919,7 +900,7 @@ export function CardArtContent({
               setAllSetsCollapsed={setAllSetsCollapsed}
               totalCount={
                 mode === "prints"
-                  ? scryfallPrintsData.prints?.length || 0
+                  ? basePrints?.length || 0
                   : query.trim()
                     ? scryfallSearchData.cards.length
                     : 0
@@ -1246,6 +1227,7 @@ interface ScryfallCardItemProps {
   processedDisplayUrl: string | null;
   onSelectCard: CardArtContentProps["onSelectCard"];
   stripQuery: (url?: string) => string | undefined;
+  query: string;
 }
 
 function ScryfallCardItem({
@@ -1255,8 +1237,19 @@ function ScryfallCardItem({
   processedDisplayUrl,
   onSelectCard,
   stripQuery,
+  query,
 }: ScryfallCardItemProps) {
   const [isFlipped, setIsFlipped] = useState(false);
+
+  useEffect(() => {
+    if (!card.card_faces || card.card_faces.length < 2) return;
+    const q = query.toLowerCase();
+    if (!q) return;
+    const frontName = (card.card_faces[0].name || '').toLowerCase();
+    const backName = (card.card_faces[1].name || '').toLowerCase();
+    const shouldFlip = backName.includes(q) && !frontName.includes(q);
+    setIsFlipped(shouldFlip);
+  }, [query, card.card_faces]);
 
   // Determine front/back URLs for DFCs
   const getDfcUrls = () => {

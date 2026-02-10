@@ -32,6 +32,11 @@ import { searchMpcAutofill } from '@/helpers/mpcAutofillApi';
 describe('useMpcSearch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     describe('initial state', () => {
@@ -62,9 +67,13 @@ describe('useMpcSearch', () => {
 
             renderHook(() => useMpcSearch('Sol Ring'));
 
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
             await vi.waitFor(() => {
                 expect(searchMpcAutofill).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            });
 
             expect(searchMpcAutofill).toHaveBeenCalledWith('Sol Ring', 'CARD', true);
         });
@@ -79,9 +88,14 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Sol Ring'));
 
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
             await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+                expect(result.current.cards.length).toBe(2);
+                expect(result.current.isLoading).toBe(false);
+            });
 
             expect(result.current.cards.length).toBe(2);
             expect(result.current.hasResults).toBe(true);
@@ -92,7 +106,9 @@ describe('useMpcSearch', () => {
         it('should not search when autoSearch is false', async () => {
             renderHook(() => useMpcSearch('Sol Ring', { autoSearch: false }));
 
-            await new Promise(r => setTimeout(r, 600));
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
 
             expect(searchMpcAutofill).not.toHaveBeenCalled();
         });
@@ -109,9 +125,12 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('treasure'));
 
-            await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
+            expect(searchMpcAutofill).toHaveBeenCalledTimes(2);
+            expect(result.current.isLoading).toBe(false);
 
             // Should have called searchMpcAutofill twice - once for CARD, once for TOKEN
             expect(searchMpcAutofill).toHaveBeenCalledWith('treasure', 'CARD', true);
@@ -128,9 +147,14 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('blood'));
 
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
             await vi.waitFor(() => {
                 expect(result.current.cards.length).toBe(2);
-            }, { timeout: 1000 });
+                expect(result.current.isLoading).toBe(false);
+            });
 
             // Should have both results
             expect(result.current.cards.length).toBe(2);
@@ -141,9 +165,13 @@ describe('useMpcSearch', () => {
 
             renderHook(() => useMpcSearch('Sol Ring'));
 
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
             await vi.waitFor(() => {
                 expect(searchMpcAutofill).toHaveBeenCalled();
-            }, { timeout: 1000 });
+            });
 
             // Should only call once with CARD type
             expect(searchMpcAutofill).toHaveBeenCalledTimes(1);
@@ -163,9 +191,14 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Sol Ring'));
 
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
             await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+                expect(result.current.cards.length).toBe(3);
+                expect(result.current.isLoading).toBe(false);
+            });
 
             // Default minDpi is 800, so Card C (600 dpi) should be filtered out
             expect(result.current.filteredCards.length).toBe(2);
@@ -177,13 +210,18 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Sol Ring'));
 
-            await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
 
-            // Toggle Source A filter
-            act(() => {
+            await vi.waitFor(() => {
+                expect(result.current.cards.length).toBe(3);
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
                 result.current.toggleSource('Source A');
+                vi.advanceTimersByTime(10);
             });
 
             // With minDpi 800 and Source A filter, only Card A should remain
@@ -196,19 +234,26 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Sol Ring'));
 
-            await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
 
-            act(() => {
+            await vi.waitFor(() => {
+                expect(result.current.cards.length).toBe(3);
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
                 result.current.setMinDpi(1200);
                 result.current.toggleSource('Source A');
+                vi.advanceTimersByTime(10);
             });
 
             expect(result.current.filteredCards.length).toBe(1);
 
-            act(() => {
+            await act(async () => {
                 result.current.clearFilters();
+                vi.advanceTimersByTime(10);
             });
 
             // After clearing, all 3 cards should be visible (minDpi becomes 0)
@@ -228,13 +273,18 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Test'));
 
-            await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
 
-            // Clear DPI filter to see all cards
-            act(() => {
+            await vi.waitFor(() => {
+                expect(result.current.cards.length).toBe(3);
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
                 result.current.setMinDpi(0);
+                vi.advanceTimersByTime(10);
             });
 
             expect(result.current.filteredCards[0].dpi).toBe(1200);
@@ -247,14 +297,20 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Test'));
 
-            await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
 
-            act(() => {
+            await vi.waitFor(() => {
+                expect(result.current.cards.length).toBe(3);
+                expect(result.current.isLoading).toBe(false);
+            });
+
+            await act(async () => {
                 result.current.setMinDpi(0);
                 result.current.setSortBy('name');
                 result.current.setSortDir('asc');
+                vi.advanceTimersByTime(10);
             });
 
             expect(result.current.filteredCards[0].name).toBe('Alpha');
@@ -269,16 +325,20 @@ describe('useMpcSearch', () => {
 
             const { result } = renderHook(() => useMpcSearch('Test'));
 
-            await vi.waitFor(() => {
-                expect(result.current.hasSearched).toBe(true);
-            }, { timeout: 1000 });
+            await act(async () => {
+                vi.advanceTimersByTime(600);
+            });
+
+            expect(result.current.hasSearched).toBe(true);
+            expect(result.current.isLoading).toBe(false);
 
             expect(result.current.activeFilterCount).toBe(0);
 
-            act(() => {
+            await act(async () => {
                 result.current.setMinDpi(1200); // Different from default 800
                 result.current.toggleSource('Source A');
                 result.current.toggleTag('Tag1');
+                vi.advanceTimersByTime(10);
             });
 
             // 1 for DPI change + 1 for source + 1 for tag

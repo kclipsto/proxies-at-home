@@ -2,8 +2,10 @@ import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { CardEditorModalWrapper } from './CardEditorModalWrapper';
-import { useCardEditorModalStore } from '@/store';
-import { useSettingsStore } from '@/store/settings';
+import { useCardEditorModalStore, type CardEditorModalStore } from '@/store';
+import type { CardOption } from '@/types';
+import type { Image } from '@/db';
+import { useSettingsStore, type Store } from '@/store/settings';
 import { db } from '@/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import * as effectCache from '@/helpers/effectCache';
@@ -65,6 +67,7 @@ vi.mock('./CardEditorModal', () => ({
 vi.mock('@/helpers/effectCache', () => ({
     preRenderEffect: vi.fn().mockResolvedValue(undefined),
     queueBulkPreRender: vi.fn(),
+    destroyEffectProcessor: vi.fn(),
 }));
 
 vi.mock('@/helpers/adjustmentUtils', () => ({
@@ -72,11 +75,11 @@ vi.mock('@/helpers/adjustmentUtils', () => ({
 }));
 
 describe('CardEditorModalWrapper', () => {
-    const mockStoreData = {
+    const mockStoreData: CardEditorModalStore = {
         open: true,
-        card: { uuid: 'test-uuid', imageId: 'test-img' },
-        image: { id: 'test-img' },
-        backCard: { uuid: 'back-uuid', imageId: 'back-img' },
+        card: { uuid: 'test-uuid', imageId: 'test-img', name: 'Test Card', order: 0, isUserUpload: false } as unknown as CardOption,
+        image: { id: 'test-img' } as unknown as Image,
+        backCard: { uuid: 'back-uuid', imageId: 'back-img', name: 'Back Card', order: 1, isUserUpload: false } as unknown as CardOption,
         backImage: null,
         selectedCardUuids: ['test-uuid'],
         initialFace: 'front',
@@ -91,7 +94,7 @@ describe('CardEditorModalWrapper', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockModalStore.mockImplementation((selector: (state: typeof mockStoreData) => unknown) => selector(mockStoreData));
-        mockSettingsStore.mockImplementation((selector: (state: { dpi: number }) => unknown) => selector({ dpi: 300 }));
+        mockSettingsStore.mockImplementation((selector: (state: Store) => unknown) => selector({ dpi: 300 } as unknown as Store));
     });
 
     it('should render nothing if card is missing (loading state)', () => {
@@ -260,7 +263,7 @@ describe('CardEditorModalWrapper', () => {
             mockModalStore.mockImplementation((selector: (state: typeof mockStoreData) => unknown) => selector({
                 ...mockStoreData,
                 card: null,
-                backCard: null,
+                backCard: undefined,
             }));
 
             // Execute each live query callback to simulate the undefined path
@@ -285,8 +288,8 @@ describe('CardEditorModalWrapper', () => {
         it('should handle null imageId in live query', async () => {
             mockModalStore.mockImplementation((selector: (state: typeof mockStoreData) => unknown) => selector({
                 ...mockStoreData,
-                card: { uuid: 'test', imageId: null },
-                backCard: { uuid: 'back', imageId: null },
+                card: { ...mockStoreData.card, imageId: null as unknown as string } as unknown as CardOption,
+                backCard: { ...mockStoreData.backCard, imageId: null as unknown as string } as unknown as CardOption,
             }));
 
             let imageQueryCallback: (() => Promise<unknown>) | undefined;

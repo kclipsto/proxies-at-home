@@ -302,6 +302,11 @@ router.get("/search", async (req: Request, res: Response) => {
         return res.json(data);
     } catch (err) {
         if (axios.isAxiosError(err) && err.response) {
+            if (err.response.status === 404) {
+                const emptyResult = { object: "list", total_cards: 0, has_more: false, data: [] };
+                storeInCache("search", queryHash, emptyResult, CACHE_TTL.search);
+                return res.json(emptyResult);
+            }
             return res.status(err.response.status).json(err.response.data);
         }
         return res.status(500).json({ error: "Failed to search cards" });
