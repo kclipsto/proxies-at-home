@@ -508,4 +508,147 @@ describe('streamCards', () => {
             expect(addRemoteImage).toHaveBeenCalledWith(['http://mpc/mpc-id-123'], 1);
         });
     });
+
+    describe('Share import preferredImageId', () => {
+        it('should apply preferredImageId to override default art', async () => {
+            const options: any = {
+                cardInfos: [{
+                    name: 'Forest',
+                    set: 'm20',
+                    number: '277',
+                    preferredImageId: 'https://custom-art.com/forest-alt.png',
+                }],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            (undoableAddCards as any).mockResolvedValue([{ uuid: 'uuid-forest', name: 'Forest' }]);
+            (addRemoteImage as any)
+                .mockResolvedValueOnce('default-img')
+                .mockResolvedValueOnce('preferred-img');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Forest',
+                        imageUrls: ['https://scryfall.io/default-forest.png'],
+                        set: 'm20',
+                        number: '277',
+                        lang: 'en',
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            expect(addRemoteImage).toHaveBeenCalledWith(
+                ['https://custom-art.com/forest-alt.png'], 1
+            );
+            expect(undoableAddCards).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({ name: 'Forest', imageId: 'preferred-img' })
+                ]),
+                undefined
+            );
+        });
+
+        it('should apply different preferredImageId per instance for same-name cards', async () => {
+            const options: any = {
+                cardInfos: [
+                    {
+                        name: 'Forest',
+                        set: 'm20',
+                        number: '277',
+                        preferredImageId: 'https://art-a.png',
+                        order: 10,
+                    },
+                    {
+                        name: 'Forest',
+                        set: 'm20',
+                        number: '277',
+                        preferredImageId: 'https://art-b.png',
+                        order: 20,
+                    },
+                ],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            const addedCards = [
+                { uuid: 'uuid-forest-1', name: 'Forest' },
+                { uuid: 'uuid-forest-2', name: 'Forest' },
+            ];
+            (undoableAddCards as any).mockResolvedValue(addedCards);
+            (addRemoteImage as any).mockImplementation(async (urls: string[]) => {
+                if (urls[0] === 'https://art-a.png') return 'resolved-art-a';
+                if (urls[0] === 'https://art-b.png') return 'resolved-art-b';
+                return 'default-img';
+            });
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Forest',
+                        imageUrls: ['https://scryfall.io/default-forest.png'],
+                        set: 'm20',
+                        number: '277',
+                        lang: 'en',
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            const addCall = (undoableAddCards as any).mock.calls[0][0];
+            expect(addCall).toHaveLength(2);
+            expect(addCall[0]).toEqual(expect.objectContaining({ imageId: 'resolved-art-a', order: 10 }));
+            expect(addCall[1]).toEqual(expect.objectContaining({ imageId: 'resolved-art-b', order: 20 }));
+        });
+
+        it('should not regress: same-name cards without preferredImageId share default art', async () => {
+            const options: any = {
+                cardInfos: [
+                    { name: 'Forest', set: 'm20', number: '277', order: 10 },
+                    { name: 'Forest', set: 'm20', number: '277', order: 20 },
+                ],
+                language: 'en',
+                importType: 'deck',
+                signal: new AbortController().signal,
+            };
+
+            const addedCards = [
+                { uuid: 'uuid-1', name: 'Forest' },
+                { uuid: 'uuid-2', name: 'Forest' },
+            ];
+            (undoableAddCards as any).mockResolvedValue(addedCards);
+            (addRemoteImage as any).mockResolvedValue('default-forest-img');
+
+            (fetchEventSource as any).mockImplementation(async (_url: string, opts: any) => {
+                await opts.onmessage({
+                    event: 'card-found',
+                    data: JSON.stringify({
+                        name: 'Forest',
+                        imageUrls: ['https://scryfall.io/forest.png'],
+                        set: 'm20',
+                        number: '277',
+                        lang: 'en',
+                    })
+                });
+                opts.onmessage({ event: 'done', data: '' });
+            });
+
+            await streamCards(options);
+
+            const addCall = (undoableAddCards as any).mock.calls[0][0];
+            expect(addCall).toHaveLength(2);
+            expect(addCall[0]).toEqual(expect.objectContaining({ imageId: 'default-forest-img', order: 10 }));
+            expect(addCall[1]).toEqual(expect.objectContaining({ imageId: 'default-forest-img', order: 20 }));
+        });
+    });
 });
