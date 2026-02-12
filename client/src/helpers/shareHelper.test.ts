@@ -26,7 +26,7 @@ vi.mock('./imageSourceUtils', () => ({
         if (!id) return 'unknown';
         if (id.startsWith('mpc_')) return 'mpc';
         if (id.includes('scryfall')) return 'scryfall';
-        if (id.startsWith('local_')) return 'custom';
+        if (id.startsWith('local_')) return 'upload-library';
         return 'unknown';
     }),
 }));
@@ -78,7 +78,7 @@ describe('shareHelper', () => {
             expect(result.shareCards[0][2]).toBe(0); // order
         });
 
-        it('should skip custom upload cards', () => {
+        it('should skip upload library cards', () => {
             const cards: CardOption[] = [
                 {
                     uuid: 'card-1',
@@ -218,7 +218,7 @@ describe('shareHelper', () => {
     });
 
     describe('getShareWarnings', () => {
-        it('should return empty array when no custom uploads', () => {
+        it('should return empty array when no upload library items', () => {
             const cards: CardOption[] = [
                 {
                     uuid: 'card-1',
@@ -236,7 +236,7 @@ describe('shareHelper', () => {
             expect(warnings).toHaveLength(0);
         });
 
-        it('should warn about custom uploads', () => {
+        it('should warn about upload library items', () => {
             const cards: CardOption[] = [
                 {
                     uuid: 'card-1',
@@ -257,10 +257,10 @@ describe('shareHelper', () => {
             const warnings = getShareWarnings(cards);
 
             expect(warnings).toHaveLength(1);
-            expect(warnings[0]).toContain('2 custom uploads');
+            expect(warnings[0]).toContain('2 upload library items');
         });
 
-        it('should use singular form for one custom upload', () => {
+        it('should use singular form for one upload library item', () => {
             const cards: CardOption[] = [
                 {
                     uuid: 'card-1',
@@ -273,7 +273,23 @@ describe('shareHelper', () => {
 
             const warnings = getShareWarnings(cards);
 
-            expect(warnings[0]).toContain('1 custom upload will');
+            expect(warnings[0]).toContain('1 upload library item will');
+        });
+
+        it('should ignore empty upload library items', () => {
+            const cards: CardOption[] = [
+                {
+                    uuid: 'card-1',
+                    name: 'Empty Slot',
+                    order: 0,
+                    imageId: undefined,
+                    isUserUpload: true,
+                },
+            ];
+
+            const warnings = getShareWarnings(cards);
+
+            expect(warnings).toHaveLength(0);
         });
     });
 

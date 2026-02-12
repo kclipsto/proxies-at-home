@@ -118,7 +118,7 @@ export function UploadSection({ isCollapsed, onToggle, cardCount, mobile, onUplo
             </div>
             <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
               <Move className="w-4 h-4 shrink-0 text-green-600 dark:text-green-400" />
-              <span>To move a card - {mobile ? "long press and drag" : "drag from the box at the top right"}</span>
+              <span>To move a card - {mobile ? "long press and drag" : "just drag it"}</span>
             </div>
             <div className="flex items-center gap-2 bg-gray-300 dark:bg-gray-600 p-2 rounded-md h-full">
               <Copy className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />

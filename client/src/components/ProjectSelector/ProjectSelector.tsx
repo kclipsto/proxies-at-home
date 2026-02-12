@@ -152,6 +152,9 @@ export function ProjectSelector() {
         filterMatchType: state.filterMatchType,
         exportMode: state.exportMode,
         decklistSortAlpha: state.decklistSortAlpha,
+        registrationMarks: state.registrationMarks,
+        registrationMarksPortrait: state.registrationMarksPortrait,
+        defaultCardbackId: state.defaultCardbackId,
     })));
 
     const shareWarnings = useMemo(() => getShareWarnings(cards), [cards]);

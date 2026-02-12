@@ -78,6 +78,12 @@ async function persistDetectedBleed(card: CardOption, detectedHasBuiltInBleed: b
   if (card.hasBuiltInBleed === undefined && detectedHasBuiltInBleed !== undefined) {
     try {
       await db.cards.update(card.uuid, { hasBuiltInBleed: detectedHasBuiltInBleed });
+      if (card.imageId && card.isUserUpload) {
+        const userImage = await db.user_images.get(card.imageId);
+        if (userImage && userImage.hasBuiltInBleed === undefined) {
+          await db.user_images.update(card.imageId, { hasBuiltInBleed: detectedHasBuiltInBleed });
+        }
+      }
     } catch (err) {
       console.warn("[persistDetectedBleed] Failed to persist detected bleed setting:", err);
     }
@@ -132,6 +138,19 @@ export function useImageProcessing({
       return URL.createObjectURL(imageRecord.originalBlob);
     }
     if (imageRecord?.sourceUrl) {
+      // Self-heal corrupted image records from previous bug where sourceUrl was incorrectly set to the image hash
+      if (/^[a-f0-9]{64}(-[a-z]+)?$/i.test(imageRecord.sourceUrl)) {
+        console.warn(`[useImageProcessing] Found corrupted image record for ${card.imageId} with a hash as sourceUrl. Attempting to repair from user_images.`);
+        const userImage = await db.user_images.get(imageRecord.sourceUrl);
+        if (userImage?.data) {
+          await db.images.update(card.imageId, {
+            originalBlob: userImage.data,
+            sourceUrl: undefined,
+            source: 'upload-library'
+          });
+          return URL.createObjectURL(userImage.data);
+        }
+      }
       return toProxied(imageRecord.sourceUrl);
     }
 
@@ -176,7 +195,7 @@ export function useImageProcessing({
         id: imageId,
         originalBlob: userImage.data,
         refCount: 1,
-        source: 'custom',
+        source: 'upload-library',
       });
       return URL.createObjectURL(userImage.data);
     }

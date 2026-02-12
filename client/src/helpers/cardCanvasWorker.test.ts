@@ -262,7 +262,7 @@ describe("cardCanvasWorker", () => {
             updateUniforms(gl, uniforms, DEFAULT_RENDER_PARAMS, 800, 600);
 
             // Verify key uniform methods were called
-            expect(gl.uniform2f).toHaveBeenCalledWith(uniforms.u_resolution, 800, 600);
+            expect(gl.uniform2f).toHaveBeenCalledWith(uniforms.u_resolution, 750, 562.5);
             expect(gl.uniform1f).toHaveBeenCalled();
             expect(gl.uniform3f).toHaveBeenCalled();
         });

@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { CardOption, PrintInfo } from '@/types';
 
 // Image source types for explicit tracking
-export type ImageSource = 'mpc' | 'scryfall' | 'custom' | 'cardback';
+export type ImageSource = 'mpc' | 'scryfall' | 'upload-library' | 'cardback';
 
 // Define a type for the image data to be stored
 export interface Image {
@@ -120,6 +120,16 @@ export interface UserImage {
   data: Blob;             // The raw image file
   type: string;           // MIME type
   createdAt: number;
+  displayName?: string;
+  typeLine?: string;      // From canonical card match (e.g. "Creature — Human Wizard")
+  canonicalCardName?: string;
+  canonicalCardSet?: string;
+  canonicalCardNumber?: string;
+  isFavorite?: boolean;
+  tags?: string[];
+  hasBuiltInBleed?: boolean;
+  linkedFrontHash?: string;
+  linkedBackHash?: string;
 }
 
 export interface UserPreferences {
@@ -133,13 +143,15 @@ export interface UserPreferences {
   favoriteMpcDpi?: number | null;
   favoriteMpcSort?: 'name' | 'dpi' | 'source' | null;
   favoriteMpcGroupBySource?: boolean;
-
   // Global Scryfall Favorites
   favoriteScryfallSets?: string[];
   favoriteScryfallSort?: 'name' | 'released' | null;
   favoriteScryfallGroupBySet?: boolean;
   favoriteScryfallSearchMode?: 'cards' | 'prints' | null;
-
+  // Global Upload Library Preferences
+  uploadLibrarySort?: 'name' | 'date' | 'type' | null;
+  uploadLibrarySortDirection?: 'asc' | 'desc';
+  favoriteUploadLibraryGroupByType?: boolean;
   // Global UI State
   settingsPanelState?: { order: string[], collapsed: Record<string, boolean> };
   settingsPanelWidth?: number;
@@ -442,6 +454,42 @@ class ProxxiedDexie extends Dexie {
       userPreferences: '&id',
       user_images: '&hash',
       scryfallSetsCache: '&key, cachedAt',
+    });
+    // Version 20: Extend user_images with metadata for Custom Upload Library
+    this.version(20).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId, projectId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+      projects: '&id, shareId, lastOpenedAt',
+      userPreferences: '&id',
+      user_images: '&hash, displayName, isFavorite, createdAt',
+      scryfallSetsCache: '&key, cachedAt',
+    });
+
+    // Version 21: Rename 'custom' source to 'upload-library'
+    this.version(21).stores({
+      cards: '&uuid, imageId, order, name, needsEnrichment, needs_token, linkedFrontId, linkedBackId, projectId',
+      images: '&id, refCount, displayDpi, displayBleedWidth, exportDpi, exportBleedWidth',
+      cardbacks: '&id',
+      settings: '&id',
+      imageCache: '&url, cachedAt',
+      cardMetadataCache: 'id, name, set, number, cachedAt',
+      effectCache: '&key, cachedAt',
+      mpcSearchCache: '&[query+cardType], cachedAt',
+      projects: '&id, shareId, lastOpenedAt',
+      userPreferences: '&id',
+      user_images: '&hash, displayName, isFavorite, createdAt',
+      scryfallSetsCache: '&key, cachedAt',
+    }).upgrade(async tx => {
+      // Migrate 'custom' source to 'upload-library' in images table
+      await tx.table('images')
+        .filter(img => img.source === 'custom')
+        .modify({ source: 'upload-library' });
     });
   }
 }

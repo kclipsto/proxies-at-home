@@ -13,7 +13,7 @@ vi.mock('@/helpers/ImportOrchestrator', () => ({
 }));
 
 vi.mock('@/helpers/dbUtils', () => ({
-    addCustomImage: vi.fn(),
+    addUploadLibraryImage: vi.fn(),
 }));
 
 vi.mock('@/store/loading', () => ({

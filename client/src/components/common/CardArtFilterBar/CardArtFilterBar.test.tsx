@@ -1,9 +1,10 @@
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CardArtFilterBar } from './CardArtFilterBar';
+import type { UploadLibraryItem } from '@/helpers/uploadLibrary';
 import type { CardArtFilterBarProps, ScryfallFilterProps } from './CardArtFilterBar';
 import type { MpcAutofillCard } from '@/helpers/mpcAutofillApi';
-import type { ScryfallSet } from '../../../../shared/types';
+import type { ScryfallSet } from '../../../../../shared/types';
 import { useUserPreferencesStore } from '@/store';
 import { fetchScryfallSets } from '@/helpers/scryfallApi';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -224,6 +225,80 @@ describe('CardArtFilterBar', () => {
 
             expect(screen.getByText('Source A')).toBeInTheDocument();
             expect(screen.getByText('Source B')).toBeInTheDocument();
+        });
+    });
+
+    describe('Upload Library Mode', () => {
+        const defaultProps: CardArtFilterBarProps = {
+            mode: 'upload-library',
+            uploads: [
+                { hash: '1', displayName: 'Custom 1', typeLine: 'Creature', isFavorite: false, createdAt: 1000, imageUrl: '' } as unknown as UploadLibraryItem,
+                { hash: '2', displayName: 'Custom 2', typeLine: 'Instant', isFavorite: true, createdAt: 2000, imageUrl: '' } as unknown as UploadLibraryItem,
+            ],
+            filteredUploads: [],
+            sortBy: 'name',
+            setSortBy: vi.fn(),
+            sortDir: 'asc',
+            setSortDir: vi.fn(),
+            typeFilter: [],
+            setTypeFilter: vi.fn(),
+            showFavoritesOnly: false,
+            setShowFavoritesOnly: vi.fn(),
+            totalCount: 2,
+            filteredCount: 2,
+            groupByType: false,
+            onToggleGroupByType: vi.fn(),
+            allTypesCollapsed: false,
+            onToggleAllTypesCollapsed: vi.fn(),
+        };
+
+        it('renders Upload Library filter controls', () => {
+            render(<CardArtFilterBar {...defaultProps} />);
+
+            expect(screen.getByText('Sort')).toBeInTheDocument();
+            // Type dropdown might not show if no types are derived, but we passed uploads with types.
+            // Wait, we need to ensure getCardTypes is mocked or works. 
+            // It's a helper, likely pure function.
+            // Let's check if Type dropdown appears.
+            // Actually getCardTypes defaults to splitting type line.
+
+            // We expect "Type" button or similar.
+            // The component renders MultiSelectDropdown with label "Type".
+            expect(screen.getByText('Type')).toBeInTheDocument();
+        });
+
+        it('toggles favorites only', () => {
+            render(<CardArtFilterBar {...defaultProps} />);
+            const starButton = screen.getByTitle('Select all favorites');
+            fireEvent.click(starButton);
+            expect(defaultProps.setShowFavoritesOnly).toHaveBeenCalledWith(true);
+        });
+
+        it('extracts and displays non-standard custom types', async () => {
+            const customProps = {
+                ...defaultProps,
+                uploads: [
+                    { ...defaultProps.uploads[0], typeLine: 'MyCustomType' },
+                    { ...defaultProps.uploads[1], typeLine: 'AnotherType - Subtype' },
+                ]
+            };
+
+            render(<CardArtFilterBar {...customProps} />);
+
+            // Should show "Type" label (which implies dropdown is rendered)
+            expect(screen.getByText('Type')).toBeInTheDocument();
+
+            // Open dropdown
+            const typeButton = screen.getByText('Type').closest('button');
+            fireEvent.click(typeButton!);
+
+            // Should see custom types
+            await waitFor(() => {
+                expect(screen.getByText('MyCustomType')).toBeInTheDocument();
+                // For "AnotherType - Subtype", it depends on extraction logic, 
+                // but at least "AnotherType" should be there if we fix it.
+                // Current strict logic will show NOTHING for these, so the "Type" button probably won't even render if availability is 0.
+            });
         });
     });
 });

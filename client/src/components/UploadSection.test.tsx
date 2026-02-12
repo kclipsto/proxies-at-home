@@ -214,7 +214,7 @@ describe('UploadSection', () => {
         it('should show desktop drag instructions', () => {
             render(<UploadSection isCollapsed={false} cardCount={10} mobile={false} />);
 
-            expect(screen.getByText(/drag from the box at the top right/)).toBeDefined();
+            expect(screen.getByText(/just drag it/)).toBeDefined();
         });
 
         it('should show mobile drag instructions', () => {

@@ -23,7 +23,7 @@ export interface ShareData {
     c: ShareCard[];               // Cards
     dfc?: [number, number][];     // DFC links: [frontIndex, backIndex]
     st?: ShareSettings;           // Settings
-    skipped?: number;             // Count of skipped custom uploads
+    skipped?: number;             // Count of skipped upload library items
 }
 
 /**
@@ -61,6 +61,9 @@ export interface ShareSettings {
     gp?: string;   // guidePlacement
     cgL?: number;  // cutGuideLengthMm
     cls?: string;  // cutLineStyle
+    rm?: string;   // registrationMarks
+    rmp?: boolean; // registrationMarksPortrait
+    dci?: string;  // defaultCardbackId
 
     // Spacing/Position
     spc?: number;  // cardSpacingMm
@@ -117,6 +120,9 @@ export interface SettingsInput {
     guidePlacement?: string;
     cutGuideLengthMm?: number;
     cutLineStyle?: string;
+    registrationMarks?: string;
+    registrationMarksPortrait?: boolean;
+    defaultCardbackId?: string;
     cardSpacingMm?: number;
     cardPositionX?: number;
     cardPositionY?: number;
@@ -244,7 +250,7 @@ function expandOverrides(compressed: Record<string, unknown>): CardOverrides {
 
 /**
  * Extract card identifier (Scryfall UUID or MPC ID) from a CardOption
- * Returns [type, id] or null if not shareable (custom upload)
+ * Returns [type, id] or null if not shareable (upload library item)
  */
 function getCardIdentifier(card: CardOption): ['s' | 'm' | 'b', string] | null {
     const source = inferImageSource(card.imageId);
@@ -269,7 +275,7 @@ function getCardIdentifier(card: CardOption): ['s' | 'm' | 'b', string] | null {
         }
     }
 
-    // Custom uploads are not shareable
+    // Upload library items are not shareable
     return null;
 }
 
@@ -291,7 +297,7 @@ export function serializeCards(cards: CardOption[]): { shareCards: ShareCard[]; 
 
         const identifier = getCardIdentifier(card);
         if (!identifier) {
-            // Only count as skipped if it's an actual custom upload, not a placeholder
+            // Only count as skipped if it's an actual user upload, not a placeholder
             if (card.isUserUpload) {
                 skipped++;
             }
@@ -497,27 +503,27 @@ export async function loadShare(id: string): Promise<ShareData> {
 }
 
 /**
- * Get warnings about the share (e.g., custom uploads being excluded)
- * Only warns about actual custom uploads, not placeholder cards
+ * Get warnings about the share (e.g., upload library items being excluded)
+ * Only warns about actual user uploads, not placeholder cards
  */
 export function getShareWarnings(cards: CardOption[]): string[] {
     const warnings: string[] = [];
 
-    let customUploadCount = 0;
+    let uploadLibraryCount = 0;
     for (const card of cards) {
         if (card.linkedFrontId) continue; // Skip backs
-        // Only count actual custom uploads, not placeholders (undefined imageId)
-        if (card.isUserUpload) {
+        // Only count actual user uploads, not placeholders (undefined imageId)
+        if (card.isUserUpload && card.imageId) {
             // Check if it's a built-in cardback, which IS shareable now
-            if (card.imageId && card.imageId.startsWith('cardback_')) {
+            if (card.imageId.startsWith('cardback_')) {
                 continue;
             }
-            customUploadCount++;
+            uploadLibraryCount++;
         }
     }
 
-    if (customUploadCount > 0) {
-        warnings.push(`${customUploadCount} custom upload${customUploadCount > 1 ? 's' : ''} will be excluded`);
+    if (uploadLibraryCount > 0) {
+        warnings.push(`${uploadLibraryCount} upload library item${uploadLibraryCount > 1 ? 's' : ''} will be excluded`);
     }
 
     return warnings;

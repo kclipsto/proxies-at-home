@@ -633,7 +633,7 @@ describe('ArtworkModal', () => {
             mockState.isModalOpen = true;
             mockState.modalCard = { uuid: 'test-uuid', name: 'Test Card', imageId: 'test-image-id' };
             mockGetAllCardbacks.mockResolvedValue([
-                { id: 'cardback-1', name: 'Custom Back', source: 'custom' },
+                { id: 'cardback-1', name: 'Custom Back', source: 'upload-library' },
                 { id: 'cardback-2', name: 'Default Back', source: 'builtin' },
             ]);
         });

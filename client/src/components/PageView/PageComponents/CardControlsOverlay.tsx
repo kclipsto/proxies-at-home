@@ -248,22 +248,10 @@ const CardControl = memo(function CardControl({
                         {isSelected && <Check className={`${mobile ? 'w-4 h-4' : 'w-3.5 h-3.5'} text-white`} />}
                     </div>
 
-                    {/* ⠿ Drag Handle - Desktop shows always, Mobile uses long press on card */}
-                    {!disabled && !mobile && (
-                        <div
-                            {...listeners}
-                            className="absolute right-[4px] top-1 w-6 h-6 bg-white text-green text-sm rounded-sm flex items-center justify-center cursor-move group-hover:opacity-100 opacity-50 select-none z-20 pointer-events-auto"
-                            title="Drag"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            ⠿
-                        </div>
-                    )}
-
-                    {/* ↻ Flip Button - Mobile: top-right (where drag handle is on desktop), Desktop: below drag handle */}
+                    {/* ↻ Flip Button */}
                     <div
                         data-testid="flip-button"
-                        className={`absolute ${mobile ? 'right-[4px] top-1 w-8 h-8' : 'right-[4px] top-8 w-6 h-6'} rounded-sm flex items-center justify-center cursor-pointer group-hover:opacity-100 select-none z-20 transition-colors pointer-events-auto ${isFlipped
+                        className={`absolute ${mobile ? 'right-[4px] top-1 w-8 h-8' : 'right-[4px] top-1 w-6 h-6'} rounded-sm flex items-center justify-center cursor-pointer group-hover:opacity-100 select-none z-20 transition-colors pointer-events-auto ${isFlipped
                             ? 'bg-blue-500 text-white opacity-100'
                             : 'bg-white text-gray-700 opacity-50 hover:bg-gray-100'
                             }`}

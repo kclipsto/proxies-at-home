@@ -1,6 +1,6 @@
 import { memo } from "react";
 
-type ManaSymbol = "W" | "U" | "B" | "R" | "G" | "C" | "M";
+export type ManaSymbol = "W" | "U" | "B" | "R" | "G" | "C" | "M";
 
 type Props = {
     symbol: ManaSymbol;

@@ -1,20 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { TextInput } from "flowbite-react";
 import { X, Filter } from "lucide-react";
+import type { UploadLibraryItem } from "@/helpers/uploadLibrary";
 
 import { ArtSourceToggle, ResponsiveModal, FloatingZoomPanel, CardArtContent } from "../common";
+import type { ArtSource } from "../common/ArtSourceToggle";
 import { useToastStore } from "@/store/toast";
-
 import { useZoomShortcuts } from "@/hooks/useZoomShortcuts";
 import { useArtworkModalStore } from "@/store/artworkModal";
-
-
-type ArtSource = 'scryfall' | 'mpc';
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/db";
 
 interface AdvancedSearchProps {
     isOpen: boolean;
     onClose: () => void;
     onSelectCard: (cardName: string, mpcImageUrl?: string, specificPrint?: { set: string; number: string }) => void;
+    onUploadLibraryItemSelect?: (upload: UploadLibraryItem) => void;
     title?: string;
     keepOpenOnAdd?: boolean;
     initialSource?: ArtSource;
@@ -24,6 +25,7 @@ export function AdvancedSearch({
     isOpen,
     onClose,
     onSelectCard,
+    onUploadLibraryItemSelect,
     title = "",
     keepOpenOnAdd = false,
     initialSource = 'scryfall',
@@ -55,9 +57,8 @@ export function AdvancedSearch({
     };
 
     const handleSelectCard = useCallback((cardName: string, imageUrl?: string, specificPrint?: { set: string; number: string }) => {
-        if (artSource === 'mpc') {
-            const mpcImageUrl = imageUrl || '';
-            onSelectCard(cardName, mpcImageUrl);
+        if (artSource === 'mpc' || artSource === 'upload-library') {
+            onSelectCard(cardName, imageUrl || '');
         } else {
             onSelectCard(cardName, undefined, specificPrint);
         }
@@ -74,6 +75,7 @@ export function AdvancedSearch({
         setArtSource('scryfall');
     }, []);
 
+    const hasUploadLibraryItems = useLiveQuery(() => db.user_images.count().then(c => c > 0), [], false);
     if (!isOpen) return null;
 
     // Custom header/sidebar component for the modal
@@ -92,6 +94,7 @@ export function AdvancedSearch({
                 <ArtSourceToggle
                     value={artSource}
                     onChange={setArtSource}
+                    showUploadLibrary={hasUploadLibraryItems}
                     vertical
                     reversed
                 />
@@ -119,6 +122,13 @@ export function AdvancedSearch({
                     query={query}
                     cardSize={cardZoom}
                     onSelectCard={handleSelectCard}
+                    onUploadLibraryItemSelect={onUploadLibraryItemSelect ? (upload) => {
+                        onUploadLibraryItemSelect(upload);
+                        if (!keepOpenOnAdd) {
+                            handleClear();
+                            onClose();
+                        }
+                    } : undefined}
                     onSwitchSource={handleSwitchToScryfall}
                     autoSearch={artSource === 'mpc'}
                     filtersCollapsed={mpcFiltersCollapsed}
@@ -143,6 +153,7 @@ export function AdvancedSearch({
                     <ArtSourceToggle
                         value={artSource}
                         onChange={setArtSource}
+                        showUploadLibrary={hasUploadLibraryItems}
                         className="w-full"
                     />
                 </div>
@@ -154,35 +165,34 @@ export function AdvancedSearch({
                         <ArtSourceToggle
                             value={artSource}
                             onChange={setArtSource}
+                            showUploadLibrary={hasUploadLibraryItems}
                         />
                     </div>
 
-                    {/* Filter button - for both MPC and Scryfall */}
-                    {(artSource === 'mpc' || artSource === 'scryfall') && (
-                        <button
-                            onClick={() => setMpcFiltersCollapsed(prev => !prev)}
-                            className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed
-                                ? 'text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                : 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/30'
-                                }`}
-                            title={mpcFiltersCollapsed ? 'Show Filters' : 'Hide Filters'}
-                        >
-                            <div className="relative">
-                                <Filter className="w-5 h-5" strokeWidth={2.5} />
-                                {activeFilterCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-800">
-                                        {activeFilterCount}
-                                    </span>
-                                )}
-                            </div>
-                        </button>
-                    )}
+                    {/* Filter toggle button */}
+                    <button
+                        onClick={() => setMpcFiltersCollapsed(prev => !prev)}
+                        className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed
+                            ? 'text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            : 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                            }`}
+                        title={mpcFiltersCollapsed ? 'Show Filters' : 'Hide Filters'}
+                    >
+                        <div className="relative">
+                            <Filter className="w-5 h-5" strokeWidth={2.5} />
+                            {activeFilterCount > 0 && (
+                                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-800">
+                                    {activeFilterCount}
+                                </span>
+                            )}
+                        </div>
+                    </button>
 
                     <div className="relative flex-1 h-10">
                         <TextInput
                             sizing="lg"
                             type="text"
-                            placeholder={artSource === 'mpc' ? "Search MPC Autofill..." : "Search card name..."}
+                            placeholder={artSource === 'upload-library' ? "Search my uploads..." : artSource === 'mpc' ? "Search MPC Autofill..." : "Search card name..."}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             autoFocus

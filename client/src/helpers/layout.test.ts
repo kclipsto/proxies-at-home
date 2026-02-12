@@ -4,12 +4,11 @@ import {
     computeCardLayouts,
     computeGridDimensions,
     chunkCards,
-    baseCardWidthMm,
-    baseCardHeightMm,
     type SourceTypeSettings,
     type CardLayoutInfo,
 } from './layout';
 import type { CardOption } from '../../../shared/types';
+import { CONSTANTS } from '@/constants/commonConstants';
 
 describe('getCardTargetBleed', () => {
     const globalBleedWidth = 5; // 5mm global default
@@ -117,8 +116,8 @@ describe('computeCardLayouts', () => {
 
         expect(layouts).toHaveLength(2);
         expect(layouts[0].bleedMm).toBe(3); // noBleed uses global
-        expect(layouts[0].cardWidthMm).toBe(baseCardWidthMm + 3 * 2);
-        expect(layouts[0].cardHeightMm).toBe(baseCardHeightMm + 3 * 2);
+        expect(layouts[0].cardWidthMm).toBe(CONSTANTS.CARD_WIDTH_MM + 3 * 2);
+        expect(layouts[0].cardHeightMm).toBe(CONSTANTS.CARD_HEIGHT_MM + 3 * 2);
         expect(layouts[1].bleedMm).toBe(3); // withBleed uses global
     });
 });
@@ -137,13 +136,13 @@ describe('computeGridDimensions', () => {
         const result = computeGridDimensions(layouts, 3, 2);
 
         // Column widths: max of each column
-        expect(result.colWidthsMm[0]).toBe(Math.max(baseCardWidthMm, 65, 67)); // Col 0: cards 0, 3
-        expect(result.colWidthsMm[1]).toBe(Math.max(baseCardWidthMm, 66, 63)); // Col 1: cards 1, 4
-        expect(result.colWidthsMm[2]).toBe(Math.max(baseCardWidthMm, 64, 65)); // Col 2: cards 2, 5
+        expect(result.colWidthsMm[0]).toBe(Math.max(CONSTANTS.CARD_WIDTH_MM, 65, 67)); // Col 0: cards 0, 3
+        expect(result.colWidthsMm[1]).toBe(Math.max(CONSTANTS.CARD_WIDTH_MM, 66, 63)); // Col 1: cards 1, 4
+        expect(result.colWidthsMm[2]).toBe(Math.max(CONSTANTS.CARD_WIDTH_MM, 64, 65)); // Col 2: cards 2, 5
 
         // Row heights: max of each row
-        expect(result.rowHeightsMm[0]).toBe(Math.max(baseCardHeightMm, 90, 89, 91)); // Row 0: cards 0, 1, 2
-        expect(result.rowHeightsMm[1]).toBe(Math.max(baseCardHeightMm, 92, 88, 90)); // Row 1: cards 3, 4, 5
+        expect(result.rowHeightsMm[0]).toBe(Math.max(CONSTANTS.CARD_HEIGHT_MM, 90, 89, 91)); // Row 0: cards 0, 1, 2
+        expect(result.rowHeightsMm[1]).toBe(Math.max(CONSTANTS.CARD_HEIGHT_MM, 92, 88, 90)); // Row 1: cards 3, 4, 5
     });
 
     it('should handle card spacing', () => {
@@ -161,8 +160,8 @@ describe('computeGridDimensions', () => {
     it('should handle empty layouts', () => {
         const result = computeGridDimensions([], 3, 2);
 
-        expect(result.colWidthsMm).toEqual([baseCardWidthMm, baseCardWidthMm, baseCardWidthMm]);
-        expect(result.rowHeightsMm).toEqual([baseCardHeightMm, baseCardHeightMm]);
+        expect(result.colWidthsMm).toEqual([CONSTANTS.CARD_WIDTH_MM, CONSTANTS.CARD_WIDTH_MM, CONSTANTS.CARD_WIDTH_MM]);
+        expect(result.rowHeightsMm).toEqual([CONSTANTS.CARD_HEIGHT_MM, CONSTANTS.CARD_HEIGHT_MM]);
     });
 });
 

@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import { inferCardNameFromFilename } from "@/helpers/mpc";
-import { addCustomImage } from "@/helpers/dbUtils";
+import { addUploadLibraryImage } from "@/helpers/dbUtils";
 import type { ImportIntent } from "@/helpers/importParsers";
 import { useLoadingStore } from "@/store/loading";
 import { useToastStore } from "@/store/toast";
 import { useCardImport } from "@/hooks/useCardImport";
-import { Upload } from "lucide-react";
+import { Upload, Settings } from "lucide-react";
 import { db } from "@/db";
 import { SplitButton, type SplitButtonOption } from "../common";
+import { UploadLibraryEditor } from "./UploadLibraryEditor";
+import { useLiveQuery } from "dexie-react-hooks";
 
 type UploadMode = "standard" | "withBleed" | "cardback" | "auto";
 
@@ -27,6 +29,8 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
     const setLoadingTask = useLoadingStore((state) => state.setLoadingTask);
     const [uploadMode, setUploadMode] = useState<UploadMode>("auto");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [isEditorOpen, setIsEditorOpen] = useState(false);
+    const hasUploads = useLiveQuery(() => db.user_images.count().then(c => c > 0), [], false);
     const { processCards } = useCardImport({
         onComplete: () => onUploadComplete?.()
     });
@@ -63,10 +67,11 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
             if (opts.hasBuiltInBleed === true) suffix = "-mpc";
             if (opts.hasBuiltInBleed === undefined) suffix = "-auto";
 
-            const imageId = await addCustomImage(file, suffix);
+            const cardName = inferCardNameFromFilename(file.name) || `Custom Art`;
+            const imageId = await addUploadLibraryImage(file, suffix, cardName, opts.hasBuiltInBleed);
 
             const intent: ImportIntent = {
-                name: inferCardNameFromFilename(file.name) || `Custom Art`,
+                name: cardName,
                 quantity: 1,
                 isToken: false,
                 localImageId: imageId,
@@ -130,6 +135,11 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
                 options={UPLOAD_MODE_OPTIONS}
                 value={uploadMode}
                 onSelect={setUploadMode}
+                extraAction={hasUploads ? {
+                    icon: Settings,
+                    onClick: () => setIsEditorOpen(true),
+                    title: "Manage Uploads",
+                } : undefined}
             />
 
             {/* Hidden file input */}
@@ -142,6 +152,7 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
                 onClick={(e) => ((e.target as HTMLInputElement).value = "")}
                 className="hidden"
             />
+            <UploadLibraryEditor isOpen={isEditorOpen} onClose={() => setIsEditorOpen(false)} />
         </div>
     );
 }
