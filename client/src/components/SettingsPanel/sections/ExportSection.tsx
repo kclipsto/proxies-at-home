@@ -149,7 +149,7 @@ export function ExportSection({ cards }: Props) {
                     </svg>
                     Cutting Template (SVG)
                 </Button>
-                <AutoTooltip content="Export an SVG cutting template based on your current layout settings. Import this into Silhouette Studio for print & cut alignment." />
+                <AutoTooltip content="Export an SVG cutting template based on your current layout settings. Import this into Silhouette Studio for print & cut alignment. See setup requirements in the Guides section when registration marks are enabled." />
             </div>
         </div>
     );
