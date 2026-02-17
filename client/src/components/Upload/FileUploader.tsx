@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { inferCardNameFromFilename } from "@/helpers/mpc";
 import { addCustomImage } from "@/helpers/dbUtils";
+import { fillTransparentCorners } from "@/helpers/cornerFiller";
 import type { ImportIntent } from "@/helpers/importParsers";
 import { useLoadingStore } from "@/store/loading";
 import { useToastStore } from "@/store/toast";
@@ -42,9 +43,11 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
                 const imageId = `cardback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 const cardbackName = file.name.replace(/\.[^/.]+$/, "");
 
+                const processedBlob = await fillTransparentCorners(file);
+
                 await db.cardbacks.add({
                     id: imageId,
-                    originalBlob: file,
+                    originalBlob: processedBlob,
                     displayName: cardbackName,
                     hasBuiltInBleed: true,
                 });
@@ -63,7 +66,8 @@ export function FileUploader({ mobile, onUploadComplete }: Props) {
             if (opts.hasBuiltInBleed === true) suffix = "-mpc";
             if (opts.hasBuiltInBleed === undefined) suffix = "-auto";
 
-            const imageId = await addCustomImage(file, suffix);
+            const processedBlob = await fillTransparentCorners(file);
+            const imageId = await addCustomImage(processedBlob, suffix);
 
             const intent: ImportIntent = {
                 name: inferCardNameFromFilename(file.name) || `Custom Art`,
