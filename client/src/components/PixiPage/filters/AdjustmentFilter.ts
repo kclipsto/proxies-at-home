@@ -33,11 +33,16 @@ void main(void) {
 
 import { ADJUSTMENT_FRAGMENT } from '../../../shaders/adjustmentShader';
 
+const FRAGMENT = `
+#define IS_PIXI 1
+${ADJUSTMENT_FRAGMENT}
+`;
+
 export class AdjustmentFilter extends Filter {
     constructor() {
         const glProgram = GlProgram.from({
             vertex: VERTEX,
-            fragment: ADJUSTMENT_FRAGMENT,
+            fragment: FRAGMENT,
             name: 'adjustment-filter',
         });
 

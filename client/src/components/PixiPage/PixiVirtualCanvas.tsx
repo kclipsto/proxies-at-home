@@ -780,7 +780,9 @@ function PixiVirtualCanvasInner({
                 // Update filters based on card overrides and global settings
                 // Use back overrides when flipped, front overrides otherwise
                 const overrides = isFlipped ? (backOverrides ?? card.overrides) : card.overrides;
-                const textureSize: [number, number] = [width, height];
+
+                // Darken filter always uses the standard screen layout dimensions
+                const standardTextureSize: [number, number] = [width, height];
 
                 // Apply darken filter
                 applyDarkenFilter(darkenFilter, overrides, {
@@ -790,11 +792,23 @@ function PixiVirtualCanvasInner({
                     darkenAmount: globalDarkenAmount,
                     darkenBrightness: globalDarkenBrightness,
                     darkenAutoDetect: globalDarkenAutoDetect,
-                }, darknessFactor, textureSize);
+                }, darknessFactor, standardTextureSize);
+
+                const dpi = useSettingsStore.getState().dpi ?? 300;
+                const SCREEN_DPI = 96.0;
+                const kernelScale = Math.max(1.0, dpi / SCREEN_DPI);
+
+                // We must process enhancements on a buffer geometrically matching the PDF worker
+                // to maintain identical blur radii and visual weighting relative to the image details.
+                // PDF worker builds a buffer of (logicalWidth * kernelScale).
+                // In PixiJS, the absolute screen size is (width * zoom).
+                // Scaling `filter.resolution` bridges the gap perfectly so Pixi builds a buffer matching export size.
+                adjustFilter.resolution = zoom > 0 ? kernelScale / zoom : 1;
+                const physicalTextureSize: [number, number] = [width, height];
 
                 // Calculate holo animation and apply adjustment filter
                 const holoAnimation = calculateCardHoloAnimation(overrides);
-                applyAdjustmentFilter(adjustFilter, overrides, textureSize, holoAnimation);
+                applyAdjustmentFilter(adjustFilter, overrides, physicalTextureSize, holoAnimation);
 
                 // Compute UV correction for holo effects when card is partially clipped by screen
                 // Get current scroll position directly from container for better sync (avoids lag from React state)

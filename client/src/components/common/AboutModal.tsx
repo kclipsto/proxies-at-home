@@ -94,7 +94,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                         </Button>
                         <Button
                             className="w-full bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-500 dark:hover:bg-yellow-600"
-                            onClick={() => openExternal('https://buymeacoffee.com/proxxied')}
+                            onClick={() => openExternal('https://buymeacoffee.com/kaiserclipston')}
                         >
                             <Coffee className="mr-2 h-5 w-5" />
                             Buy Me a Coffee

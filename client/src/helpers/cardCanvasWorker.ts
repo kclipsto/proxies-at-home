@@ -336,7 +336,22 @@ export function updateUniforms(
     width: number,
     height: number
 ): void {
-    gl.uniform2f(uniforms.u_resolution, width, height);
+    // Standardize 'Screen DPI' for parity calculations
+    // PixiJS previews roughly reflect a 96 DPI screen
+    const SCREEN_DPI = 96.0;
+
+    let kernelScale = 1.0;
+    if (params.dpi) {
+        // Exact Calculation: Scale kernel to match the physical size on a 96 DPI screen
+        kernelScale = Math.max(1.0, params.dpi / SCREEN_DPI);
+    } else {
+        // Fallback: Estimate DPI based on visual width (assuming ~750px is "standard" 300dpi look)
+        kernelScale = Math.max(1.0, width / 750.0);
+    }
+
+    // Apply the scale to the RESOLUTION uniform (simulating a lower res)
+    // This makes 1.0/uResolution larger, effectively scaling up the kernel size
+    gl.uniform2f(uniforms.u_resolution, width / kernelScale, height / kernelScale);
 
     // Basic adjustments (note: shader expects uBrightness range -50 to +50 converted to /255)
     // Our params use normalized values, so we scale appropriately
