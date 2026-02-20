@@ -13,7 +13,7 @@ import { hasActiveAdjustments } from './adjustmentUtils';
 import { overridesToRenderParams } from './cardCanvasWorker';
 import type { RenderParams } from '../components/CardCanvas/types';
 import { useSettingsStore } from '../store/settings';
-import { IMAGE_PROCESSING } from '../constants/imageProcessing';
+import { CONSTANTS } from '../constants/commonConstants';
 
 interface IdleWorker {
     worker: Worker;
@@ -52,7 +52,7 @@ class EffectProcessor {
 
     private constructor() {
         // Limit to 4 workers to balance speed vs resource usage
-        this.maxWorkers = Math.min(IMAGE_PROCESSING.MAX_WORKERS, navigator.hardwareConcurrency || 2);
+        this.maxWorkers = Math.min(CONSTANTS.MAX_WORKERS, navigator.hardwareConcurrency || 2);
     }
 
     static getInstance(): EffectProcessor {
@@ -124,7 +124,7 @@ class EffectProcessor {
                     if (workerIdx > -1) this.workers.splice(workerIdx, 1);
                     worker.terminate();
                 }
-            }, IMAGE_PROCESSING.WORKER_IDLE_TIMEOUT_MS);
+            }, CONSTANTS.WORKER_IDLE_TIMEOUT_MS);
 
             this.idleWorkers.push({ worker, timeoutId });
             this.processNextTask();

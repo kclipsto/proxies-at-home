@@ -1,21 +1,16 @@
-/**
- * Standard MTG card dimensions in millimeters.
- * Source: https://en.wikipedia.org/wiki/Standard_card_size
- */
-export const CARD_WIDTH_MM = 63;
-export const CARD_HEIGHT_MM = 88;
+import { CONSTANTS } from "@/constants/commonConstants";
 
 /**
  * Standard aspect ratio (Width / Height)
  * ~0.7159
  */
-export const STANDARD_ASPECT_RATIO = CARD_WIDTH_MM / CARD_HEIGHT_MM;
+export const STANDARD_ASPECT_RATIO = CONSTANTS.CARD_WIDTH_MM / CONSTANTS.CARD_HEIGHT_MM;
 
 /**
  * MPC-ready aspect ratio (with 1/8" bleed)
  * 63mm + 2*3.175mm / 88mm + 2*3.175mm = 69.35 / 94.35 ≈ 0.7350
  */
-export const MPC_ASPECT_RATIO = (CARD_WIDTH_MM + 6.35) / (CARD_HEIGHT_MM + 6.35);
+export const MPC_ASPECT_RATIO = (CONSTANTS.CARD_WIDTH_MM + 6.35) / (CONSTANTS.CARD_HEIGHT_MM + 6.35);
 
 
 /**

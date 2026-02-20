@@ -5,9 +5,7 @@ import { ToggleButtonGroup, AutoTooltip } from "../../common";
 import { useMemo, useEffect, useCallback } from "react";
 import type { CardOption } from "@/types";
 import { settingsToCuttingTemplate, downloadCuttingTemplate } from "@/helpers/exportCuttingTemplate";
-
-const INCH_TO_MM = 25.4;
-const MAX_BROWSER_DIMENSION = 16384;
+import { CONSTANTS } from "@/constants/commonConstants";
 
 const DECKLIST_ORDER_OPTIONS = [
     { id: 'displayed' as const, label: 'As Displayed' },
@@ -61,12 +59,12 @@ export function ExportSection({ cards }: Props) {
     ]);
 
     const maxSafeDpiForPage = useMemo(() => {
-        const widthIn = pageUnit === "in" ? pageWidth : pageWidth / INCH_TO_MM;
-        const heightIn = pageUnit === "in" ? pageHeight : pageHeight / INCH_TO_MM;
+        const widthIn = pageUnit === "in" ? pageWidth : pageWidth / CONSTANTS.MM_PER_IN;
+        const heightIn = pageUnit === "in" ? pageHeight : pageHeight / CONSTANTS.MM_PER_IN;
         return Math.floor(
             Math.min(
-                MAX_BROWSER_DIMENSION / widthIn,
-                MAX_BROWSER_DIMENSION / heightIn
+                CONSTANTS.MAX_BROWSER_DIMENSION / widthIn,
+                CONSTANTS.MAX_BROWSER_DIMENSION / heightIn
             )
         );
     }, [pageWidth, pageHeight, pageUnit]);

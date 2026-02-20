@@ -47,9 +47,6 @@ export interface CardWithGlobalLayout {
     height: number;
     // Bleed for cut guide rendering
     bleedMm: number;
-    // Base card dimensions (without bleed)
-    baseCardWidthMm: number;
-    baseCardHeightMm: number;
     // Precomputed hashes for fast memo comparison (avoids JSON.stringify on every render)
     overridesHash?: string;
     backOverridesHash?: string;
@@ -798,11 +795,7 @@ function PixiVirtualCanvasInner({
                 const SCREEN_DPI = 96.0;
                 const kernelScale = Math.max(1.0, dpi / SCREEN_DPI);
 
-                // We must process enhancements on a buffer geometrically matching the PDF worker
-                // to maintain identical blur radii and visual weighting relative to the image details.
-                // PDF worker builds a buffer of (logicalWidth * kernelScale).
-                // In PixiJS, the absolute screen size is (width * zoom).
-                // Scaling `filter.resolution` bridges the gap perfectly so Pixi builds a buffer matching export size.
+                // Scale adjustment resolution to dynamically match the PDF worker's relative sizing geometry.
                 adjustFilter.resolution = zoom > 0 ? kernelScale / zoom : 1;
                 const physicalTextureSize: [number, number] = [width, height];
 

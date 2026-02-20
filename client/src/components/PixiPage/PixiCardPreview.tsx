@@ -12,11 +12,13 @@ import { getPixiApp } from './pixiSingleton';
 import { calculateHoloAnimation, type HoloAnimationStyle } from './holoAnimation';
 import { useSettingsStore } from '@/store/settings';
 import {
-    hasActiveAdjustments,
     applyDarkenFilter,
     applyAdjustmentFilter,
+    type CardOverrides
 } from './cardFilterUtils';
 import type { RenderParams } from '../CardCanvas/types';
+import { hasActiveAdjustments } from '@/helpers/adjustmentUtils';
+import { CONSTANTS } from "@/constants/commonConstants";
 
 interface PixiCardPreviewProps {
     /** Image blob to render */
@@ -251,19 +253,14 @@ function PixiCardPreviewInner({
         const globalSettings = useSettingsStore.getState();
 
         // Calculate standardized layout dimensions at 96 DPI
-        const CONTENT_WIDTH_MM = 63;
-        const CONTENT_HEIGHT_MM = 88;
-        const SCREEN_DPI = 96;
-        const logicalWidth = (CONTENT_WIDTH_MM / 25.4) * SCREEN_DPI;
-        const logicalHeight = (CONTENT_HEIGHT_MM / 25.4) * SCREEN_DPI;
-        const standardTextureSize: [number, number] = [logicalWidth, logicalHeight];
+        const standardTextureSize: [number, number] = [CONSTANTS.CARD_WIDTH_PX, CONSTANTS.CARD_HEIGHT_PX];
 
         // Resolve exact settings manually applied by the slider vs global parameters 
         const activeDarkenMode = params.darkenUseGlobalSettings ? globalSettings.darkenMode : params.darkenMode;
         const activeDarkenAutoDetect = params.darkenUseGlobalSettings ? globalSettings.darkenAutoDetect : params.darkenAutoDetect;
 
         // Build temporary overrides object merging slider states and toggled globals for the external utility
-        const resolvedOverrides: any = { ...params };
+        const resolvedOverrides: RenderParams = { ...params };
         resolvedOverrides.darkenMode = activeDarkenMode;
         resolvedOverrides.darkenAutoDetect = activeDarkenAutoDetect;
         resolvedOverrides.darkenEdgeWidth = params.darkenUseGlobalSettings ? globalSettings.darkenEdgeWidth : params.darkenEdgeWidth;
@@ -281,14 +278,10 @@ function PixiCardPreviewInner({
         );
 
         // Apply Adjustment Filter
-        // We must process enhancements on a buffer geometrically matching the PDF worker 
-        // to maintain identical blur radii and visual weighting relative to the image detail density. 
-        // PDF worker statically builds a buffer evaluating exactly to (logicalWidth * kernelScale). 
-        // In PixiJS, our viewport screen bounds vary based on UI container sizes (`sprite.width`).
-        // Calculating this exact scaling bridges the gap perfectly blindly tracking display sizes.
+        // Scale adjustment resolution to dynamically match the PDF worker's relative sizing geometry.
         const dpi = globalSettings.dpi ?? 300;
-        const kernelScale = Math.max(1.0, dpi / SCREEN_DPI);
-        adjustFilter.resolution = sprite.width > 0 ? (logicalWidth * kernelScale) / sprite.width : 1;
+        const kernelScale = Math.max(1.0, dpi / CONSTANTS.SCREEN_DPI);
+        adjustFilter.resolution = sprite.width > 0 ? (CONSTANTS.CARD_WIDTH_PX * kernelScale) / sprite.width : 1;
 
         applyAdjustmentFilter(
             adjustFilter,
@@ -304,7 +297,7 @@ function PixiCardPreviewInner({
             filters.push(darkenFilter);
         }
 
-        if (hasActiveAdjustments(resolvedOverrides as any, false)) {
+        if (hasActiveAdjustments(resolvedOverrides as unknown as CardOverrides, false)) {
             filters.push(adjustFilter);
         }
 

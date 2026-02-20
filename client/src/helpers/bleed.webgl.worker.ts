@@ -5,7 +5,7 @@ import {
     trimBleedByMm,
 } from "./imageProcessing";
 import { STANDARD_ASPECT_RATIO, detectBleed } from "./cardDimensions";
-import { IMAGE_PROCESSING } from "../constants/imageProcessing";
+import { CONSTANTS } from "../constants/commonConstants";
 import { processCardImageWebGL, processExistingBleedWebGL } from "./webglImageProcessing";
 import { db } from "../db";
 import { debugLog } from "./debug";
@@ -177,7 +177,7 @@ self.onmessage = async (e: MessageEvent) => {
         // 3. Handle Bleed Modes
         if (bleedMode === 'existing') {
             // Use existing bleed as-is
-            const existingBleed = existingBleedMm ?? IMAGE_PROCESSING.DEFAULT_MPC_BLEED_MM;
+            const existingBleed = existingBleedMm ?? CONSTANTS.DEFAULT_MPC_BLEED_MM;
             result = await processExistingBleedWebGL(imageBitmap, existingBleed, {
                 unit: 'mm',
                 exportDpi: dpi,
@@ -201,16 +201,16 @@ self.onmessage = async (e: MessageEvent) => {
             if (effectiveHasBleed) {
                 const assumedExistingBleedMm = (existingBleedMm && existingBleedMm > 0)
                     ? existingBleedMm
-                    : IMAGE_PROCESSING.DEFAULT_MPC_BLEED_MM;
+                    : CONSTANTS.DEFAULT_MPC_BLEED_MM;
 
-                const targetBleedMm = unit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
+                const targetBleedMm = unit === 'in' ? bleedEdgeWidth * CONSTANTS.MM_PER_IN : bleedEdgeWidth;
                 debugLog(`[Worker] Routing: Target=${targetBleedMm.toFixed(3)}mm Existing=${assumedExistingBleedMm.toFixed(3)}mm ShouldTrim=${shouldTrimBleed(targetBleedMm, assumedExistingBleedMm)}`);
 
                 if (shouldTrimBleed(targetBleedMm, assumedExistingBleedMm)) {
                     const trimAmount = assumedExistingBleedMm - targetBleedMm;
                     imageBitmap.close();
 
-                    if (trimAmount > IMAGE_PROCESSING.BLEED_TRIM_EPSILON_MM) {
+                    if (trimAmount > CONSTANTS.BLEED_TRIM_EPSILON_MM) {
                         imageBitmap = await createTrimmedBitmapWithExistingBleed(blob!, trimAmount);
                     } else {
                         imageBitmap = await createImageBitmap(blob!);

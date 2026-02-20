@@ -3,7 +3,7 @@ type IdleWorker = {
   timeoutId: ReturnType<typeof setTimeout> | null;
 };
 
-import { IMAGE_PROCESSING } from '@/constants/imageProcessing';
+import { CONSTANTS } from '@/constants/commonConstants';
 import { debugLog } from './debug';
 
 // Maximum total tasks in queue to prevent memory exhaustion on large imports
@@ -103,7 +103,7 @@ export class ImageProcessor {
   private constructor() {
     // Detect Firefox - it has aggressive WebGL context limits and memory issues
     const isFirefox = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
-    const maxWorkers = isFirefox ? IMAGE_PROCESSING.MAX_WORKERS_FIREFOX : IMAGE_PROCESSING.MAX_WORKERS;
+    const maxWorkers = isFirefox ? CONSTANTS.MAX_WORKERS_FIREFOX : CONSTANTS.MAX_WORKERS;
 
     // Cap workers based on hardware and browser limits
     const concurrency = navigator.hardwareConcurrency || 4;
@@ -120,7 +120,7 @@ export class ImageProcessor {
    * Pre-warm workers for faster first-use performance.
    * Call this on app init to avoid cold-start latency.
    */
-  prewarm(count: number = IMAGE_PROCESSING.PREWARM_WORKER_COUNT): void {
+  prewarm(count: number = CONSTANTS.PREWARM_WORKER_COUNT): void {
     for (let i = 0; i < Math.min(count, this.baseMaxWorkers); i++) {
       if (this.allWorkers.size < this.baseMaxWorkers) {
         const worker = this.createWorker();
@@ -188,7 +188,7 @@ export class ImageProcessor {
   private returnWorkerToPool(worker: Worker) {
     const timeoutId = setTimeout(() => {
       this.terminateWorker(worker);
-    }, IMAGE_PROCESSING.WORKER_IDLE_TIMEOUT_MS); // Terminate after inactivity
+    }, CONSTANTS.WORKER_IDLE_TIMEOUT_MS); // Terminate after inactivity
 
     this.idleWorkers.push({ worker, timeoutId });
     this.processNextTask();

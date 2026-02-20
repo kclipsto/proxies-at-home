@@ -7,6 +7,7 @@ import { useArtworkModalStore } from "../store";
 import { useSelectionStore } from "../store/selection";
 import type { CardOption } from "../../../shared/types";
 import { Check, RefreshCw } from "lucide-react";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 type SortableCardProps = {
   card: CardOption;
@@ -202,16 +203,12 @@ const SortableCard = memo(function SortableCard(props: SortableCardProps) {
       disabled: props.disabled,
     });
 
-  // Base card dimensions in mm (MTG standard)
-  const BASE_CARD_WIDTH_MM = 63;
-  const BASE_CARD_HEIGHT_MM = 88;
-
   // Calculate actual card dimensions
   const actualCardWidth = imageBleedWidth !== undefined
-    ? BASE_CARD_WIDTH_MM + imageBleedWidth * 2
+    ? CONSTANTS.CARD_WIDTH_MM + imageBleedWidth * 2
     : totalCardWidth;
   const actualCardHeight = imageBleedWidth !== undefined
-    ? BASE_CARD_HEIGHT_MM + imageBleedWidth * 2
+    ? CONSTANTS.CARD_HEIGHT_MM + imageBleedWidth * 2
     : totalCardHeight;
 
   const scaledTransform = transform ? {

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { SourceBleedInput } from "@/components/CardEditorModal/SourceBleedInput";
 import { BleedModeControl } from "@/components/CardEditorModal/BleedModeControl";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 
 export function BleedSection() {
@@ -67,8 +68,8 @@ export function BleedSection() {
                             const newUnit = e.target.value as 'mm' | 'in';
                             if (newUnit !== bleedEdgeUnit) {
                                 const converted = newUnit === 'in'
-                                    ? bleedEdgeWidth / 25.4
-                                    : bleedEdgeWidth * 25.4;
+                                    ? bleedEdgeWidth / CONSTANTS.DISPLAY_MM_TO_PX
+                                    : bleedEdgeWidth * CONSTANTS.DISPLAY_MM_TO_PX;
                                 const decimals = newUnit === 'in' ? 3 : 2;
                                 const rounded = parseFloat(converted.toFixed(decimals));
                                 setBleedEdgeWidth(rounded);

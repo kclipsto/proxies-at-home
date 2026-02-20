@@ -1,7 +1,5 @@
 import type { CardOption } from "../../../shared/types";
-
-export const baseCardWidthMm = 63;
-export const baseCardHeightMm = 88;
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export type CardLayoutInfo = {
     cardWidthMm: number;
@@ -61,8 +59,8 @@ export function computeCardLayouts(
     return pageCards.map((card) => {
         const bleedMm = getCardTargetBleed(card, sourceSettings, globalBleedWidth);
         return {
-            cardWidthMm: baseCardWidthMm + bleedMm * 2,
-            cardHeightMm: baseCardHeightMm + bleedMm * 2,
+            cardWidthMm: CONSTANTS.CARD_WIDTH_MM + bleedMm * 2,
+            cardHeightMm: CONSTANTS.CARD_HEIGHT_MM + bleedMm * 2,
             bleedMm,
         };
     });
@@ -83,8 +81,8 @@ export function computeGridDimensions(
 ): GridDimensions {
     // Initialize with base dimensions (no bleed) to allow growing only as needed
     // This matches PageView behavior: empty slots or small cards don't force global bleed size
-    const startWidth = baseCardWidthMm;
-    const startHeight = baseCardHeightMm;
+    const startWidth = CONSTANTS.CARD_WIDTH_MM;
+    const startHeight = CONSTANTS.CARD_HEIGHT_MM;
 
     // Compute max width per column
     const colWidthsMm: number[] = Array(columns).fill(startWidth);

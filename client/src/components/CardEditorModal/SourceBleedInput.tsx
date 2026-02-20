@@ -1,6 +1,7 @@
 import { Label, Select } from "flowbite-react";
 import { useState } from "react";
 import { NumberInput, AutoTooltip } from "../common";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export interface SourceBleedInputProps {
     valueMm: number;
@@ -27,7 +28,7 @@ export function SourceBleedInput({
     // Calculate display value based on current unit
     // We round to avoid floating point ugliness in the input
     const displayValue = unit === 'in'
-        ? parseFloat((valueMm / 25.4).toFixed(3))
+        ? parseFloat((valueMm / CONSTANTS.MM_PER_IN).toFixed(3))
         : parseFloat(valueMm.toFixed(3));
 
     const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,7 +36,7 @@ export function SourceBleedInput({
 
         // Convert input value back to mm for the parent
         const valueInMm = unit === 'in'
-            ? newValue * 25.4
+            ? newValue * CONSTANTS.MM_PER_IN
             : newValue;
 
         onChangeMm(valueInMm);

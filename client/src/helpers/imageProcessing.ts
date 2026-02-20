@@ -1,13 +1,9 @@
 
-import { IMAGE_PROCESSING } from '../constants/imageProcessing';
+import { CONSTANTS, IN_TO_PX } from "@/constants/commonConstants";
 
 export const NEAR_BLACK = 16;
 export const NEAR_WHITE = 239;
 export const ALPHA_EMPTY = 10;
-
-export const IN = (inches: number, dpi: number) => Math.round(inches * dpi);
-const MM_TO_IN = (mm: number) => mm / 25.4;
-export const MM_TO_PX = (mm: number, dpi: number) => IN(MM_TO_IN(mm), dpi);
 
 export function toProxied(url: string, apiBase: string) {
     if (!url) return url;
@@ -66,8 +62,8 @@ export function getBleedInPixels(
     dpi: number
 ): number {
     return unit === "mm"
-        ? IN(bleedEdgeWidth / 25.4, dpi)
-        : IN(bleedEdgeWidth, dpi);
+        ? IN_TO_PX(bleedEdgeWidth / 25.4, dpi)
+        : IN_TO_PX(bleedEdgeWidth, dpi);
 }
 
 export function bucketDpiFromHeight(h: number) {
@@ -110,7 +106,7 @@ export async function trimBleedByMm(
     const tempBitmap = input instanceof Blob ? await createImageBitmap(input) : input;
 
     // Standard MTG card is 63x88mm, calculate pixel ratio based on existing bleed dimensions
-    const pxPerMm = tempBitmap.height / (IMAGE_PROCESSING.CARD_HEIGHT_MM + existingBleedMm * 2);
+    const pxPerMm = tempBitmap.height / (CONSTANTS.CARD_HEIGHT_MM + existingBleedMm * 2);
     const trimPx = Math.round(trimAmountMm * pxPerMm);
     const w = tempBitmap.width - trimPx * 2;
     const h = tempBitmap.height - trimPx * 2;
@@ -147,7 +143,7 @@ export function blackenAllNearBlackPixels(
 
     const dpi = bucketDpiFromHeight(height);
     const dpiScale = dpi / 300;
-    const EDGE_PX = Math.round(IMAGE_PROCESSING.EDGE_ZONE_BASE_PX * dpiScale);
+    const EDGE_PX = Math.round(CONSTANTS.EDGE_ZONE_BASE_PX * dpiScale);
 
     // Use shared utility for histogram-based darkness calculation
     const darknessFactor = computeDarknessFactorFromPixels(d);
@@ -307,7 +303,7 @@ export function applyEdgeContrastCPU(imageData: ImageData, darknessFactor: numbe
     const STANDARD_CARD_HEIGHT_300DPI = 1039;
     const dpiScale = height / STANDARD_CARD_HEIGHT_300DPI;
     // Base edge zone is 64px at 300dpi (~5.5mm), scaled proportionally
-    const EDGE_PX = Math.round(IMAGE_PROCESSING.EDGE_ZONE_BASE_PX * dpiScale);
+    const EDGE_PX = Math.round(CONSTANTS.EDGE_ZONE_BASE_PX * dpiScale);
 
     const MAX_CONTRAST = 1 + 0.22 * darknessFactor;
     const MAX_BRIGHTNESS = -8 * darknessFactor;
@@ -412,7 +408,7 @@ export function applyDarkenAllCPU(imageData: ImageData): void {
  * @param existingBleedMm - The existing built-in bleed in mm (default 3.175)
  * @returns true if we should trim existing bleed instead of generating new bleed
  */
-export function shouldTrimBleed(targetBleedMm: number, existingBleedMm: number = IMAGE_PROCESSING.DEFAULT_MPC_BLEED_MM): boolean {
+export function shouldTrimBleed(targetBleedMm: number, existingBleedMm: number = CONSTANTS.DEFAULT_MPC_BLEED_MM): boolean {
     return targetBleedMm <= existingBleedMm;
 }
 

@@ -5,6 +5,7 @@ import { AsyncLock } from "./AsyncLock";
 import type { WorkerPdfSettings } from "./serializeSettingsForWorker";
 import { getEffectCacheEntry } from "./effectCache";
 import { hasActiveAdjustments } from "./adjustmentUtils";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 /**
  * Worker event types for coordinator pattern
@@ -135,9 +136,9 @@ export async function exportProxyPagesToPdf({
     try {
       const toPoints = (value: number, unit: "mm" | "in") => {
         if (unit === "mm") {
-          return (value / 25.4) * 72;
+          return (value / CONSTANTS.MM_PER_IN) * CONSTANTS.CANVAS_DPI;
         }
-        return value * 72;
+        return value * CONSTANTS.CANVAS_DPI;
       };
 
       const pdfWidth = toPoints(pageWidth, pageSizeUnit);

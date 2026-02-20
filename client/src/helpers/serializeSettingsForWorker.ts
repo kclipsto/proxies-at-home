@@ -5,6 +5,7 @@
 
 import type { SourceTypeSettings } from './layout';
 import { useSettingsStore } from '../store/settings';
+import { CONSTANTS } from '@/constants/commonConstants';
 
 /**
  * Normalized settings for worker consumption.
@@ -80,7 +81,7 @@ function serializeBleedSettingsForWorker(): WorkerBleedSettings {
 
     // Convert bleed width to mm if needed
     const bleedEdgeWidthMm = state.bleedEdgeUnit === 'in'
-        ? state.bleedEdgeWidth * 25.4
+        ? state.bleedEdgeWidth * CONSTANTS.MM_PER_IN
         : state.bleedEdgeWidth;
 
     // Build normalized source settings

@@ -25,6 +25,7 @@ import { initializeFlipState, useSelectionStore } from "../store/selection";
 import { useFilteredAndSortedCards } from "../hooks/useFilteredAndSortedCards";
 
 import { getExpectedBleedWidth, getHasBuiltInBleed, getEffectiveBleedMode, type GlobalSettings } from "../helpers/imageSpecs";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 
 
@@ -52,7 +53,7 @@ export default function ProxyBuilderPage() {
   const filterMatchType = useSettingsStore((state) => state.filterMatchType);
 
   // Convert to mm for processing (stored value may be in inches)
-  const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth;
+  const bleedEdgeWidthMm = bleedEdgeUnit === 'in' ? bleedEdgeWidth * CONSTANTS.MM_PER_IN : bleedEdgeWidth;
 
   // UI Panels (Global User Preferences)
   const settingsPanelWidth = useUserPreferencesStore((state) => state.preferences?.settingsPanelWidth ?? 320);

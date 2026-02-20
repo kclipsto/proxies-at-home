@@ -1,6 +1,4 @@
 import {
-    IN,
-    MM_TO_PX,
     toProxied,
     trimBleedFromBitmap,
     trimBleedByMm,
@@ -14,6 +12,7 @@ import { generatePerCardGuide, executePathCommands, type GuideStyle } from "./cu
 import { db, type EffectCacheEntry } from "../db";
 import type { CardOption, CardOverrides } from "../../../shared/types";
 import { debugLog } from "./debug";
+import { IN_TO_PX, MM_TO_PX } from "@/constants/commonConstants";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
@@ -439,8 +438,8 @@ self.onmessage = async (event: MessageEvent) => {
             perCardBackOffsets
         } = settings;
 
-        const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
-        const pageHeightPx = pageSizeUnit === "in" ? IN(pageHeight, DPI) : MM_TO_PX(pageHeight, DPI);
+        const pageWidthPx = pageSizeUnit === "in" ? IN_TO_PX(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
+        const pageHeightPx = pageSizeUnit === "in" ? IN_TO_PX(pageHeight, DPI) : MM_TO_PX(pageHeight, DPI);
         const contentWidthInPx = MM_TO_PX(63, DPI);
         const contentHeightInPx = MM_TO_PX(88, DPI);
         const spacingPx = MM_TO_PX(cardSpacingMm || 0, DPI);

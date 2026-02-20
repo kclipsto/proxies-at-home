@@ -1,9 +1,9 @@
 import { Modal, ModalHeader, ModalBody, ModalFooter, Label, Button, Checkbox } from "flowbite-react";
 import { useState, useCallback, useMemo } from "react";
 import { useSettingsStore } from "@/store/settings";
-import { baseCardWidthMm, baseCardHeightMm } from "@/helpers/layout";
 import { settingsToCuttingTemplate, downloadCuttingTemplatePDF, generateCuttingTemplatePDFBlob } from "@/helpers/exportCuttingTemplate";
 import { StyledSlider } from "@/components/common/StyledSlider";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 interface PerCardOffsetModalProps {
   isOpen: boolean;
@@ -37,7 +37,7 @@ export function PerCardOffsetModal({ isOpen, onClose }: PerCardOffsetModalProps)
 
   // Convert bleed to mm
   const bleedMm = bleedEdge
-    ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth)
+    ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * CONSTANTS.MM_PER_IN : bleedEdgeWidth)
     : 0;
 
   // Cleanup preview URL on unmount or close
@@ -56,8 +56,8 @@ export function PerCardOffsetModal({ isOpen, onClose }: PerCardOffsetModalProps)
   }, [cleanupPreview, onClose]);
 
   // Card slot size (content + bleed)
-  const slotWidthMm = baseCardWidthMm + 2 * bleedMm;
-  const slotHeightMm = baseCardHeightMm + 2 * bleedMm;
+  const slotWidthMm = CONSTANTS.CARD_WIDTH_MM + 2 * bleedMm;
+  const slotHeightMm = CONSTANTS.CARD_HEIGHT_MM + 2 * bleedMm;
 
   // Grid positions
   const gridPositions = useMemo(() => {

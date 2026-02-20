@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AutoTooltip } from "@/components/common";
 import { ColorPicker } from "../../common/ColorPicker";
 import { StyledSlider } from "../../common/StyledSlider";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export function GuidesSection() {
     const guideColor = useSettingsStore((state) => state.guideColor);
@@ -40,9 +41,8 @@ export function GuidesSection() {
     // Max guide width is limited by the space between cards so they don't overlap
     // Space between cut lines = Spacing + 2 * Bleed (if bleed enabled)
     // Max width per guide (growing outward) = (Spacing + 2 * Bleed) / 2 = Spacing/2 + Bleed
-    // Convert to pixels at 96 DPI (CSS pixels): (mm) * (96/25.4)
     const availableSpace = bleedEdge ? (cardSpacingMm / 2 + bleedEdgeWidth) : (cardSpacingMm / 2);
-    const maxGuideWidth = Math.floor(availableSpace * (96 / 25.4));
+    const maxGuideWidth = Math.floor(availableSpace * CONSTANTS.DISPLAY_MM_TO_PX);
 
     // Check if there's enough space for outside guides (need at least guideWidth space)
     const canUseOutside = maxGuideWidth >= guideWidth && maxGuideWidth > 0;
@@ -423,8 +423,8 @@ export function GuidesSection() {
                     <button
                         onClick={() => setRegistrationMarks('none')}
                         className={`p-2 rounded-lg border transition-colors flex flex-col items-center gap-1 ${registrationMarks === 'none'
-                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
-                                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
+                            : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                             }`}
                     >
                         <svg width="32" height="42" viewBox="0 0 40 52" className="flex-shrink-0">
@@ -443,8 +443,8 @@ export function GuidesSection() {
                     <button
                         onClick={() => setRegistrationMarks('3')}
                         className={`p-2 rounded-lg border transition-colors flex flex-col items-center gap-1 ${registrationMarks === '3'
-                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
-                                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
+                            : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                             }`}
                     >
                         <div className="h-[42px] flex items-center justify-center">
@@ -483,8 +483,8 @@ export function GuidesSection() {
                     <button
                         onClick={() => setRegistrationMarks('4')}
                         className={`p-2 rounded-lg border transition-colors flex flex-col items-center gap-1 ${registrationMarks === '4'
-                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
-                                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600'
+                            : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                             }`}
                     >
                         <div className="h-[42px] flex items-center justify-center">

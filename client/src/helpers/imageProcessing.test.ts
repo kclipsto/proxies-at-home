@@ -9,21 +9,13 @@ import {
     trimExistingBleedIfAny,
     blackenAllNearBlackPixels,
     getPatchNearCorner,
-    IN,
-    MM_TO_PX,
     NEAR_BLACK,
     NEAR_WHITE,
     ALPHA_EMPTY,
     shouldTrimBleed
 } from './imageProcessing';
+import { IN_TO_PX, MM_TO_PX } from '@/constants/commonConstants';
 
-// ... (MockOffscreenCanvas)
-
-// ... (describe blocks)
-
-
-
-// Polyfill OffscreenCanvas
 // Polyfill OffscreenCanvas
 class MockOffscreenCanvas {
     width = 0;
@@ -110,8 +102,8 @@ describe('imageProcessing', () => {
 
     describe('Unit Conversions', () => {
         it('IN should convert inches to pixels', () => {
-            expect(IN(1, 300)).toBe(300);
-            expect(IN(2.5, 96)).toBe(240);
+            expect(IN_TO_PX(1, 300)).toBe(300);
+            expect(IN_TO_PX(2.5, 96)).toBe(240);
         });
 
         it('MM_TO_PX should convert mm to pixels', () => {
