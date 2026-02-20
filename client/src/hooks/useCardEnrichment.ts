@@ -9,7 +9,7 @@ import { isCardbackId } from "../helpers/cardbackLibrary";
 import { searchMpcAutofill, getMpcAutofillImageUrl } from "../helpers/mpcAutofillApi";
 import { addRemoteImage } from "../helpers/dbUtils";
 import { pickBestMpcCard } from "../helpers/mpcImportIntegration";
-import { useSettingsStore } from "../store";
+import { useSettingsStore, useProjectStore, useUserPreferencesStore } from "../store";
 
 // Retry configuration with exponential backoff
 const ENRICHMENT_RETRY_CONFIG = {
@@ -99,7 +99,12 @@ export function useCardEnrichment() {
         try {
             // Get all cards that need enrichment and are ready for retry
             const now = Date.now();
-            const allCards = await db.cards.toArray();
+            const projectId = useProjectStore.getState().currentProjectId;
+            if (!projectId) {
+                isEnrichingRef.current = false;
+                return;
+            }
+            const allCards = await db.cards.where('projectId').equals(projectId).toArray();
 
             // Note: Dexie may store booleans as true/false or 1/0 depending on version
             // Use filter on all cards for reliability
@@ -269,8 +274,8 @@ export function useCardEnrichment() {
                     // to ensure consistent behavior if settings change during operation
                     const settingsSnapshot = {
                         preferredArtSource: useSettingsStore.getState().preferredArtSource,
-                        favoriteMpcSources: useSettingsStore.getState().favoriteMpcSources || [],
-                        favoriteMpcTags: useSettingsStore.getState().favoriteMpcTags || [],
+                        favoriteMpcSources: useUserPreferencesStore.getState().preferences?.favoriteMpcSources ?? [],
+                        favoriteMpcTags: useUserPreferencesStore.getState().preferences?.favoriteMpcTags ?? [],
                     };
 
                     await Promise.all(batch.map(async (card) => {
@@ -554,7 +559,12 @@ export function useCardEnrichment() {
     // Trigger enrichment when cards are added.
     useEffect(() => {
         const checkAndEnrich = async () => {
-            const count = await db.cards.where("needsEnrichment").equals(1).count();
+            const projectId = useProjectStore.getState().currentProjectId;
+            if (!projectId) return;
+            const count = await db.cards
+                .where('projectId').equals(projectId)
+                .filter(c => !!c.needsEnrichment)
+                .count();
             if (count > 0 && !isEnrichingRef.current) {
                 await enrichCards();
             }
