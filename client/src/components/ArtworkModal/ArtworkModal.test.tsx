@@ -893,7 +893,8 @@ describe('ArtworkModal', () => {
                     'Resolved Card',  // Now always uses resolved.name from ImportOrchestrator
                     undefined,
                     expect.objectContaining({ set: 'abc', number: '1' }),
-                    undefined
+                    undefined, // hasBuiltInBleed
+                    undefined  // overrides
                 );
                 expect(mockChangeCardArtwork).toHaveBeenCalledWith(
                     'img-2',
@@ -903,7 +904,8 @@ describe('ArtworkModal', () => {
                     'Resolved Card',  // Now always uses resolved.name from ImportOrchestrator
                     undefined,
                     expect.objectContaining({ set: 'abc', number: '1' }),
-                    undefined
+                    undefined, // hasBuiltInBleed
+                    undefined  // overrides
                 );
             });
         });
@@ -925,7 +927,8 @@ describe('ArtworkModal', () => {
                     'Resolved Card', // From ImportOrchestrator mock
                     undefined,
                     expect.objectContaining({ set: 'abc', number: '1' }),
-                    false // hasBuiltInBleed
+                    false, // hasBuiltInBleed
+                    { darkenMode: 'none', darkenUseGlobalSettings: false } // overrides
                 );
             });
         });
@@ -980,12 +983,7 @@ describe('ArtworkModal', () => {
                         'Default Back',
                         undefined,
                         undefined,
-                        false // hasBleed from cardbackOptions find (mocked above or in component? Component uses cardbackOptions state)
-                        // The test's cardbackOptions come from getAllCardbacks mock which resolves in useEffect.
-                        // We set mockGetAllCardbacks return value, but it might not be loaded yet when click happens if not waited.
-                        // However, set-default-cardback button click passes 'cardback-2' and 'Default Back' directly in the mock child.
-                        // The component looks up 'cardback-2' in its state `cardbackOptions`.
-                        // We need to ensure cardbackOptions state is populated.
+                        false
                     );
                 });
             });

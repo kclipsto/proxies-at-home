@@ -296,11 +296,17 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                 // Update all placeholder cards for this key with the MPC image
                 await db.transaction('rw', db.cards, async () => {
                     for (const uuid of placeholderUuids) {
+                        const existingCard = await db.cards.get(uuid);
                         await db.cards.update(uuid, {
                             name: cardName,
                             imageId,
                             hasBuiltInBleed,
                             needsEnrichment,
+                            overrides: {
+                                ...existingCard?.overrides,
+                                darkenMode: 'none',
+                                darkenUseGlobalSettings: false,
+                            }
                         });
                     }
                 });
