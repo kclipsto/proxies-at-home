@@ -56,6 +56,34 @@ uniform float uColorReplaceThreshold; // 0-100
 // Gamma
 uniform float uGamma;               // 0.1-3.0
 
+#ifdef IS_PIXI
+uniform vec4 uOutputFrame;          // x, y = offset, z, w = size
+uniform vec4 uInputSize;            // x, y = texture size, z, w = 1/texture size
+#endif
+
+// Helper to calculate texel stride (1 pixel divided by total resolution)
+vec2 getTexelSize() {
+#ifdef IS_PIXI
+    // vTextureCoord ranges across the sprite bounds mapped by uOutputFrame/uInputSize
+    vec2 ratio = uOutputFrame.zw * uInputSize.zw;
+    return ratio / uResolution;
+#else
+    // For WebGL full quad drawing (pdf.worker.ts), coordinates naturally span 0-1
+    return 1.0 / uResolution;
+#endif
+}
+
+// Helper to normalize the current UV onto a pristine 0-1 coordinate space across the image
+vec2 getNormalizedUv(vec2 uv) {
+#ifdef IS_PIXI
+    vec2 ratio = uOutputFrame.zw * uInputSize.zw;
+    return uv / ratio;
+#else
+    return uv;
+#endif
+}
+
+
 float luminance(vec3 c) {
     return dot(c, vec3(0.299, 0.587, 0.114));
 }
@@ -90,7 +118,7 @@ vec3 applyPop(vec3 color) {
 vec3 applySharpness(vec3 color, vec2 uv) {
     if (uSharpness <= 0.0) return color;
     
-    vec2 texelSize = 1.0 / uResolution;
+    vec2 texelSize = getTexelSize();
     vec3 n = texture(uTexture, uv + vec2(0.0, -texelSize.y)).rgb;
     vec3 s = texture(uTexture, uv + vec2(0.0, texelSize.y)).rgb;
     vec3 e = texture(uTexture, uv + vec2(texelSize.x, 0.0)).rgb;
@@ -105,7 +133,7 @@ vec3 applySharpness(vec3 color, vec2 uv) {
 vec3 applyNoiseReduction(vec3 color, vec2 uv) {
     if (uNoiseReduction <= 0.0) return color;
     
-    vec2 texelSize = 1.0 / uResolution;
+    vec2 texelSize = getTexelSize();
     vec3 c  = color;
     vec3 n  = texture(uTexture, uv + vec2(0.0, -texelSize.y)).rgb;
     vec3 s  = texture(uTexture, uv + vec2(0.0, texelSize.y)).rgb;
@@ -194,10 +222,10 @@ vec3 applySepia(vec3 color) {
     return mix(color, sepia, uSepia);
 }
 
-vec3 applyVignette(vec3 color) {
+vec3 applyVignette(vec3 color, vec2 uv) {
     if (uVignetteAmount <= 0.0) return color;
     
-    vec2 normalizedPos = gl_FragCoord.xy / uResolution;
+    vec2 normalizedPos = getNormalizedUv(uv);
     vec2 center = normalizedPos - 0.5;
     float dist = length(center * 2.0);
     float innerRadius = 1.0 - uVignetteSize;
@@ -271,10 +299,11 @@ vec3 applyCmykPreview(vec3 color) {
 vec3 applyHolographic(vec3 color, vec2 uv) {
     if (uHoloEffect <= 0.0) return color;
     
-    // Correct UV to account for clipped sprite rendering
+    // Normalize to 0-1 and correct UV to account for clipped sprite rendering
     // When a sprite is partially off-screen, PixiJS filters may operate on a smaller area
     // with remapped UVs. Use offset/scale to recover true card-space coordinates.
-    vec2 correctedUv = uHoloUvOffset + uv * uHoloUvScale;
+    vec2 normUv = getNormalizedUv(uv);
+    vec2 correctedUv = uHoloUvOffset + normUv * uHoloUvScale;
     
     bool isSweepMode = uHoloAngle >= 1000.0 && uHoloAngle < 2000.0;
     bool isTwinkleMode = uHoloAngle >= 2000.0;
@@ -521,7 +550,7 @@ void main() {
     rgb = applyColorReplace(rgb);
     rgb = applyCmykPreview(rgb);
     rgb = applyHolographic(rgb, vTextureCoord);
-    rgb = applyVignette(rgb);
+    rgb = applyVignette(rgb, vTextureCoord);
     
     finalColor = vec4(rgb, color.a);
 }

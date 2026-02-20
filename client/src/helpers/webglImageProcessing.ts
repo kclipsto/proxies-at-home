@@ -1,5 +1,4 @@
 import {
-    IN,
     getBleedInPixels,
     computeDarknessFactorFromPixels,
 } from "./imageProcessing";
@@ -14,6 +13,7 @@ import { VS_QUAD, FS_INIT, FS_STEP, FS_FINAL, FS_DIRECT } from "./webgl/shaders"
 import type { DarkenMode } from "../store/settings";
 import { darkenModeToInt } from "../components/CardCanvas/types";
 import { debugLog } from "./debug";
+import { CONSTANTS, MM_TO_PX } from "../constants/commonConstants";
 
 // WebGL Debug Logging
 const WEBGL_DEBUG = true;
@@ -303,9 +303,9 @@ export async function generateBleedCanvasWebGL(
     bleedWidth: number,
     opts: { unit?: "mm" | "in"; dpi?: number; inputBleed?: number; darkenMode?: DarkenMode; darkenThreshold?: number; darkenContrast?: number; darkenEdgeWidth?: number; darkenAmount?: number; darkenBrightness?: number; darkenAutoDetect?: boolean }
 ): Promise<OffscreenCanvas> {
-    const dpi = opts?.dpi ?? 300;
-    const targetCardWidth = IN(2.48, dpi);
-    const targetCardHeight = IN(3.47, dpi);
+    const dpi = opts?.dpi ?? CONSTANTS.DEFAULT_DISPLAY_DPI;
+    const targetCardWidth = MM_TO_PX(CONSTANTS.CARD_WIDTH_MM, dpi);
+    const targetCardHeight = MM_TO_PX(CONSTANTS.CARD_HEIGHT_MM, dpi);
     const bleed = Math.round(getBleedInPixels(bleedWidth, opts?.unit ?? "mm", dpi));
 
     const finalWidth = Math.ceil(targetCardWidth + bleed * 2);
@@ -512,13 +512,13 @@ export async function processCardImageWebGL(
     const inputHasBleedMm = opts?.inputHasBleedMm ?? 0;
 
     // Convert bleedWidthMm to mm if unit is inches
-    const totalBleedMm = unit === 'in' ? bleedWidthMm * 25.4 : bleedWidthMm;
+    const totalBleedMm = unit === 'in' ? bleedWidthMm * CONSTANTS.MM_PER_IN : bleedWidthMm;
 
     // The additional bleed we need to generate (beyond what's already in the image)
     const additionalBleedMm = Math.max(0, totalBleedMm - inputHasBleedMm);
 
-    const targetCardWidth = IN(2.48, exportDpi);
-    const targetCardHeight = IN(3.47, exportDpi);
+    const targetCardWidth = MM_TO_PX(CONSTANTS.CARD_WIDTH_MM, exportDpi);
+    const targetCardHeight = MM_TO_PX(CONSTANTS.CARD_HEIGHT_MM, exportDpi);
 
     // When input has existing bleed, use actual input dimensions instead of forcing to expected
     // This prevents shrinking when aspect ratios don't exactly match
@@ -768,20 +768,16 @@ export async function processExistingBleedWebGL(
     const displayDpi = opts?.displayDpi ?? 300;
     const unit = opts?.unit ?? "mm";
 
-    // Standard MTG card dimensions: 63x88mm
-    const cardWidthMm = 63;
-    const cardHeightMm = 88;
-
     // Convert bleed to mm
-    const bleedMm = unit === "in" ? bleedWidthMm * 25.4 : bleedWidthMm;
+    const bleedMm = unit === "in" ? bleedWidthMm * CONSTANTS.MM_PER_IN : bleedWidthMm;
 
     // Calculate dimensions at each DPI
     const exportBleedPx = Math.round(getBleedInPixels(bleedMm, "mm", exportDpi));
     const displayBleedPx = Math.round(getBleedInPixels(bleedMm, "mm", displayDpi));
-    const exportWidth = Math.ceil(IN(cardWidthMm / 25.4, exportDpi) + exportBleedPx * 2);
-    const exportHeight = Math.ceil(IN(cardHeightMm / 25.4, exportDpi) + exportBleedPx * 2);
-    const displayWidth = Math.ceil(IN(cardWidthMm / 25.4, displayDpi) + displayBleedPx * 2);
-    const displayHeight = Math.ceil(IN(cardHeightMm / 25.4, displayDpi) + displayBleedPx * 2);
+    const exportWidth = Math.ceil(MM_TO_PX(CONSTANTS.CARD_WIDTH_MM, exportDpi) + exportBleedPx * 2);
+    const exportHeight = Math.ceil(MM_TO_PX(CONSTANTS.CARD_HEIGHT_MM, exportDpi) + exportBleedPx * 2);
+    const displayWidth = Math.ceil(MM_TO_PX(CONSTANTS.CARD_WIDTH_MM, displayDpi) + displayBleedPx * 2);
+    const displayHeight = Math.ceil(MM_TO_PX(CONSTANTS.CARD_HEIGHT_MM, displayDpi) + displayBleedPx * 2);
 
     // Compute darknessFactor for adaptive effects
     const darknessFactor = computeDarknessFactor(img);

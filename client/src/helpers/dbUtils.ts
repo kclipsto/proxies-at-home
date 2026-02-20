@@ -727,7 +727,8 @@ export async function changeCardArtwork(
   newName?: string,
   newImageUrls?: string[],
   cardMetadata?: Partial<Pick<CardOption, 'set' | 'number' | 'colors' | 'cmc' | 'type_line' | 'rarity' | 'mana_cost' | 'lang' | 'token_parts' | 'needs_token' | 'isToken'>>,
-  hasBuiltInBleed?: boolean
+  hasBuiltInBleed?: boolean,
+  overrides?: Partial<CardOption['overrides']>
 ): Promise<void> {
   await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
     if (oldImageId === newImageId && !newName && !newImageUrls && !cardMetadata) {
@@ -776,6 +777,10 @@ export async function changeCardArtwork(
     // Apply metadata updates (set, number, colors, etc.)
     if (cardMetadata) {
       Object.assign(changes, cardMetadata);
+    }
+    // Apply overrides updates
+    if (overrides) {
+      changes.overrides = { ...cardToUpdate.overrides, ...overrides };
     }
 
     await db.cards.bulkUpdate(

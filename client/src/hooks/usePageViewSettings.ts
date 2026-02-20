@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "../store/settings";
 import { useUserPreferencesStore } from "../store/userPreferences";
 import type { SourceTypeSettings } from "../helpers/layout";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export function usePageViewSettings() {
     const settings = useSettingsStore(
@@ -71,7 +72,7 @@ export function usePageViewSettings() {
     }), [withBleedTargetMode, withBleedTargetAmount, noBleedTargetMode, noBleedTargetAmount]);
 
     const effectiveBleedWidth = bleedEdge
-        ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth)
+        ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * CONSTANTS.MM_PER_IN : bleedEdgeWidth)
         : 0;
 
     const dndDisabled =

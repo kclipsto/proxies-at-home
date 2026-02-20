@@ -97,6 +97,7 @@ vi.mock('@/components/CardEditorModal/BleedModeControl', () => ({
 }));
 
 import { BleedSection } from './BleedSection';
+import { CONSTANTS } from '@/constants/commonConstants';
 
 describe('BleedSection', () => {
     beforeEach(() => {
@@ -161,8 +162,9 @@ describe('BleedSection', () => {
             render(<BleedSection />);
             const select = screen.getByTestId('unit-select');
             fireEvent.change(select, { target: { value: 'in' } });
-            // Should convert 25.4mm to 1 inch
-            expect(mockSetters.setBleedEdgeWidth).toHaveBeenCalledWith(1);
+            // Should convert 25.4mm to in via DISPLAY_MM_TO_PX
+            const expected = parseFloat((25.4 / CONSTANTS.DISPLAY_MM_TO_PX).toFixed(3));
+            expect(mockSetters.setBleedEdgeWidth).toHaveBeenCalledWith(expected);
         });
 
         it('should convert inches to mm when switching to mm', () => {
@@ -171,8 +173,9 @@ describe('BleedSection', () => {
             render(<BleedSection />);
             const select = screen.getByTestId('unit-select');
             fireEvent.change(select, { target: { value: 'mm' } });
-            // Should convert 1 inch to 25.4mm
-            expect(mockSetters.setBleedEdgeWidth).toHaveBeenCalledWith(25.4);
+            // Should convert 1 inch to mm via DISPLAY_MM_TO_PX
+            const expected = parseFloat((1 * CONSTANTS.DISPLAY_MM_TO_PX).toFixed(2));
+            expect(mockSetters.setBleedEdgeWidth).toHaveBeenCalledWith(expected);
         });
 
         it('should not convert when selecting same unit', () => {

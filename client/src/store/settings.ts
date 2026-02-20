@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { recordSettingChange } from "../helpers/undoableSettings";
 import { useUndoRedoStore } from "./undoRedo";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export type LayoutPreset = "A4" | "A3" | "Letter" | "Tabloid" | "Legal" | "ArchA" | "ArchB" | "SuperB" | "A2" | "A1" | "Custom";
 export type PageOrientation = "portrait" | "landscape";
@@ -280,7 +281,7 @@ export const useSettingsStore = create<Store>()((set) => ({
       }
 
       // Convert dimensions
-      const conversionFactor = newUnit === "mm" ? 25.4 : 1 / 25.4;
+      const conversionFactor = newUnit === "mm" ? CONSTANTS.MM_PER_IN : 1 / CONSTANTS.MM_PER_IN;
       return {
         pageSizeUnit: newUnit,
         pageWidth: state.pageWidth * conversionFactor,

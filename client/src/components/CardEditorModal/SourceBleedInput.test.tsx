@@ -56,6 +56,7 @@ vi.mock('../common', () => ({
 }));
 
 import { SourceBleedInput } from './SourceBleedInput';
+import { CONSTANTS } from '@/constants/commonConstants';
 
 describe('SourceBleedInput', () => {
     const mockOnChangeMm = vi.fn();
@@ -106,9 +107,8 @@ describe('SourceBleedInput', () => {
         });
 
         it('should display value in inches when unit is changed', () => {
-            render(<SourceBleedInput valueMm={25.4} onChangeMm={mockOnChangeMm} />);
+            render(<SourceBleedInput valueMm={CONSTANTS.MM_PER_IN} onChangeMm={mockOnChangeMm} />);
 
-            // Change unit to inches
             const select = screen.getByTestId('unit-select');
             fireEvent.change(select, { target: { value: 'in' } });
 
@@ -128,18 +128,15 @@ describe('SourceBleedInput', () => {
         });
 
         it('should convert inches to mm when calling onChangeMm (in inches mode)', () => {
-            render(<SourceBleedInput valueMm={25.4} onChangeMm={mockOnChangeMm} />);
+            render(<SourceBleedInput valueMm={CONSTANTS.MM_PER_IN} onChangeMm={mockOnChangeMm} />);
 
-            // Change unit to inches
             const select = screen.getByTestId('unit-select');
             fireEvent.change(select, { target: { value: 'in' } });
 
-            // Change value to 2 inches
             const input = screen.getByTestId('number-input');
             fireEvent.change(input, { target: { value: '2' } });
 
-            // Should convert 2 inches to mm (2 * 25.4 = 50.8)
-            expect(mockOnChangeMm).toHaveBeenCalledWith(50.8);
+            expect(mockOnChangeMm).toHaveBeenCalledWith(CONSTANTS.MM_PER_IN * 2);
         });
 
         it('should handle empty input as 0', () => {

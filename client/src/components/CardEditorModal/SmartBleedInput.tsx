@@ -1,6 +1,7 @@
 import { Label, Select } from "flowbite-react";
 import { useState, useEffect } from "react";
 import { NumberInput, AutoTooltip } from "../common";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export interface SmartBleedInputProps {
     valueMm: number;
@@ -30,7 +31,7 @@ export function SmartBleedInput({
     // Sync local display value when prop value or unit changes
     useEffect(() => {
         const val = unit === 'in'
-            ? parseFloat((valueMm / 25.4).toFixed(3))
+            ? parseFloat((valueMm / CONSTANTS.MM_PER_IN).toFixed(3))
             : parseFloat(valueMm.toFixed(3));
         setLocalDisplayValue(val);
     }, [valueMm, unit]);
@@ -44,7 +45,7 @@ export function SmartBleedInput({
 
         // Convert input value back to mm for the parent
         const valueInMm = unit === 'in'
-            ? newValue * 25.4
+            ? newValue * CONSTANTS.MM_PER_IN
             : newValue;
 
         onChangeMm(valueInMm);

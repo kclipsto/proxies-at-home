@@ -3,7 +3,7 @@
  * 
  * Centralized constants for image processing, workers, and MPC operations.
  */
-export const IMAGE_PROCESSING = {
+export const CONSTANTS = {
     /** Base edge zone width in pixels at 300 DPI */
     EDGE_ZONE_BASE_PX: 64,
 
@@ -28,6 +28,22 @@ export const IMAGE_PROCESSING = {
     /** Standard MTG card dimensions in mm */
     CARD_WIDTH_MM: 63,
     CARD_HEIGHT_MM: 88,
+    CARD_WIDTH_PX: 63 * 96 / 25.4,
+    CARD_HEIGHT_PX: 88 * 96 / 25.4,
+    CORNER_RADIUS_MM: 2.5,
+
+    /** Conversion constants */
+    MM_PER_IN: 25.4,
+    DISPLAY_MM_TO_PX: 96 / 25.4,
+
+    /** Layout constants */
+    PAGE_GAP_PX: 16,
+    MAX_BROWSER_DIMENSION: 16384,
+
+    /** DPI values */
+    CANVAS_DPI: 72,
+    SCREEN_DPI: 96,
+    DEFAULT_DISPLAY_DPI: 300,
 
     /** Default MPC bleed in mm (1/8 inch) */
     DEFAULT_MPC_BLEED_MM: 3.175,
@@ -36,3 +52,6 @@ export const IMAGE_PROCESSING = {
     BLEED_TRIM_EPSILON_MM: 0.05,
 } as const;
 
+export const IN_TO_PX = (inches: number, dpi: number) => Math.round(inches * dpi);
+const MM_TO_IN = (mm: number) => mm / CONSTANTS.MM_PER_IN;
+export const MM_TO_PX = (mm: number, dpi: number) => IN_TO_PX(MM_TO_IN(mm), dpi);

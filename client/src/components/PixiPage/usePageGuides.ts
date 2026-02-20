@@ -8,8 +8,7 @@
 import { useRef, useEffect } from 'react';
 import { Graphics, type Container, type Application } from 'pixi.js';
 import type { CardWithGlobalLayout, PageLayoutInfo } from './PixiVirtualCanvas';
-
-const MM_TO_PX = 96 / 25.4;
+import { CONSTANTS } from "@/constants/commonConstants";
 
 interface UsePageGuidesProps {
     isReady: boolean;
@@ -75,14 +74,12 @@ export function usePageGuides({
 
             // Process each card to compute cut positions
             pageCards.forEach((card) => {
-                const bleedPx = card.bleedMm * MM_TO_PX;
-                const baseWidthPx = card.baseCardWidthMm * MM_TO_PX;
-                const baseHeightPx = card.baseCardHeightMm * MM_TO_PX;
+                const bleedPx = card.bleedMm * CONSTANTS.DISPLAY_MM_TO_PX;
 
                 const leftCut = card.globalX + bleedPx;
-                const rightCut = card.globalX + bleedPx + baseWidthPx;
+                const rightCut = card.globalX + bleedPx + CONSTANTS.CARD_WIDTH_PX;
                 const topCut = card.globalY + bleedPx;
-                const bottomCut = card.globalY + bleedPx + baseHeightPx;
+                const bottomCut = card.globalY + bleedPx + CONSTANTS.CARD_HEIGHT_PX;
 
                 // Track grid bounds
                 gridStartXPx = Math.min(gridStartXPx, leftCut);

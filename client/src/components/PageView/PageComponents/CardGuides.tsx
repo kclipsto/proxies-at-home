@@ -1,3 +1,4 @@
+import { CONSTANTS } from "@/constants/commonConstants";
 import React, { memo } from "react";
 
 // Corner radius for MTG cards per wiki: 2.5mm
@@ -58,8 +59,8 @@ export const CardGuides = memo(function CardGuides({
                             const g = d * 0.6; // mm
 
                             // Convert to px
-                            const dPx = (d * 96) / 25.4;
-                            const gPx = (g * 96) / 25.4;
+                            const dPx = (d * CONSTANTS.DISPLAY_MM_TO_PX);
+                            const gPx = (g * CONSTANTS.DISPLAY_MM_TO_PX);
 
                             // Pattern starts from the CORNER (0px)
                             // 1. 0 -> d/2 (Half dash at corner)
@@ -182,19 +183,16 @@ export const CardGuides = memo(function CardGuides({
                     // Guide width is in CSS pixels (96 DPI)
                     const guideWidthPx = Math.max(1, Math.round(guideWidth));
 
-                    // Convert constants to pixels and round to snap to grid
-                    const DPI = 96;
-                    const mmToPx = (mm: number) => (mm * DPI) / 25.4;
 
                     // Parse guideOffset to pixels, or use imageBleedWidth if available (for per-card custom bleed)
                     let offsetPx = 0;
                     if (imageBleedWidth !== undefined) {
                         // Per-card bleed width takes precedence
-                        offsetPx = mmToPx(imageBleedWidth);
+                        offsetPx = CONSTANTS.DISPLAY_MM_TO_PX * imageBleedWidth;
                     } else if (typeof guideOffset === 'number') {
                         offsetPx = guideOffset;
                     } else if (typeof guideOffset === 'string' && guideOffset.endsWith('mm')) {
-                        offsetPx = mmToPx(parseFloat(guideOffset));
+                        offsetPx = CONSTANTS.DISPLAY_MM_TO_PX * parseFloat(guideOffset);
                     }
 
                     // Round offset to nearest pixel to avoid sub-pixel rendering
@@ -206,7 +204,7 @@ export const CardGuides = memo(function CardGuides({
                         : roundedOffsetPx;
 
                     // Calculate dimensions
-                    const radiusPx = Math.round(mmToPx(CARD_CORNER_RADIUS_MM));
+                    const radiusPx = Math.round(CONSTANTS.DISPLAY_MM_TO_PX * CARD_CORNER_RADIUS_MM);
                     // For outside: SVG box needs to be larger to accommodate the outward stroke
                     // For inside: inner edge at card radius, so outer edge at radius + guideWidth
                     const W = radiusPx + guideWidthPx;
@@ -281,7 +279,7 @@ export const CardGuides = memo(function CardGuides({
                         offsetMm = parseFloat(guideOffset);
                     } else if (typeof guideOffset === 'number') {
                         // Convert pixels back to mm (assuming 96 DPI)
-                        offsetMm = (guideOffset * 25.4) / 96;
+                        offsetMm = (guideOffset * CONSTANTS.DISPLAY_MM_TO_PX);
                     } else {
                         offsetMm = 0;
                     }

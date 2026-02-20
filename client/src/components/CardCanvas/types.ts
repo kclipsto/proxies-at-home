@@ -129,6 +129,9 @@ export interface RenderParams {
     vignetteSize: number;
     /** Vignette feather - softness of edge (0-1.0, higher = softer) */
     vignetteFeather: number;
+
+    /** Explicit DPI for resolution-aware scaling */
+    dpi?: number;
 }
 
 /**
@@ -193,6 +196,8 @@ export const DEFAULT_RENDER_PARAMS: RenderParams = {
     vignetteAmount: 0,
     vignetteSize: 0.8,
     vignetteFeather: 0.5,
+    // Context
+    dpi: undefined,
 };
 
 /**

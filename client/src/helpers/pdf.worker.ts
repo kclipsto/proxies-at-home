@@ -1,6 +1,4 @@
 import {
-    IN,
-    MM_TO_PX,
     toProxied,
     trimBleedFromBitmap,
     trimBleedByMm,
@@ -14,6 +12,7 @@ import { generatePerCardGuide, executePathCommands, type GuideStyle } from "./cu
 import { db, type EffectCacheEntry } from "../db";
 import type { CardOption, CardOverrides } from "../../../shared/types";
 import { debugLog } from "./debug";
+import { IN_TO_PX, MM_TO_PX } from "@/constants/commonConstants";
 
 export { };
 declare const self: DedicatedWorkerGlobalScope;
@@ -61,6 +60,8 @@ function hashString(str: string): string {
     return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+const WORKER_VERSION = "v2-explicit-dpi";
+
 function computeEffectCacheKey(imageId: string, overrides: CardOverrides, dpi: number): string {
     const sortedOverrides = Object.keys(overrides || {})
         .sort()
@@ -72,7 +73,7 @@ function computeEffectCacheKey(imageId: string, overrides: CardOverrides, dpi: n
             return acc;
         }, {} as Record<string, unknown>);
     const overridesHash = hashString(JSON.stringify(sortedOverrides));
-    return `${imageId}:${dpi}:${overridesHash}`;
+    return `${imageId}:${dpi}:${overridesHash}:${WORKER_VERSION}`;
 }
 
 async function cacheEffectBlob(imageId: string, overrides: CardOverrides, blob: Blob, dpi: number): Promise<void> {
@@ -437,8 +438,8 @@ self.onmessage = async (event: MessageEvent) => {
             perCardBackOffsets
         } = settings;
 
-        const pageWidthPx = pageSizeUnit === "in" ? IN(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
-        const pageHeightPx = pageSizeUnit === "in" ? IN(pageHeight, DPI) : MM_TO_PX(pageHeight, DPI);
+        const pageWidthPx = pageSizeUnit === "in" ? IN_TO_PX(pageWidth, DPI) : MM_TO_PX(pageWidth, DPI);
+        const pageHeightPx = pageSizeUnit === "in" ? IN_TO_PX(pageHeight, DPI) : MM_TO_PX(pageHeight, DPI);
         const contentWidthInPx = MM_TO_PX(63, DPI);
         const contentHeightInPx = MM_TO_PX(88, DPI);
         const spacingPx = MM_TO_PX(cardSpacingMm || 0, DPI);
@@ -664,6 +665,7 @@ self.onmessage = async (event: MessageEvent) => {
                 if (hasAdvancedOverrides(card.overrides)) {
                     // Check pre-rendered effect cache first
                     const cachedEffectBlob = effectCacheById?.get(card.uuid);
+
                     if (cachedEffectBlob) {
                         debugLog(`[PDF Worker] Card ${idx}: Using effect cache`);
                         bitmap.close();
@@ -671,6 +673,7 @@ self.onmessage = async (event: MessageEvent) => {
                     } else {
                         debugLog(`[PDF Worker] Card ${idx}: Applying WebGL overrides`);
                         const params = overridesToRenderParams(card.overrides!, effectiveDarkenMode as 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full');
+                        params.dpi = DPI;
                         const renderedBlob = await renderCardWithOverridesWorker(bitmap, params);
                         bitmap.close();
                         bitmap = await createImageBitmap(renderedBlob);
@@ -804,23 +807,40 @@ self.onmessage = async (event: MessageEvent) => {
 
                             img.close();
 
-                            // Apply advanced overrides if present (same as fast path)
-                            if (hasAdvancedOverrides(card.overrides) && finalCardCanvas instanceof OffscreenCanvas) {
+                            // Apply advanced overrides if present
+                            if (hasAdvancedOverrides(card.overrides)) {
+                                let workingBitmap: ImageBitmap;
+                                let cleanupBitmap = false;
+
+                                if (finalCardCanvas instanceof OffscreenCanvas) {
+                                    workingBitmap = await createImageBitmap(finalCardCanvas);
+                                    cleanupBitmap = true;
+                                } else {
+                                    workingBitmap = finalCardCanvas;
+                                }
+
                                 const params = overridesToRenderParams(card.overrides!, effectiveDarkenMode as 'none' | 'darken-all' | 'contrast-edges' | 'contrast-full');
-                                // Convert OffscreenCanvas to ImageBitmap for rendering
-                                const bitmap = await createImageBitmap(finalCardCanvas);
-                                const renderedBlob = await renderCardWithOverridesWorker(bitmap, params);
-                                bitmap.close();
+                                params.dpi = DPI;
+                                const renderedBlob = await renderCardWithOverridesWorker(workingBitmap, params);
+
+                                // Cleanup working bitmap if it was a temporary creation
+                                if (cleanupBitmap) {
+                                    workingBitmap.close();
+                                } else {
+                                    // If we used finalCardCanvas (ImageBitmap) directly, close it before replacing
+                                    if (finalCardCanvas instanceof ImageBitmap) {
+                                        finalCardCanvas.close();
+                                    }
+                                }
+
                                 // Replace finalCardCanvas with rendered result
                                 finalCardCanvas = await createImageBitmap(renderedBlob);
-                                // Cache for future exports (fire-and-forget)
+                                // Cache for future exports (fire-and-forget, don't block export)
                                 if (card.imageId && card.overrides) {
                                     void cacheEffectBlob(card.imageId, card.overrides, renderedBlob, DPI);
                                 }
                             }
                         }
-
-                        // DON'T cache here - we cache AFTER trimming to cache the final result
                     } finally {
                         if (cleanupTimeout) clearTimeout(cleanupTimeout);
                         if (src?.startsWith("blob:")) URL.revokeObjectURL(src);

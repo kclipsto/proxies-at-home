@@ -15,6 +15,7 @@ import { SplitButton } from "../common";
 import { extractMpcIdentifierFromImageId } from "@/helpers/mpcAutofillApi";
 import { inferImageSource } from "@/helpers/imageSourceUtils";
 import type { CardOption } from "../../../../shared/types";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 type Props = {
   cards: CardOption[]; // Passed from parent to avoid redundant DB query
@@ -233,9 +234,9 @@ export function ExportActions({ cards }: Props) {
     ]);
 
     const pageWidthPx =
-      pageSizeUnit === "in" ? pageWidth * dpi : (pageWidth / 25.4) * dpi;
+      pageSizeUnit === "in" ? pageWidth * dpi : (pageWidth / CONSTANTS.MM_PER_IN) * dpi;
     const pageHeightPx =
-      pageSizeUnit === "in" ? pageHeight * dpi : (pageHeight / 25.4) * dpi;
+      pageSizeUnit === "in" ? pageHeight * dpi : (pageHeight / CONSTANTS.MM_PER_IN) * dpi;
 
     const MAX_PIXELS_PER_PDF_BATCH = 2_000_000_000; // 2 billion pixels
     const pixelsPerPage = pageWidthPx * pageHeightPx;

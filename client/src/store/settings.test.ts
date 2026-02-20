@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useSettingsStore } from "./settings";
+import { CONSTANTS } from "@/constants/commonConstants";
 
 // Mock dependencies
 vi.mock("./undoRedo", () => ({
@@ -127,8 +128,8 @@ describe("useSettingsStore", () => {
 
             const state = useSettingsStore.getState();
             expect(state.pageSizeUnit).toBe("mm");
-            expect(state.pageWidth).toBeCloseTo(8.5 * 25.4, 1);
-            expect(state.pageHeight).toBeCloseTo(11 * 25.4, 1);
+            expect(state.pageWidth).toBeCloseTo(8.5 * CONSTANTS.MM_PER_IN, 1);
+            expect(state.pageHeight).toBeCloseTo(11 * CONSTANTS.MM_PER_IN, 1);
         });
 
         it("should convert dimensions from mm to inches", () => {
@@ -143,8 +144,8 @@ describe("useSettingsStore", () => {
 
             const state = useSettingsStore.getState();
             expect(state.pageSizeUnit).toBe("in");
-            expect(state.pageWidth).toBeCloseTo(210 / 25.4, 1);
-            expect(state.pageHeight).toBeCloseTo(297 / 25.4, 1);
+            expect(state.pageWidth).toBeCloseTo(210 / CONSTANTS.MM_PER_IN, 1);
+            expect(state.pageHeight).toBeCloseTo(297 / CONSTANTS.MM_PER_IN, 1);
         });
 
         it("should do nothing if already in target unit", () => {

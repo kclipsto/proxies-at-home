@@ -11,7 +11,14 @@ import { DarkenFilter, AdjustmentFilter } from './filters';
 import { getPixiApp } from './pixiSingleton';
 import { calculateHoloAnimation, type HoloAnimationStyle } from './holoAnimation';
 import { useSettingsStore } from '@/store/settings';
+import {
+    applyDarkenFilter,
+    applyAdjustmentFilter,
+    type CardOverrides
+} from './cardFilterUtils';
 import type { RenderParams } from '../CardCanvas/types';
+import { hasActiveAdjustments } from '@/helpers/adjustmentUtils';
+import { CONSTANTS } from "@/constants/commonConstants";
 
 interface PixiCardPreviewProps {
     /** Image blob to render */
@@ -243,119 +250,54 @@ function PixiCardPreviewInner({
         }
 
         // Update filter uniforms
-        // When using global defaults, use global settings; otherwise use params
         const globalSettings = useSettingsStore.getState();
-        const darkenMode = params.darkenUseGlobalSettings ? globalSettings.darkenMode : params.darkenMode;
-        const darkenAutoDetect = params.darkenUseGlobalSettings ? globalSettings.darkenAutoDetect : params.darkenAutoDetect;
-        const darkenEdgeWidth = params.darkenUseGlobalSettings ? globalSettings.darkenEdgeWidth : params.darkenEdgeWidth;
-        const darkenAmount = params.darkenUseGlobalSettings ? globalSettings.darkenAmount : params.darkenAmount;
 
-        // When Auto Detect is enabled, use darknessFactor to compute contrast/brightness
-        // When disabled, use manual slider values
-        let darkenContrast: number;
-        let darkenBrightness: number;
+        // Calculate standardized layout dimensions at 96 DPI
+        const standardTextureSize: [number, number] = [CONSTANTS.CARD_WIDTH_PX, CONSTANTS.CARD_HEIGHT_PX];
 
-        if (darkenAutoDetect && (darkenMode === 'contrast-edges' || darkenMode === 'contrast-full')) {
-            // Auto-detect mode: scale base values by darknessFactor
-            darkenContrast = 2.0; // Base contrast
-            darkenBrightness = -50; // Base brightness
-        } else {
-            // Manual mode: use slider values
-            darkenContrast = params.darkenUseGlobalSettings ? globalSettings.darkenContrast : params.darkenContrast;
-            darkenBrightness = params.darkenUseGlobalSettings ? globalSettings.darkenBrightness : params.darkenBrightness;
-        }
+        // Resolve exact settings manually applied by the slider vs global parameters 
+        const activeDarkenMode = params.darkenUseGlobalSettings ? globalSettings.darkenMode : params.darkenMode;
+        const activeDarkenAutoDetect = params.darkenUseGlobalSettings ? globalSettings.darkenAutoDetect : params.darkenAutoDetect;
 
-        darkenFilter.darkenMode = darkenMode;
-        darkenFilter.darknessFactor = darknessFactor;
-        darkenFilter.darkenThreshold = params.darkenThreshold;
-        darkenFilter.darkenContrast = darkenContrast;
-        darkenFilter.darkenEdgeWidth = darkenEdgeWidth;
-        darkenFilter.darkenAmount = darkenAmount;
-        darkenFilter.darkenBrightness = darkenBrightness;
-        darkenFilter.textureResolution = [sprite.width, sprite.height];
+        // Build temporary overrides object merging slider states and toggled globals for the external utility
+        const resolvedOverrides: RenderParams = { ...params };
+        resolvedOverrides.darkenMode = activeDarkenMode;
+        resolvedOverrides.darkenAutoDetect = activeDarkenAutoDetect;
+        resolvedOverrides.darkenEdgeWidth = params.darkenUseGlobalSettings ? globalSettings.darkenEdgeWidth : params.darkenEdgeWidth;
+        resolvedOverrides.darkenAmount = params.darkenUseGlobalSettings ? globalSettings.darkenAmount : params.darkenAmount;
+        resolvedOverrides.darkenContrast = params.darkenUseGlobalSettings ? globalSettings.darkenContrast : params.darkenContrast;
+        resolvedOverrides.darkenBrightness = params.darkenUseGlobalSettings ? globalSettings.darkenBrightness : params.darkenBrightness;
 
-        adjustFilter.textureResolution = [sprite.width, sprite.height];
-        adjustFilter.brightness = params.brightness;
-        adjustFilter.contrast = params.contrast;
-        adjustFilter.saturation = params.saturation;
-        adjustFilter.sharpness = params.sharpness;
-        adjustFilter.pop = params.pop;
-        adjustFilter.hueShift = params.hueShift;
-        adjustFilter.sepia = params.sepia;
-        adjustFilter.tintColor = params.tintColor;
-        adjustFilter.tintAmount = params.tintAmount;
-        adjustFilter.redBalance = params.redBalance;
-        adjustFilter.greenBalance = params.greenBalance;
-        adjustFilter.blueBalance = params.blueBalance;
-        adjustFilter.vignetteAmount = params.vignetteAmount;
-        adjustFilter.vignetteSize = params.vignetteSize;
-        adjustFilter.vignetteFeather = params.vignetteFeather;
-        // CMYK balance
-        adjustFilter.cyanBalance = params.cyanBalance;
-        adjustFilter.magentaBalance = params.magentaBalance;
-        adjustFilter.yellowBalance = params.yellowBalance;
-        adjustFilter.blackBalance = params.blackBalance;
-        // Color Balance (Shadows/Midtones/Highlights)
-        adjustFilter.shadowsIntensity = params.shadowsIntensity;
-        adjustFilter.midtonesIntensity = params.midtonesIntensity;
-        adjustFilter.highlightsIntensity = params.highlightsIntensity;
-        // Noise Reduction
-        adjustFilter.noiseReduction = params.noiseReduction;
-        // Preview Modes
-        adjustFilter.cmykPreview = params.cmykPreview;
-        // Holographic Effect
-        adjustFilter.holoEffect = params.holoEffect;
-        adjustFilter.holoStrength = holoStrengthRef.current;
-        adjustFilter.holoAreaMode = params.holoAreaMode;
-        adjustFilter.holoAngle = holoAngleRef.current;
-        adjustFilter.holoSweepWidth = params.holoSweepWidth;
-        adjustFilter.holoStarSize = params.holoStarSize;
-        adjustFilter.holoStarVariety = params.holoStarVariety;
-        adjustFilter.holoBlur = params.holoBlur;
-        adjustFilter.holoProbability = params.holoProbability;
-        adjustFilter.holoAreaThreshold = params.holoAreaThreshold;
-        // Color Replace
-        adjustFilter.colorReplaceEnabled = params.colorReplaceEnabled;
-        adjustFilter.colorReplaceSource = params.colorReplaceSource;
-        adjustFilter.colorReplaceTarget = params.colorReplaceTarget;
-        adjustFilter.colorReplaceThreshold = params.colorReplaceThreshold;
-        // Gamma
-        adjustFilter.gamma = params.gamma;
+        // Apply Darken Filter
+        applyDarkenFilter(
+            darkenFilter,
+            resolvedOverrides,
+            globalSettings,
+            darknessFactor,
+            [sprite.width, sprite.height] // Darken filter relies on dynamic display size for proper edge feathering bounds
+        );
+
+        // Apply Adjustment Filter
+        // Scale adjustment resolution to dynamically match the PDF worker's relative sizing geometry.
+        const dpi = globalSettings.dpi ?? 300;
+        const kernelScale = Math.max(1.0, dpi / CONSTANTS.SCREEN_DPI);
+        adjustFilter.resolution = sprite.width > 0 ? (CONSTANTS.CARD_WIDTH_PX * kernelScale) / sprite.width : 1;
+
+        applyAdjustmentFilter(
+            adjustFilter,
+            resolvedOverrides,
+            standardTextureSize, // Physics layout forces the math coordinates independently of any responsive CSS zooms
+            { angle: holoAngleRef.current, strength: holoStrengthRef.current }
+        );
 
         // Build filter array
         const filters: import('pixi.js').Filter[] = [];
 
-        if (params.darkenMode !== 'none') {
+        if (activeDarkenMode && activeDarkenMode !== 'none') {
             filters.push(darkenFilter);
         }
 
-        const hasAdjustments =
-            params.brightness !== 0 ||
-            params.contrast !== 1 ||
-            params.saturation !== 1 ||
-            params.sharpness !== 0 ||
-            params.pop !== 0 ||
-            params.hueShift !== 0 ||
-            params.sepia !== 0 ||
-            params.tintAmount !== 0 ||
-            params.redBalance !== 0 ||
-            params.greenBalance !== 0 ||
-            params.blueBalance !== 0 ||
-            params.cyanBalance !== 0 ||
-            params.magentaBalance !== 0 ||
-            params.yellowBalance !== 0 ||
-            params.blackBalance !== 0 ||
-            params.shadowsIntensity !== 0 ||
-            params.midtonesIntensity !== 0 ||
-            params.highlightsIntensity !== 0 ||
-            params.noiseReduction !== 0 ||
-            params.cmykPreview ||
-            params.holoEffect !== 'none' ||
-            params.colorReplaceEnabled ||
-            params.gamma !== 1.0 ||
-            params.vignetteAmount !== 0;
-
-        if (hasAdjustments) {
+        if (hasActiveAdjustments(resolvedOverrides as unknown as CardOverrides, false)) {
             filters.push(adjustFilter);
         }
 

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { CONSTANTS } from "@/constants/commonConstants";
 
 interface CardImageSvgProps {
     /** Primary image URL */
@@ -36,11 +37,6 @@ export const CardImageSvg: React.FC<CardImageSvgProps> = ({
     const [isVisible, setIsVisible] = useState(false);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [useFallback, setUseFallback] = useState(false);
-
-    // Standard card dimensions
-    const CARD_WIDTH = 63;
-    const CARD_HEIGHT = 88;
-    const CORNER_RADIUS = 2.5;
 
     // ViewBox always defines the "visible" card area
     // For bleed images, we start the viewBox offset by the bleed amount
@@ -97,7 +93,7 @@ export const CardImageSvg: React.FC<CardImageSvgProps> = ({
     return (
         <svg
             ref={svgRef}
-            viewBox={`${viewBoxX} ${viewBoxY} ${CARD_WIDTH} ${CARD_HEIGHT}`}
+            viewBox={`${viewBoxX} ${viewBoxY} ${CONSTANTS.CARD_WIDTH_MM} ${CONSTANTS.CARD_HEIGHT_MM}`}
             className="w-full h-full block"
             preserveAspectRatio="xMidYMid meet"
             xmlns="http://www.w3.org/2000/svg"
@@ -110,10 +106,10 @@ export const CardImageSvg: React.FC<CardImageSvgProps> = ({
                         <rect
                             x={viewBoxX}
                             y={viewBoxY}
-                            width={CARD_WIDTH}
-                            height={CARD_HEIGHT}
-                            rx={CORNER_RADIUS}
-                            ry={CORNER_RADIUS}
+                            width={CONSTANTS.CARD_WIDTH_MM}
+                            height={CONSTANTS.CARD_HEIGHT_MM}
+                            rx={CONSTANTS.CORNER_RADIUS_MM}
+                            ry={CONSTANTS.CORNER_RADIUS_MM}
                         />
                     </clipPath>
                 )}
@@ -124,10 +120,10 @@ export const CardImageSvg: React.FC<CardImageSvgProps> = ({
                 <rect
                     x={viewBoxX}
                     y={viewBoxY}
-                    width={CARD_WIDTH}
-                    height={CARD_HEIGHT}
-                    rx={rounded ? CORNER_RADIUS : 0}
-                    ry={rounded ? CORNER_RADIUS : 0}
+                    width={CONSTANTS.CARD_WIDTH_MM}
+                    height={CONSTANTS.CARD_HEIGHT_MM}
+                    rx={rounded ? CONSTANTS.CORNER_RADIUS_MM : 0}
+                    ry={rounded ? CONSTANTS.CORNER_RADIUS_MM : 0}
                     fill="#1f2937"
                     className="animate-pulse"
                 />
@@ -140,8 +136,8 @@ export const CardImageSvg: React.FC<CardImageSvgProps> = ({
                     x="0"
                     y="0"
                     // If bleed, use source dimensions. If not, fill the card area (63x88)
-                    width={bleed ? bleed.sourceWidthMm : CARD_WIDTH}
-                    height={bleed ? bleed.sourceHeightMm : CARD_HEIGHT}
+                    width={bleed ? bleed.sourceWidthMm : CONSTANTS.CARD_WIDTH_MM}
+                    height={bleed ? bleed.sourceHeightMm : CONSTANTS.CARD_HEIGHT_MM}
                     preserveAspectRatio="xMidYMid slice"
                     clipPath={rounded ? `url(#${clipId})` : undefined}
                     style={{ opacity: hasLoaded ? 1 : 0 }}

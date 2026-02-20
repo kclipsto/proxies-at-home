@@ -9,9 +9,7 @@ import { useRef, useEffect } from 'react';
 import { Graphics, GraphicsContext, type Container, type Application } from 'pixi.js';
 import { generatePerCardGuide, executePathCommands, groupPathCommandsIntoSegments } from '../../helpers/cutGuideUtils';
 import type { CardWithGlobalLayout } from './PixiVirtualCanvas';
-
-const MM_TO_PX = 96 / 25.4;
-const CARD_CORNER_RADIUS_MM = 2.5;
+import { CONSTANTS } from "@/constants/commonConstants";
 
 type PerCardGuideStyle = 'corners' | 'rounded-corners' | 'dashed-corners' | 'dashed-rounded-corners' | 'solid-squared-rect' | 'dashed-squared-rect' | 'dashed-rounded-rect' | 'solid-rounded-rect' | 'none';
 type GuidePlacement = 'inside' | 'outside' | 'center';
@@ -67,7 +65,7 @@ export function usePerCardGuides({
         }
 
         const guideWidthPx = Math.max(0.1, guideWidth);
-        const radiusPx = CARD_CORNER_RADIUS_MM * MM_TO_PX;
+        const radiusPx = CONSTANTS.CORNER_RADIUS_MM * CONSTANTS.DISPLAY_MM_TO_PX;
         const isRounded = guideStyle.includes('rounded');
         const isRect = guideStyle.includes('rect');
 
@@ -88,7 +86,7 @@ export function usePerCardGuides({
             ctx = new GraphicsContext();
 
             // Use configurable guide length (in mm, converted to px)
-            const targetLegExtendPx = cutGuideLengthMm * MM_TO_PX;
+            const targetLegExtendPx = cutGuideLengthMm * CONSTANTS.DISPLAY_MM_TO_PX;
 
             // Generate commands using shared utility
             const commands = generatePerCardGuide(
@@ -134,11 +132,9 @@ export function usePerCardGuides({
             // Skip the actively dragged card
             if (activeId && card.card.uuid === activeId) return;
 
-            const bleedPx = card.bleedMm * MM_TO_PX;
-            const baseWidthPx = card.baseCardWidthMm * MM_TO_PX;
-            const baseHeightPx = card.baseCardHeightMm * MM_TO_PX;
+            const bleedPx = card.bleedMm * CONSTANTS.DISPLAY_MM_TO_PX;
 
-            const ctx = getOrCreateContext(baseWidthPx, baseHeightPx);
+            const ctx = getOrCreateContext(CONSTANTS.CARD_WIDTH_PX, CONSTANTS.CARD_HEIGHT_PX);
             const g = new Graphics(ctx);
             g.x = card.globalX + bleedPx;
             g.y = card.globalY + bleedPx;

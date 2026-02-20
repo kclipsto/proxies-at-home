@@ -361,6 +361,7 @@ export function ArtworkModal() {
     hasBuiltInBleed?: boolean;
     cardMetadata?: Parameters<typeof changeCardArtwork>[6];
     previewImageUrls?: string[];
+    overrides?: Partial<CardOption['overrides']>;
   };
 
   const applyArtworkToCards = useCallback(
@@ -372,6 +373,7 @@ export function ArtworkModal() {
         hasBuiltInBleed,
         cardMetadata,
         previewImageUrls,
+        overrides,
       } = config;
       const targetCard = activeCard;
       if (!targetCard) return;
@@ -396,7 +398,8 @@ export function ArtworkModal() {
               cardName,
               previewImageUrls,
               cardMetadata,
-              hasBuiltInBleed
+              hasBuiltInBleed,
+              overrides
             );
 
             if (needsEnrichment) {
@@ -419,7 +422,8 @@ export function ArtworkModal() {
           cardName,
           previewImageUrls,
           cardMetadata,
-          hasBuiltInBleed
+          hasBuiltInBleed,
+          overrides
         );
 
         if (needsEnrichment) {
@@ -551,12 +555,16 @@ export function ArtworkModal() {
         const newName =
           newCardName || (shouldUpdateName ? newFaceName : resolved.name);
 
+        // If the applied artwork is MPC or a Custom Upload, disable default darkening
+        const isMpcOrCustom = isCustomSource(getImageSourceSync(newImageId)) || artSource === 'mpc';
+
         await applyArtworkToCards({
           targetImageId: newImageId,
           cardName: newName,
           cardMetadata,
           previewImageUrls:
             isReplacing && resolved.imageId ? [resolved.imageId] : undefined,
+          overrides: isMpcOrCustom ? { darkenMode: 'none', darkenUseGlobalSettings: false } : undefined,
         });
 
         // Handle DFC back face linking
@@ -662,6 +670,7 @@ export function ArtworkModal() {
             type_line: resolved.type_line,
             mana_cost: resolved.mana_cost,
           },
+          overrides: { darkenMode: 'none', darkenUseGlobalSettings: false },
         });
 
         // Handle DFC back face linking
@@ -1065,7 +1074,7 @@ export function ArtworkModal() {
       )}
       <ResponsiveModal
         isOpen={isModalOpen}
-        onClose={pendingDeleteId ? () => {} : closeModal}
+        onClose={pendingDeleteId ? () => { } : closeModal}
         mobileLandscapeSidebar
         header={
           <div className="landscape-sidebar-header border-b border-gray-200 dark:border-gray-600 max-lg:portrait:hidden">
@@ -1203,49 +1212,49 @@ export function ArtworkModal() {
                   },
                   ...(showCardbackButton
                     ? [
-                        {
-                          id: "cardback" as const,
-                          label: "Use Cardback",
-                          icon: (
-                            <svg
-                              className="h-5 w-4"
-                              viewBox="0 0 50 70"
-                              fill="none"
-                            >
-                              <rect
-                                x="0"
-                                y="0"
-                                width="50"
-                                height="70"
-                                rx="4"
-                                fill="#1a1a1a"
-                              />
-                              <rect
-                                x="3"
-                                y="3"
-                                width="44"
-                                height="64"
-                                rx="2"
-                                fill="#8B6914"
-                              />
-                              <ellipse
-                                cx="25"
-                                cy="35"
-                                rx="17"
-                                ry="24"
-                                fill="#4A5899"
-                              />
-                              <ellipse
-                                cx="25"
-                                cy="35"
-                                rx="14"
-                                ry="20"
-                                fill="#C4956A"
-                              />
-                            </svg>
-                          ),
-                        },
-                      ]
+                      {
+                        id: "cardback" as const,
+                        label: "Use Cardback",
+                        icon: (
+                          <svg
+                            className="h-5 w-4"
+                            viewBox="0 0 50 70"
+                            fill="none"
+                          >
+                            <rect
+                              x="0"
+                              y="0"
+                              width="50"
+                              height="70"
+                              rx="4"
+                              fill="#1a1a1a"
+                            />
+                            <rect
+                              x="3"
+                              y="3"
+                              width="44"
+                              height="64"
+                              rx="2"
+                              fill="#8B6914"
+                            />
+                            <ellipse
+                              cx="25"
+                              cy="35"
+                              rx="17"
+                              ry="24"
+                              fill="#4A5899"
+                            />
+                            <ellipse
+                              cx="25"
+                              cy="35"
+                              rx="14"
+                              ry="20"
+                              fill="#C4956A"
+                            />
+                          </svg>
+                        ),
+                      },
+                    ]
                     : []),
                 ]}
                 activeTab={activeTab}

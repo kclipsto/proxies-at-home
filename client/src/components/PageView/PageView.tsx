@@ -30,8 +30,6 @@ import type { CardOption } from "../../../../shared/types";
 import type { useImageProcessing } from "@/hooks/useImageProcessing";
 import fullLogo from "../../assets/fullLogo.png";
 import {
-  baseCardWidthMm,
-  baseCardHeightMm,
   getCardTargetBleed,
   computeCardLayouts,
   chunkCards,
@@ -49,10 +47,7 @@ import { KeyboardShortcutsModal } from "../common";
 import { usePageViewHotkeys } from "@/hooks/usePageViewHotkeys";
 import { usePageViewZoom } from "@/hooks/usePageViewZoom";
 import { PullToRefresh } from "../PullToRefresh";
-
-// Constants
-const MM_TO_PX = 96 / 25.4;
-const PAGE_GAP_PX = 16;
+import { CONSTANTS } from "@/constants/commonConstants";
 
 type PageViewProps = {
   getLoadingState: ReturnType<typeof useImageProcessing>["getLoadingState"];
@@ -145,16 +140,16 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
   const pageCapacity = columns * rows;
   const mobileZoomFactor = mobile ? 0.4 : 1;
   const effectiveZoom = zoom * mobileZoomFactor;
-  const pageWidthPx = pageWidth * (pageSizeUnit === 'in' ? 96 : MM_TO_PX);
-  const pageHeightPx = pageHeight * (pageSizeUnit === 'in' ? 96 : MM_TO_PX);
-  const effectiveBleedWidth = bleedEdge ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * 25.4 : bleedEdgeWidth) : 0;
+  const pageWidthPx = pageWidth * (pageSizeUnit === 'in' ? CONSTANTS.SCREEN_DPI : CONSTANTS.DISPLAY_MM_TO_PX);
+  const pageHeightPx = pageHeight * (pageSizeUnit === 'in' ? CONSTANTS.SCREEN_DPI : CONSTANTS.DISPLAY_MM_TO_PX);
+  const effectiveBleedWidth = bleedEdge ? (bleedEdgeUnit === 'in' ? bleedEdgeWidth * CONSTANTS.MM_PER_IN : bleedEdgeWidth) : 0;
   // Top padding matches side gap from centering: (containerWidth - scaledPageWidth) / 2
   // On mobile, use a smaller minimum since page is scaled down
   const scaledPageWidth = pageWidthPx * effectiveZoom;
   const sideGap = Math.max(0, (containerWidth - scaledPageWidth) / 2);
   const topPaddingPx = mobile
     ? Math.min(sideGap, 32) // Smaller top padding on mobile
-    : Math.min(Math.max(0, sideGap - PAGE_GAP_PX), 100);
+    : Math.min(Math.max(0, sideGap - CONSTANTS.PAGE_GAP_PX), 100);
 
   // Source settings for layout calculations
   const sourceSettings = useMemo(() => ({
@@ -588,7 +583,7 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
 
   // Page count and content dimensions
   const pageCount = Math.max(1, Math.ceil(localCards.length / pageCapacity));
-  const totalContentHeight = pageCount * pageHeightPx + (pageCount + 1) * PAGE_GAP_PX + topPaddingPx;
+  const totalContentHeight = pageCount * pageHeightPx + (pageCount + 1) * CONSTANTS.PAGE_GAP_PX + topPaddingPx;
 
   // Page layout info for PixiJS
   const pixiPages = useMemo((): PageLayoutInfo[] => {
@@ -596,22 +591,22 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
       pageIndex: i,
       pageWidthPx: pageWidthPx,
       pageHeightPx: pageHeightPx,
-      pageYOffset: topPaddingPx + PAGE_GAP_PX + i * (pageHeightPx + PAGE_GAP_PX),
+      pageYOffset: topPaddingPx + CONSTANTS.PAGE_GAP_PX + i * (pageHeightPx + CONSTANTS.PAGE_GAP_PX),
     }));
   }, [pageCount, pageWidthPx, pageHeightPx, topPaddingPx]);
 
   // Card positions for PixiJS
   // Use a consistent card size for grid layout (base + bleed) to prevent shifts when cards are added
-  const fixedCardWidthMm = baseCardWidthMm + effectiveBleedWidth * 2;
-  const fixedCardHeightMm = baseCardHeightMm + effectiveBleedWidth * 2;
+  const fixedCardWidthMm = CONSTANTS.CARD_WIDTH_MM + effectiveBleedWidth * 2;
+  const fixedCardHeightMm = CONSTANTS.CARD_HEIGHT_MM + effectiveBleedWidth * 2;
 
   // Serialized overrides for dependency tracking (extracted to avoid complex expressions in dep array)
   const frontCardOverridesKey = localCards.map(c => `${c.overrides?.brightness}:${c.overrides?.contrast}:${c.overrides?.saturation}:${c.overrides?.holoEffect}:${c.overrides?.holoAnimation}`).join(',');
   const backCardOverridesKey = Array.from(backCardMap.values()).map(bc => `${bc.overrides?.brightness}:${bc.overrides?.contrast}:${bc.overrides?.saturation}:${bc.overrides?.holoEffect}:${bc.overrides?.holoAnimation}`).join(',');
 
   const globalPixiCards = useMemo((): CardWithGlobalLayout[] => {
-    const pageWidthMm = pageWidth * (pageSizeUnit === 'in' ? 25.4 : 1);
-    const pageHeightMm = pageHeight * (pageSizeUnit === 'in' ? 25.4 : 1);
+    const pageWidthMm = pageWidth * (pageSizeUnit === 'in' ? CONSTANTS.MM_PER_IN : 1);
+    const pageHeightMm = pageHeight * (pageSizeUnit === 'in' ? CONSTANTS.MM_PER_IN : 1);
 
     // Fixed grid dimensions based on settings (not actual cards)
     const gridWidthMm = columns * fixedCardWidthMm + (columns - 1) * cardSpacingMm;
@@ -659,13 +654,11 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
           backImageId: backCard?.imageId,
           backOverrides: backCard?.overrides, // Back card's overrides for per-face rendering
           darknessFactor: imageData?.darknessFactor ?? 0.5,
-          globalX: xMm * MM_TO_PX,
-          globalY: topPaddingPx + PAGE_GAP_PX + pageIndex * (pageHeightPx + PAGE_GAP_PX) + yMm * MM_TO_PX,
-          width: layout.cardWidthMm * MM_TO_PX,
-          height: layout.cardHeightMm * MM_TO_PX,
+          globalX: xMm * CONSTANTS.DISPLAY_MM_TO_PX,
+          globalY: topPaddingPx + CONSTANTS.PAGE_GAP_PX + pageIndex * (pageHeightPx + CONSTANTS.PAGE_GAP_PX) + yMm * CONSTANTS.DISPLAY_MM_TO_PX,
+          width: layout.cardWidthMm * CONSTANTS.DISPLAY_MM_TO_PX,
+          height: layout.cardHeightMm * CONSTANTS.DISPLAY_MM_TO_PX,
           bleedMm: layout.bleedMm,
-          baseCardWidthMm,
-          baseCardHeightMm,
           // Precomputed hashes for fast memo comparison
           overridesHash: hashOverrides(card.overrides),
           backOverridesHash: hashOverrides(backCard?.overrides),
@@ -834,8 +827,8 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
 
                               // Calculate bleed/dimensions
                               const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
-                              const cardWidth = (baseCardWidthMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
-                              const cardHeight = (baseCardHeightMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
+                              const cardWidth = (CONSTANTS.CARD_WIDTH_MM + bleedMm * 2) * CONSTANTS.DISPLAY_MM_TO_PX * effectiveZoom;
+                              const cardHeight = (CONSTANTS.CARD_HEIGHT_MM + bleedMm * 2) * CONSTANTS.DISPLAY_MM_TO_PX * effectiveZoom;
 
                               const imageUrl = card.imageId ? processedImageUrls[card.imageId] : undefined;
                               if (!imageUrl) return null;
@@ -886,12 +879,12 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
                       if (!card) return null;
 
                       const bleedMm = getCardTargetBleed(card, sourceSettings, effectiveBleedWidth);
-                      const cardWidth = (baseCardWidthMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
-                      const cardHeight = (baseCardHeightMm + bleedMm * 2) * MM_TO_PX * effectiveZoom;
-                      const bleedPx = bleedMm * MM_TO_PX * effectiveZoom;
+                      const cardWidth = (CONSTANTS.CARD_WIDTH_MM + bleedMm * 2) * CONSTANTS.DISPLAY_MM_TO_PX * effectiveZoom;
+                      const cardHeight = (CONSTANTS.CARD_HEIGHT_MM + bleedMm * 2) * CONSTANTS.DISPLAY_MM_TO_PX * effectiveZoom;
+                      const bleedPx = bleedMm * CONSTANTS.DISPLAY_MM_TO_PX * effectiveZoom;
                       const baseWidth = cardWidth - 2 * bleedPx;
                       const baseHeight = cardHeight - 2 * bleedPx;
-                      const cornerRadius = 2.5 * MM_TO_PX * effectiveZoom;
+                      const cornerRadius = CONSTANTS.CORNER_RADIUS_MM * CONSTANTS.DISPLAY_MM_TO_PX * effectiveZoom;
 
                       const imageUrl = card.imageId ? processedImageUrls[card.imageId] : undefined;
                       if (!imageUrl) return null;

@@ -5,7 +5,7 @@ import { createImportSession, getCurrentSession, type ImportType } from "./impor
 import { useSettingsStore } from "../store";
 import { findBestMpcMatches, parseMpcCardLogic } from "./mpcImportIntegration";
 import { API_BASE } from "../constants";
-import { IMAGE_PROCESSING } from "@/constants/imageProcessing";
+import { CONSTANTS } from "@/constants/commonConstants";
 import { db } from "../db";
 import { getMpcAutofillImageUrl } from "./mpcAutofillApi";
 import { convertScryfallToCardOptions, persistResolvedCards } from "./cardConverter";
@@ -268,7 +268,7 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
         }
 
         // Step 2: Process MPC matches in batches and UPDATE placeholder cards
-        const CHUNK_SIZE = IMAGE_PROCESSING.MPC_CHUNK_SIZE;
+        const CHUNK_SIZE = CONSTANTS.MPC_CHUNK_SIZE;
         const mpcInfos = [...uniqueInfos];
         const failingInfos: CardInfo[] = [];
         let processedMpc = 0;
@@ -296,11 +296,17 @@ export async function streamCards(options: StreamCardsOptions): Promise<StreamCa
                 // Update all placeholder cards for this key with the MPC image
                 await db.transaction('rw', db.cards, async () => {
                     for (const uuid of placeholderUuids) {
+                        const existingCard = await db.cards.get(uuid);
                         await db.cards.update(uuid, {
                             name: cardName,
                             imageId,
                             hasBuiltInBleed,
                             needsEnrichment,
+                            overrides: {
+                                ...existingCard?.overrides,
+                                darkenMode: 'none',
+                                darkenUseGlobalSettings: false,
+                            }
                         });
                     }
                 });

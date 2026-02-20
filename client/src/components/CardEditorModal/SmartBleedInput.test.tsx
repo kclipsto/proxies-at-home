@@ -21,6 +21,7 @@ vi.mock('../common', () => ({
 }));
 
 import { SmartBleedInput } from './SmartBleedInput';
+import { CONSTANTS } from '@/constants/commonConstants';
 
 describe('SmartBleedInput', () => {
     const defaultProps = {
@@ -90,9 +91,8 @@ describe('SmartBleedInput', () => {
 
     describe('unit conversion', () => {
         it('should convert to inches when unit is changed', () => {
-            render(<SmartBleedInput {...defaultProps} valueMm={25.4} />);
+            render(<SmartBleedInput {...defaultProps} valueMm={CONSTANTS.MM_PER_IN} />);
 
-            // Start with mm (25.4mm = 1 inch)
             const select = screen.getByTestId('unit-select');
             fireEvent.change(select, { target: { value: 'in' } });
 
@@ -102,13 +102,11 @@ describe('SmartBleedInput', () => {
 
         it('should convert inches to mm when submitting', () => {
             const onChangeMm = vi.fn();
-            render(<SmartBleedInput {...defaultProps} valueMm={25.4} onChangeMm={onChangeMm} />);
+            render(<SmartBleedInput {...defaultProps} valueMm={CONSTANTS.MM_PER_IN} onChangeMm={onChangeMm} />);
 
-            // Change to inches
             const select = screen.getByTestId('unit-select');
             fireEvent.change(select, { target: { value: 'in' } });
 
-            // Change value in inches (2 inches = 50.8mm)
             const input = screen.getByTestId('number-input');
             fireEvent.change(input, { target: { value: '2' } });
 

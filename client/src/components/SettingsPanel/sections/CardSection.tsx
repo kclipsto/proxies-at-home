@@ -6,14 +6,7 @@ import { AutoTooltip } from "@/components/common";
 import { useMemo, useState } from "react";
 import { PerCardOffsetModal } from "@/components/PerCardOffsetModal";
 import { WrenchIcon } from "lucide-react";
-
-const INCH_TO_MM = 25.4;
-const CARD_W_IN = 2.5;
-const CARD_H_IN = 3.5;
-
-function inToMm(inches: number) {
-    return inches * INCH_TO_MM;
-}
+import { CONSTANTS } from "@/constants/commonConstants";
 
 export function CardSection() {
     const columns = useSettingsStore((state) => state.columns);
@@ -39,11 +32,11 @@ export function CardSection() {
 
     const [showPerCardModal, setShowPerCardModal] = useState(false);
 
-    const pageWmm = pageUnit === "mm" ? pageWidth : inToMm(pageWidth);
-    const pageHmm = pageUnit === "mm" ? pageHeight : inToMm(pageHeight);
+    const pageWmm = pageUnit === "mm" ? pageWidth : pageWidth * CONSTANTS.MM_PER_IN;
+    const pageHmm = pageUnit === "mm" ? pageHeight : pageHeight * CONSTANTS.MM_PER_IN;
 
-    const cardWmm = inToMm(CARD_W_IN) + (bleedEdge ? 2 * bleedEdgeWidth : 0);
-    const cardHmm = inToMm(CARD_H_IN) + (bleedEdge ? 2 * bleedEdgeWidth : 0);
+    const cardWmm = CONSTANTS.CARD_WIDTH_MM + (bleedEdge ? 2 * bleedEdgeWidth : 0);
+    const cardHmm = CONSTANTS.CARD_HEIGHT_MM + (bleedEdge ? 2 * bleedEdgeWidth : 0);
 
     const maxSpacingMm = useMemo(() => {
         const xDen = Math.max(1, columns - 1);

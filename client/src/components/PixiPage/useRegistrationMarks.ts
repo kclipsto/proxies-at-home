@@ -9,8 +9,7 @@
 import { useRef, useEffect } from 'react';
 import { Graphics, type Container, type Application } from 'pixi.js';
 import type { PageLayoutInfo } from './PixiVirtualCanvas';
-
-const MM_TO_PX = 96 / 25.4;
+import { CONSTANTS } from '@/constants/commonConstants';
 
 // Registration mark constants (must match pdf.worker.ts)
 const REG_MARK_OFFSET_MM = 10.0076;  // 0.394" from page edge (Silhouette spec)
@@ -87,10 +86,10 @@ export function useRegistrationMarks({
         container.addChild(g);
         graphicsRef.current = g;
 
-        const offsetPx = REG_MARK_OFFSET_MM * MM_TO_PX;
-        const squareSizePx = REG_MARK_SQUARE_SIZE_MM * MM_TO_PX;
-        const armLengthPx = REG_MARK_ARM_LENGTH_MM * MM_TO_PX;
-        const lineWidthPx = REG_MARK_LINE_WIDTH_MM * MM_TO_PX;
+        const offsetPx = REG_MARK_OFFSET_MM * CONSTANTS.DISPLAY_MM_TO_PX;
+        const squareSizePx = REG_MARK_SQUARE_SIZE_MM * CONSTANTS.DISPLAY_MM_TO_PX;
+        const armLengthPx = REG_MARK_ARM_LENGTH_MM * CONSTANTS.DISPLAY_MM_TO_PX;
+        const lineWidthPx = REG_MARK_LINE_WIDTH_MM * CONSTANTS.DISPLAY_MM_TO_PX;
 
         pages.forEach((page) => {
             const pageY = page.pageYOffset;
