@@ -411,4 +411,3 @@ export function applyDarkenAllCPU(imageData: ImageData): void {
 export function shouldTrimBleed(targetBleedMm: number, existingBleedMm: number = CONSTANTS.DEFAULT_MPC_BLEED_MM): boolean {
     return targetBleedMm <= existingBleedMm;
 }
-
