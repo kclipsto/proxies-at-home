@@ -168,7 +168,7 @@ export const ColorPicker = memo(function ColorPicker({ label, value, onChange, o
 
     // Handle popover close - call onChangeEnd if value changed
     const handleClose = useCallback(() => {
-        if (isOpen && onChangeEnd && valueOnOpenRef.current !== value) {
+        if (isOpen && onChangeEnd && valueOnOpenRef.current !== value && value) {
             onChangeEnd(value, valueOnOpenRef.current);
         }
         setIsOpen(false);
