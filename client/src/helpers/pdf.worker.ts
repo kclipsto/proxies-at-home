@@ -107,6 +107,7 @@ function createFullPageGuidesCanvas(
     contentWidthPx: number, contentHeightPx: number,
     spacingPx: number, guideWidthPx: number,
     cutLineStyle: 'none' | 'edges' | 'full',
+    guidePlacement: 'inside' | 'outside' | 'center' = 'outside',
     rightAlignRows: boolean = false,
     totalCards: number = 0,
     blankIndices: Set<number> = new Set()
@@ -116,9 +117,8 @@ function createFullPageGuidesCanvas(
     const canvas = new OffscreenCanvas(pageW, pageH);
     const ctx = canvas.getContext('2d')!;
 
-    // Use Sets to collect unique cut positions
-    const xCuts = new Set<number>();
-    const yCuts = new Set<number>();
+    const xCuts = new Map<number, 'left' | 'right' | 'both'>();
+    const yCuts = new Map<number, 'top' | 'bottom' | 'both'>();
 
     // For each card, calculate its cut positions (skip blank cards)
     cardLayouts.forEach((layout, idx) => {
@@ -157,10 +157,10 @@ function createFullPageGuidesCanvas(
         const topCut = cardY + layout.bleedPx;
         const bottomCut = cardY + layout.bleedPx + contentHeightPx;
 
-        xCuts.add(leftCut);
-        xCuts.add(rightCut);
-        yCuts.add(topCut);
-        yCuts.add(bottomCut);
+        xCuts.set(leftCut, xCuts.get(leftCut) === 'right' ? 'both' : 'left');
+        xCuts.set(rightCut, xCuts.get(rightCut) === 'left' ? 'both' : 'right');
+        yCuts.set(topCut, yCuts.get(topCut) === 'bottom' ? 'both' : 'top');
+        yCuts.set(bottomCut, yCuts.get(bottomCut) === 'top' ? 'both' : 'bottom');
     });
 
     // Calculate grid bounds for edge-style lines
@@ -169,39 +169,85 @@ function createFullPageGuidesCanvas(
 
     ctx.fillStyle = "#000000";
 
+    const halfWidth = guideWidthPx / 2;
+
     // Draw vertical lines
-    for (const x of xCuts) {
-        if (cutLineStyle === 'full') {
-            ctx.fillRect(x, 0, guideWidthPx, pageH);
-        } else {
-            // Edges only - stubs at top and bottom
-            if (startY > 0) {
-                ctx.fillRect(x, 0, guideWidthPx, startY);
+    xCuts.forEach((type, x) => {
+        let offsetPx = 0;
+
+        const drawLine = (finalOffsetX: number) => {
+            const lineX = x + finalOffsetX - halfWidth;
+            if (cutLineStyle === 'full') {
+                ctx.fillRect(lineX, 0, guideWidthPx, pageH);
+            } else {
+                // Edges only - stubs at top and bottom
+                if (startY > 0) {
+                    ctx.fillRect(lineX, 0, guideWidthPx, startY);
+                }
+                const botStubStart = startY + gridHeightPx;
+                const botStubH = pageH - botStubStart;
+                if (botStubH > 0) {
+                    ctx.fillRect(lineX, botStubStart, guideWidthPx, botStubH);
+                }
             }
-            const botStubStart = startY + gridHeightPx;
-            const botStubH = pageH - botStubStart;
-            if (botStubH > 0) {
-                ctx.fillRect(x, botStubStart, guideWidthPx, botStubH);
+        };
+
+        if (type === 'left') {
+            offsetPx = guidePlacement === 'outside' ? -halfWidth : guidePlacement === 'inside' ? halfWidth : 0;
+            drawLine(offsetPx);
+        } else if (type === 'right') {
+            offsetPx = guidePlacement === 'outside' ? halfWidth : guidePlacement === 'inside' ? -halfWidth : 0;
+            drawLine(offsetPx);
+        } else if (type === 'both') {
+            const leftOffset = guidePlacement === 'outside' ? -halfWidth : guidePlacement === 'inside' ? halfWidth : 0;
+            const rightOffset = guidePlacement === 'outside' ? halfWidth : guidePlacement === 'inside' ? -halfWidth : 0;
+            if (leftOffset === rightOffset) {
+                drawLine(leftOffset);
+            } else {
+                drawLine(leftOffset);
+                drawLine(rightOffset);
             }
         }
-    }
+    });
 
     // Draw horizontal lines
-    for (const y of yCuts) {
-        if (cutLineStyle === 'full') {
-            ctx.fillRect(0, y, pageW, guideWidthPx);
-        } else {
-            // Edges only - stubs at left and right
-            if (startX > 0) {
-                ctx.fillRect(0, y, startX, guideWidthPx);
+    yCuts.forEach((type, y) => {
+        let offsetPx = 0;
+
+        const drawLine = (finalOffsetY: number) => {
+            const lineY = y + finalOffsetY - halfWidth;
+            if (cutLineStyle === 'full') {
+                ctx.fillRect(0, lineY, pageW, guideWidthPx);
+            } else {
+                // Edges only - stubs at left and right
+                if (startX > 0) {
+                    ctx.fillRect(0, lineY, startX, guideWidthPx);
+                }
+                const rightStubStart = startX + gridWidthPx;
+                const rightStubW = pageW - rightStubStart;
+                if (rightStubW > 0) {
+                    ctx.fillRect(rightStubStart, lineY, rightStubW, guideWidthPx);
+                }
             }
-            const rightStubStart = startX + gridWidthPx;
-            const rightStubW = pageW - rightStubStart;
-            if (rightStubW > 0) {
-                ctx.fillRect(rightStubStart, y, rightStubW, guideWidthPx);
+        };
+
+        if (type === 'top') {
+            offsetPx = guidePlacement === 'outside' ? -halfWidth : guidePlacement === 'inside' ? halfWidth : 0;
+            drawLine(offsetPx);
+        } else if (type === 'bottom') {
+            offsetPx = guidePlacement === 'outside' ? halfWidth : guidePlacement === 'inside' ? -halfWidth : 0;
+            drawLine(offsetPx);
+        } else if (type === 'both') {
+            const topOffset = guidePlacement === 'outside' ? -halfWidth : guidePlacement === 'inside' ? halfWidth : 0;
+            const bottomOffset = guidePlacement === 'outside' ? halfWidth : guidePlacement === 'inside' ? -halfWidth : 0;
+            if (topOffset === bottomOffset) {
+                drawLine(topOffset);
+            } else {
+                drawLine(topOffset);
+                drawLine(bottomOffset);
             }
         }
-    }
+    });
 
     return canvas;
 }
@@ -511,6 +557,7 @@ self.onmessage = async (event: MessageEvent) => {
             pageWidthPx, pageHeightPx, startX, startY, columns,
             layouts, colWidths, rowHeights, colOffsets, rowOffsets,
             contentWidthInPx, contentHeightInPx, spacingPx, scaledGuideWidth, cutLineStyle,
+            guidePlacement ?? 'outside',
             rightAlignRows, pageCards.length, blankIndices
         );
         if (fullPageGuidesCanvas) {
