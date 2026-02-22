@@ -402,6 +402,10 @@ export async function generateBleedCanvasWebGL(
     gl.clearColor(-1, -1, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    // Determine corner radius in source pixels for masking inside the shader
+    // We add 2mm to ensure the JFA floods fully over the corners 
+    const targetCornerRadiusPx = MM_TO_PX(CONSTANTS.CORNER_RADIUS_MM + 2, dpi);
+
     // Uniforms
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, imgTexture);
@@ -409,6 +413,7 @@ export async function generateBleedCanvasWebGL(
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), targetCardWidth, targetCardHeight);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), bleed, bleed);
+    gl.uniform1f(gl.getUniformLocation(progs.init, "u_cornerRadius"), targetCornerRadiusPx);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_scale"), scaleX, scaleY);
@@ -588,6 +593,10 @@ export async function processCardImageWebGL(
 
 
 
+    // Determine corner radius in source pixels for masking inside the shader
+    // We add 2mm to ensure the JFA floods fully over the corners
+    const targetCornerRadiusPx = MM_TO_PX(CONSTANTS.CORNER_RADIUS_MM + 2, exportDpi);
+
     // --- PASS 1: INIT (run once) ---
     gl.useProgram(progs.init);
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbA);
@@ -600,6 +609,7 @@ export async function processCardImageWebGL(
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_resolution"), finalWidth, finalHeight);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_imageSize"), inputWidth, inputHeight);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_offset"), additionalBleedPx, additionalBleedPx);
+    gl.uniform1f(gl.getUniformLocation(progs.init, "u_cornerRadius"), targetCornerRadiusPx);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcImageSize"), img.width, img.height);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_srcOffset"), sourceOffsetX, sourceOffsetY);
     gl.uniform2f(gl.getUniformLocation(progs.init, "u_scale"), scaleX, scaleY);

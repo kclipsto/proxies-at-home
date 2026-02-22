@@ -17,6 +17,7 @@ uniform sampler2D u_image;
 uniform vec2 u_resolution;
 uniform vec2 u_imageSize;      // Content area size (targetCardWidth x targetCardHeight)
 uniform vec2 u_offset;         // Content area position (bleed, bleed)
+uniform float u_cornerRadius;  // The radius of the corners in pixels
 uniform vec2 u_srcImageSize;   // Source image dimensions
 uniform vec2 u_srcOffset;      // Source crop offset (in source pixels)
 uniform vec2 u_scale;          // Scale factor (drawWidth/srcWidth, drawHeight/srcHeight)
@@ -47,8 +48,30 @@ void main() {
         
         vec4 color = texture(u_image, imageUV);
 
-        // If opaque enough, output the seed (pixel coordinate)
-        if (color.a > 0.01) { // Threshold for "seed"
+        // Check if the pixel is inside the "true" rounded card area
+        bool isInside = true;
+        float r = u_cornerRadius;
+        
+        // Only need to check distance if we are in one of the 4 outer corner zones
+        if (contentCoord.x < r || contentCoord.x > u_imageSize.x - r) {
+            if (contentCoord.y < r || contentCoord.y > u_imageSize.y - r) {
+                
+                // Which corner center are we measuring from?
+                float cx = contentCoord.x < r ? r : u_imageSize.x - r;
+                float cy = contentCoord.y < r ? r : u_imageSize.y - r;
+                
+                vec2 center = vec2(cx, cy);
+                float dist = distance(contentCoord, center);
+                
+                // If distance is explicitly greater than radius, it's outside the curve
+                if (dist > r) {
+                    isInside = false;
+                }
+            }
+        }
+
+        // If opaque enough AND it is not part of the physical exterior corner, output the seed
+        if (color.a > 0.01 && isInside) { // Threshold for "seed"
             outColor = vec4(pixelCoord.x, pixelCoord.y, 0.0, 1.0);
             return;
         }

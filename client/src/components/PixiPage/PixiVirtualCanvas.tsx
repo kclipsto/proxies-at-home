@@ -552,6 +552,7 @@ function PixiVirtualCanvasInner({
         pages,
         cards,
         cutLineStyle,
+        guidePlacement: perCardGuidePlacement,
         guideWidth,
     });
 

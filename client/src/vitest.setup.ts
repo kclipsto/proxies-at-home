@@ -67,13 +67,9 @@ afterAll(async () => {
     // Close Dexie connection with a timeout to prevent hanging
     if (db) {
       if (db.isOpen()) {
-        await Promise.race([
-          db.close(),
-          new Promise(resolve => setTimeout(resolve, 500)) // Force continue after 500ms
-        ]);
-        // console.log('[vitest.setup] DB closed (or timed out)');
-      } else {
-        // console.log('[vitest.setup] DB was already closed');
+        try {
+          db.close();
+        } catch (e) { /* ignore */ }
       }
     }
   } catch (e) {
