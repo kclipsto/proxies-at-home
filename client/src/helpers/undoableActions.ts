@@ -596,6 +596,12 @@ export async function undoableAddCards(
 
             // Recreate missing images using their original source URLs (with retry for transient failures)
             for (const imageId of missingImageIds) {
+                // Skip restoring upload-library or custom images here, useImageProcessing will handle their regeneration
+                // from the user_images table on demand
+                if (/^[a-f0-9]{64}(-[a-z]+)?$/i.test(imageId)) {
+                    continue;
+                }
+
                 const sourceUrl = imageSourceUrls.get(imageId);
                 const urlToFetch = sourceUrl || imageId; // Fallback to imageId as URL
 

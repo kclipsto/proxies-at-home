@@ -19,6 +19,10 @@ interface UserPreferencesState {
     setFavoriteScryfallGroupBySet: (enabled: boolean) => Promise<void>;
     setFavoriteScryfallSearchMode: (mode: 'cards' | 'prints' | null) => Promise<void>;
 
+    setUploadLibrarySort: (sort: 'name' | 'date' | 'type' | null) => Promise<void>;
+    setUploadLibrarySortDirection: (dir: 'asc' | 'desc') => Promise<void>;
+    setFavoriteUploadLibraryGroupByType: (enabled: boolean) => Promise<void>;
+
     // UI State Actions
     setSettingsPanelState: (state: { order: string[], collapsed: Record<string, boolean> }) => Promise<void>;
     setSettingsPanelWidth: (width: number) => Promise<void>;
@@ -63,6 +67,18 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
             if (!prefs.favoriteMpcSources) prefs.favoriteMpcSources = [];
             if (!prefs.favoriteMpcTags) prefs.favoriteMpcTags = [];
             if (!prefs.favoriteScryfallSets) prefs.favoriteScryfallSets = [];
+
+            // Migration: customXXX -> uploadLibraryXXX
+            /* eslint-disable @typescript-eslint/no-explicit-any */
+            if ((prefs as any).customUploadSort) {
+                (prefs as any).uploadLibrarySort = (prefs as any).customUploadSort;
+                delete (prefs as any).customUploadSort;
+            }
+            if ((prefs as any).favoriteCustomGroupByType !== undefined) {
+                (prefs as any).favoriteUploadLibraryGroupByType = (prefs as any).favoriteCustomGroupByType;
+                delete (prefs as any).favoriteCustomGroupByType;
+            }
+            /* eslint-enable @typescript-eslint/no-explicit-any */
 
             // Ensure UI fields exist
             const defaultOrder = ['projects', 'layout', 'bleed', 'card', 'guides', 'darken', 'filterSort', 'export', 'application'];
@@ -170,6 +186,9 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
             favoriteMpcSort: currentPrefs?.favoriteMpcSort ?? null,
             favoriteScryfallSets: currentPrefs?.favoriteScryfallSets || [],
             favoriteScryfallSort: currentPrefs?.favoriteScryfallSort ?? null,
+            uploadLibrarySort: currentPrefs?.uploadLibrarySort ?? null,
+            uploadLibrarySortDirection: currentPrefs?.uploadLibrarySortDirection,
+            favoriteUploadLibraryGroupByType: currentPrefs?.favoriteUploadLibraryGroupByType ?? false,
         };
 
         await db.userPreferences.put(newPrefs);
@@ -340,6 +359,32 @@ export const useUserPreferencesStore = create<UserPreferencesState>((set, get) =
         if (!prefs) return;
 
         const newPrefs = { ...prefs, favoriteMpcGroupBySource: enabled };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setUploadLibrarySort: async (sort: 'name' | 'date' | 'type' | null) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const newPrefs = { ...prefs, uploadLibrarySort: sort };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setUploadLibrarySortDirection: async (dir: 'asc' | 'desc') => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+        const newPrefs = { ...prefs, uploadLibrarySortDirection: dir };
+        await db.userPreferences.put(newPrefs);
+        set({ preferences: newPrefs });
+    },
+
+    setFavoriteUploadLibraryGroupByType: async (enabled: boolean) => {
+        const prefs = get().preferences;
+        if (!prefs) return;
+
+        const newPrefs = { ...prefs, favoriteUploadLibraryGroupByType: enabled };
         await db.userPreferences.put(newPrefs);
         set({ preferences: newPrefs });
     }

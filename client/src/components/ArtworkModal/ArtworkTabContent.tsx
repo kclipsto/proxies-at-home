@@ -2,13 +2,12 @@ import { useState } from "react";
 import { Button, Checkbox } from "flowbite-react";
 import { Search, Filter, Image, Settings } from "lucide-react";
 import { ToggleButtonGroup, CardGrid, ArtSourceToggle, FloatingZoomPanel, CardArtContent } from "../common";
-
+import type { ArtSource } from "../common/ArtSourceToggle";
+import type { UploadLibraryItem } from '@/helpers/uploadLibrary';
 import { CardbackLibrary } from "./CardbackLibrary";
 import type { CardOption, PrintInfo } from "../../../../shared/types";
 import { isCardbackId, type CardbackOption } from "@/helpers/cardbackLibrary";
 import type { MpcAutofillCard } from "@/helpers/mpcAutofillApi";
-
-type ArtSource = 'scryfall' | 'mpc';
 
 /** SVG icon for the MTG cardback button */
 function CardbackIcon() {
@@ -52,6 +51,7 @@ export interface ArtworkTabContentProps {
     onSetAsDefaultCardback: (id: string, name: string) => void;
     onSelectArtwork: (url: string, cardName?: string, specificPrint?: { set: string; number: string }) => void;
     onSelectMpcArt: (card: MpcAutofillCard) => void;
+    onSelectUploadLibraryArt?: (upload: UploadLibraryItem) => void;
     onClose: () => void;
     onRequestDelete: (cardbackId: string, cardbackName: string) => void;
     onExecuteDelete: (cardbackId: string) => Promise<void>;
@@ -65,6 +65,7 @@ export interface ArtworkTabContentProps {
     setActiveTab?: (tab: 'artwork' | 'settings') => void;
     setSelectedFace?: (face: 'front' | 'back') => void;
     setZoomLevel?: (level: number) => void;
+    showUploadLibrary?: boolean;
 }
 
 /**
@@ -93,6 +94,7 @@ export function ArtworkTabContent({
     onSetAsDefaultCardback,
     onSelectArtwork,
     onSelectMpcArt,
+    onSelectUploadLibraryArt,
     onClose,
     onRequestDelete,
     onExecuteDelete,
@@ -102,6 +104,7 @@ export function ArtworkTabContent({
     setActiveTab,
     setSelectedFace,
     setZoomLevel,
+    showUploadLibrary,
 }: ArtworkTabContentProps) {
     const [mpcFiltersCollapsed, onMpcFiltersCollapsedChange] = useState(() => {
         // Default: Hidden on mobile (true), Visible on desktop (false)
@@ -137,7 +140,13 @@ export function ArtworkTabContent({
                                 { id: 'back' as const, label: tabLabels.back },
                             ]}
                             value={selectedFace}
-                            onChange={(val) => setSelectedFace?.(val)}
+                            onChange={(val) => {
+                                console.log(`[ArtworkTabContent] mobile ToggleButtonGroup onChange: val=${val}, current selectedFace=${selectedFace}`);
+                                setSelectedFace?.(val);
+                                if (val === 'back' && !linkedBackCard && !isDFC) {
+                                    setShowCardbackLibrary(true);
+                                }
+                            }}
                         />
                     </div>
                     <div>
@@ -243,6 +252,23 @@ export function ArtworkTabContent({
                     )
                 }
 
+                {showArtworkGrid && (
+                    <div className={artSource === 'upload-library' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
+                        <CardArtContent
+                            artSource="upload-library"
+                            query={displayData.name || modalCard.name || ''}
+                            cardSize={zoomLevel}
+                            selectedArtId={displayData.selectedArtId}
+                            onSelectCard={(_name, url) => onSelectArtwork(url || '')}
+                            onUploadLibraryItemSelect={onSelectUploadLibraryArt}
+                            containerClassStyle="flex-1 h-full"
+                            isActive={artSource === 'upload-library'}
+                            filtersCollapsed={mpcFiltersCollapsed}
+                            onFilterCountChange={setActiveFilterCount}
+                            selectedFace={selectedFace}
+                        />
+                    </div>
+                )}
                 {/* Floating Zoom Controls - Desktop only */}
                 {showArtworkGrid && setZoomLevel && (
                     <FloatingZoomPanel
@@ -263,6 +289,7 @@ export function ArtworkTabContent({
                         <ArtSourceToggle
                             value={artSource}
                             onChange={setArtSource}
+                            showUploadLibrary={showUploadLibrary}
                             className="w-full"
                         />
                     </div>
@@ -276,13 +303,13 @@ export function ArtworkTabContent({
                             <ArtSourceToggle
                                 value={artSource}
                                 onChange={setArtSource}
+                                showUploadLibrary={showUploadLibrary}
                                 vertical={false}
                             />
                         </div>
                     )}
 
-                    {/* Filter button - for both MPC and Scryfall, hidden for cardback library */}
-                    {!showCardbackLibraryGrid && (artSource === 'mpc' || artSource === 'scryfall') && (
+                    {!showCardbackLibraryGrid && (
                         <button
                             onClick={() => onMpcFiltersCollapsedChange?.(!mpcFiltersCollapsed)}
                             className={`flex items-center justify-center h-10 w-10 rounded-lg border transition-colors ${mpcFiltersCollapsed

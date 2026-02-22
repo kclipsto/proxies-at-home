@@ -956,6 +956,7 @@ export function PageView({ cards, allCards, images, mobile, active = true }: Pag
         contextMenu={contextMenu}
         setContextMenu={setContextMenu}
         cards={cards}
+        allCards={allCards}
         flippedCards={flippedCards}
       />
 

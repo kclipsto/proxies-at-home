@@ -2,8 +2,9 @@ import logoSvg from "@/assets/logo.svg";
 import { Button } from "flowbite-react";
 import { ChevronDown, ChevronRight, Star, RefreshCw } from "lucide-react";
 import { CardGrid } from "./CardGrid";
-import { CardArtFilterBar } from "./CardArtFilterBar";
+import { CardArtFilterBar } from "./CardArtFilterBar/CardArtFilterBar";
 import { CardImageSvg } from "./CardImageSvg";
+
 import { useScryfallSearch } from "@/hooks/useScryfallSearch";
 import { useScryfallPrints } from "@/hooks/useScryfallPrints";
 import { useMpcSearch } from "@/hooks/useMpcSearch";
@@ -22,7 +23,11 @@ import { fetchScryfallSets } from "@/helpers/scryfallApi";
 import type { ScryfallCard, PrintInfo } from "../../../../shared/types";
 import { useUserPreferencesStore } from "@/store";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-
+import {
+  getUploadLibraryItems,
+  type UploadLibraryItem,
+} from "@/helpers/uploadLibrary";
+import { UploadLibraryGrid } from '../Upload/UploadLibraryGrid';
 /**
  * Hook to maintain a stable sort key that only updates on specific triggers:
  * 1. Navigation (query changes)
@@ -74,7 +79,7 @@ function useStableSortKey<T>(
   return sortKeyRef.current;
 }
 
-type ArtSource = "scryfall" | "mpc";
+type ArtSource = "scryfall" | "mpc" | "upload-library";
 
 export interface CardArtContentProps {
   /** Art source to search */
@@ -89,8 +94,8 @@ export interface CardArtContentProps {
     imageUrl?: string,
     specificPrint?: { set: string; number: string }
   ) => void;
-  /** Optional callback to switch to the other art source */
   onSwitchSource?: () => void;
+  onUploadLibraryItemSelect?: (upload: UploadLibraryItem) => void;
 
   /** Mode: 'search' for card search, 'prints' for all prints of one card */
   mode?: "search" | "prints";
@@ -139,13 +144,35 @@ export function CardArtContent({
   filtersCollapsed = false,
   onFilterCountChange,
   onSelectMpcCard,
+  onUploadLibraryItemSelect,
   containerClassStyle,
   isActive,
   cardTypeLine,
   initialPrints,
 }: CardArtContentProps) {
-  // Helper to strip query params for URL comparison (Scryfall URLs have timestamps)
   const stripQuery = useCallback((url?: string) => url?.split("?")[0], []);
+  const [uploadLibraryItems, setUploadLibraryItems] = useState<UploadLibraryItem[]>([]);
+
+  // Fetch items when source is upload-library
+  useEffect(() => {
+    if (artSource === 'upload-library') {
+      getUploadLibraryItems().then(setUploadLibraryItems);
+    }
+  }, [artSource]);
+
+  const refreshUploadLibraryItems = useCallback(async () => {
+    const items = await getUploadLibraryItems();
+    setUploadLibraryItems(items);
+  }, []);
+
+  const handleUploadLibraryItemSelect = useCallback((item: UploadLibraryItem) => {
+    console.log(`[CardArtContent] handleUploadLibraryItemSelect: hash=${item.hash.substring(0, 8)}, displayName=${item.displayName}, linkedFront=${item.linkedFrontHash?.substring(0, 8)}, linkedBack=${item.linkedBackHash?.substring(0, 8)}`);
+    if (onUploadLibraryItemSelect) {
+      onUploadLibraryItemSelect(item);
+    } else {
+      onSelectCard(item.displayName || item.canonicalCardName || "Upload", item.imageUrl);
+    }
+  }, [onUploadLibraryItemSelect, onSelectCard]);
 
   // Get favorites from user preferences store
   const favoriteScryfallSets = useUserPreferencesStore(
@@ -532,20 +559,21 @@ export function CardArtContent({
     scryfallSetFilters.size,
   ]);
 
-  // Determine current state based on source and mode
   const hasSearched =
-    artSource === "scryfall"
-      ? mode === "prints"
-        ? scryfallPrintsData.hasSearched
-        : scryfallSearchData.hasSearched
-      : mpcData.hasSearched;
-  // For MPC, check filteredCards (not raw cards) so empty state shows when filters hide everything
+    artSource === "upload-library"
+      ? true
+      : artSource === "scryfall"
+        ? mode === "prints"
+          ? scryfallPrintsData.hasSearched
+          : scryfallSearchData.hasSearched
+        : mpcData.hasSearched;
   const hasResults =
-    artSource === "scryfall"
-      ? mode === "prints"
-        ? (filteredPrints?.length ?? 0) > 0
-        : scryfallSearchData.hasResults
-      : mpcData.filteredCards.length > 0;
+    artSource === "upload-library" ||
+    (artSource === "mpc" && mpcData.filteredCards.length > 0) ||
+    (artSource === "scryfall" &&
+      (mode === "prints"
+        ? (filteredPrints && filteredPrints.length > 0)
+        : filteredScryfallCards.length > 0));
 
   // Collapsed source groups state (for MPC source sort mode)
   // We track both explicitly collapsed sources AND whether "collapse all" mode is active
@@ -793,9 +821,10 @@ export function CardArtContent({
     );
   };
 
-  // Empty state messages
   const emptyMessage =
-    artSource === "scryfall" ? (
+    artSource === "upload-library" ? (
+      <>No uploads yet. Upload images to build your library.</>
+    ) : artSource === "scryfall" ? (
       <>
         Search for a card to preview.
         <br />
@@ -826,13 +855,11 @@ export function CardArtContent({
         .
       </>
     );
-
   const noResultsMessage =
     artSource === "scryfall"
       ? "No cards found."
       : `No MPC art found for "${query}"`;
 
-  // Check if we have results but they're all filtered out
   const hasResultsButFiltered =
     (artSource === "mpc" &&
       mpcData.cards.length > 0 &&
@@ -849,14 +876,12 @@ export function CardArtContent({
     artSource === "mpc"
       ? `"${query}" had ${mpcData.cards.length} result${mpcData.cards.length > 1 ? "s" : ""}, but current filters return none.`
       : `"${query}" had ${mode === "prints" ? scryfallPrintsData.prints?.length || 0 : scryfallSearchData.cards.length} result${(mode === "prints" ? scryfallPrintsData.prints?.length || 0 : scryfallSearchData.cards.length) !== 1 ? "s" : ""}, but current filters return none.`;
-
   return (
     <div
       className={`${containerClassStyle || "h-full min-h-0"} flex flex-col flex-1 w-full`}
     >
       <div className="flex-1 overflow-y-auto overflow-x-hidden relative scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent flex flex-col min-h-0">
         <div className="px-6 flex flex-col gap-4 w-full flex-1">
-          {/* MPC Filter bar - only when not collapsed */}
           {artSource === "mpc" && !filtersCollapsed && (
             <CardArtFilterBar
               filters={mpcData.filters}
@@ -940,7 +965,20 @@ export function CardArtContent({
 
               {/* Card Grid */}
               <div className={!filtersCollapsed ? "" : "pt-6"}>
-                {artSource === "scryfall" ? (
+                {artSource === "upload-library" ? (
+                  <UploadLibraryGrid
+                    key={selectedFace}
+                    mode={onUploadLibraryItemSelect ? 'artwork-modal' : 'search'}
+                    items={uploadLibraryItems}
+                    onRefresh={refreshUploadLibraryItems}
+                    cardSize={cardSize}
+                    query={query}
+                    filtersCollapsed={filtersCollapsed}
+                    selectedHash={highlightSelectedArtId ?? undefined}
+                    onSelectItem={handleUploadLibraryItemSelect}
+                    selectedFace={selectedFace}
+                  />
+                ) : artSource === "scryfall" ? (
                   scryfallGroupBySet ? (
                     /* Grouped by Set */
                     <div className="flex flex-col gap-4">

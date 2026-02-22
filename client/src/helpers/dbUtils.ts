@@ -1,9 +1,10 @@
 import { db, type Image } from "@/db";
-import type { CardOption } from "../../../shared/types";
+import type { CardOption, CardOverrides } from "../../../shared/types";
 import { parseImageIdFromUrl } from "./imageHelper";
 import { isCardbackId } from "./cardbackLibrary";
 import { extractMpcIdentifierFromImageId, getMpcAutofillImageUrl } from "./mpcAutofillApi";
-import { inferSourceFromUrl, getImageSourceSync, isCustomSource } from "./imageSourceUtils";
+import { inferSourceFromUrl, getImageSourceSync, isUploadLibrarySource } from "./imageSourceUtils";
+import { detectBleed } from "./cardDimensions";
 
 /**
  * Calculates the SHA-256 hash of a file or blob.
@@ -20,22 +21,28 @@ export async function hashBlob(blob: Blob): Promise<string> {
 // --- Image Management ---
 
 /**
- * Adds a new custom image to the database, handling deduplication.
+ * Adds a new upload library image to the database, handling deduplication.
  * If the image already exists, its refCount is incremented.
  * If it's new, it's added with a refCount of 1.
  * @param blob The image blob to add.
  * @returns The ID (hash) of the image in the database.
  */
-export async function addCustomImage(
+export async function addUploadLibraryImage(
   blob: Blob,
-  suffix: string = ""
+  suffix: string = "",
+  displayName?: string,
+  hasBuiltInBleed?: boolean
 ): Promise<string> {
   const hash = await hashBlob(blob);
   const imageId = suffix ? `${hash}${suffix}` : hash;
+  let effectiveHasBleed = hasBuiltInBleed;
+  if (effectiveHasBleed === undefined) {
+    const bmp = await createImageBitmap(blob);
+    effectiveHasBleed = detectBleed(bmp.width, bmp.height);
+    bmp.close();
+  }
 
   await db.transaction("rw", db.images, db.user_images, async () => {
-    // 1. Store original blob in persistent user_images table
-    // This survives project switches and image cache clears
     const existingUserImage = await db.user_images.get(imageId);
     if (!existingUserImage) {
       await db.user_images.add({
@@ -43,6 +50,8 @@ export async function addCustomImage(
         data: blob,
         type: blob.type || 'image/png',
         createdAt: Date.now(),
+        displayName: displayName || undefined,
+        hasBuiltInBleed: effectiveHasBleed || undefined,
       });
     }
 
@@ -57,7 +66,7 @@ export async function addCustomImage(
         id: imageId,
         originalBlob: blob,
         refCount: 1,
-        source: 'custom',
+        source: 'upload-library',
       });
     }
   });
@@ -357,6 +366,7 @@ export async function createLinkedBackCard(
   options?: {
     hasBuiltInBleed?: boolean;
     usesDefaultCardback?: boolean;
+    overrides?: Partial<CardOption['overrides']>;
   }
 ): Promise<string> {
   const backUuid = crypto.randomUUID();
@@ -379,6 +389,7 @@ export async function createLinkedBackCard(
       needsEnrichment: false,  // Back cards never need Scryfall metadata
       hasBuiltInBleed: options?.hasBuiltInBleed,
       usesDefaultCardback: options?.usesDefaultCardback,
+      overrides: options?.overrides,
       projectId: frontCard.projectId,
     };
 
@@ -413,6 +424,7 @@ export async function createLinkedBackCardsBulk(
     options?: {
       hasBuiltInBleed?: boolean;
       usesDefaultCardback?: boolean;
+      overrides?: CardOverrides;
     };
   }>
 ): Promise<string[]> {
@@ -435,6 +447,7 @@ export async function createLinkedBackCardsBulk(
       options?: {
         hasBuiltInBleed?: boolean;
         usesDefaultCardback?: boolean;
+        overrides?: CardOverrides;
       };
     }> = [];
 
@@ -474,6 +487,7 @@ export async function createLinkedBackCardsBulk(
         needsEnrichment: false,  // Back cards never need Scryfall metadata
         hasBuiltInBleed: item.options?.hasBuiltInBleed,
         usesDefaultCardback: item.options?.usesDefaultCardback,
+        overrides: item.options?.overrides,
         projectId: front.projectId,
       });
 
@@ -602,6 +616,7 @@ export async function createLinkedBackCardsBulk(
           needsEnrichment: false,
           hasBuiltInBleed: update.options?.hasBuiltInBleed,
           usesDefaultCardback: update.options?.usesDefaultCardback,
+          overrides: update.options?.overrides,
         },
       }));
 
@@ -730,7 +745,7 @@ export async function changeCardArtwork(
   hasBuiltInBleed?: boolean,
   overrides?: Partial<CardOption['overrides']>
 ): Promise<void> {
-  await db.transaction("rw", db.cards, db.images, db.cardbacks, async () => {
+  await db.transaction("rw", db.cards, db.images, db.cardbacks, db.user_images, async () => {
     if (oldImageId === newImageId && !newName && !newImageUrls && !cardMetadata) {
       return;
     }
@@ -753,19 +768,19 @@ export async function changeCardArtwork(
       }
     }
 
-    // 2. Determine if new image is custom (explicitly 'custom' source)
-    let newImageIsCustom = false;
+    // 2. Determine if new image is upload-library (explicitly 'upload-library' source)
+    let newImageIsUploadLibrary = false;
     if (isCardbackId(newImageId)) {
       const cardback = await db.cardbacks.get(newImageId);
-      newImageIsCustom = cardback ? !!cardback.originalBlob : false;
+      newImageIsUploadLibrary = cardback ? !!cardback.originalBlob : false;
     } else {
       const newImage = await db.images.get(newImageId);
-      newImageIsCustom = isCustomSource(getImageSourceSync(newImageId, newImage?.source));
+      newImageIsUploadLibrary = isUploadLibrarySource(getImageSourceSync(newImageId, newImage?.source));
     }
 
     const changes: Partial<CardOption> = {
       imageId: newImageId,
-      isUserUpload: newImageIsCustom,
+      isUserUpload: newImageIsUploadLibrary,
       hasBuiltInBleed: hasBuiltInBleed ?? false,
       needsEnrichment: false,
       enrichmentRetryCount: undefined,
@@ -814,24 +829,34 @@ export async function changeCardArtwork(
         }
         await db.images.update(newImageId, updates);
       } else {
-        const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
-        const isMpcImage = extractMpcIdentifierFromImageId(newImageId) !== null;
-        let sourceUrl: string;
-        if (isMpcImage) {
-          sourceUrl = getMpcAutofillImageUrl(newImageId);
+        if (newImageIsUploadLibrary) {
+          const userImage = await db.user_images.get(newImageId);
+          await db.images.add({
+            id: newImageId,
+            originalBlob: userImage?.data,
+            refCount: cardsToUpdate.length,
+            source: 'upload-library',
+          });
         } else {
-          sourceUrl = newImageId;
+          const oldImage = oldImageId ? await db.images.get(oldImageId) : undefined;
+          const isMpcImage = extractMpcIdentifierFromImageId(newImageId) !== null;
+          let sourceUrl: string;
+          if (isMpcImage) {
+            sourceUrl = getMpcAutofillImageUrl(newImageId);
+          } else {
+            sourceUrl = newImageId;
+          }
+
+          const imageUrls = newImageUrls || (newName ? [sourceUrl] : (oldImage?.imageUrls || [sourceUrl]));
+
+          await db.images.add({
+            id: newImageId,
+            sourceUrl: sourceUrl,
+            imageUrls: imageUrls,
+            refCount: cardsToUpdate.length,
+            source: isMpcImage ? 'mpc' : (inferSourceFromUrl(sourceUrl) ?? undefined),
+          });
         }
-
-        const imageUrls = newImageUrls || (newName ? [sourceUrl] : (oldImage?.imageUrls || [sourceUrl]));
-
-        await db.images.add({
-          id: newImageId,
-          sourceUrl: sourceUrl,
-          imageUrls: imageUrls,
-          refCount: cardsToUpdate.length,
-          source: isMpcImage ? 'mpc' : (inferSourceFromUrl(sourceUrl) ?? undefined),
-        });
       }
     }
 

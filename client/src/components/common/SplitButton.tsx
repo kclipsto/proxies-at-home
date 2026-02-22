@@ -81,6 +81,13 @@ interface SplitButtonProps<T extends string> {
     labelSize?: 'sm' | 'base';
     /** Optional icon component to display on the left */
     icon?: ElementType;
+    /** Optional extra button/action (third split) */
+    extraAction?: {
+        icon: ElementType;
+        onClick: () => void;
+        title: string;
+        disabled?: boolean;
+    };
 }
 
 /**
@@ -106,6 +113,7 @@ export function SplitButton<T extends string>({
     htmlFor,
     labelSize = 'base',
     icon,
+    extraAction,
 }: SplitButtonProps<T>) {
     const containerRef = useRef<HTMLDivElement>(null);
     useOnClickOutside(containerRef, useCallback(() => onClose(), [onClose]));
@@ -122,12 +130,15 @@ export function SplitButton<T extends string>({
         ${disabled ? '' : 'active:translate-y-[2px]'}
     `.trim().replace(/\s+/g, ' ');
 
-    const toggleClasses = `
-        flex items-center justify-center cursor-pointer rounded-r-md
+    const sideButtonBase = `
+        flex items-center justify-center cursor-pointer
         ${colors.base} ${colors.hover}
         border-l ${colors.border} px-3 py-2 ${textColor} transition-colors
         active:translate-y-[2px]
     `.trim().replace(/\s+/g, ' ');
+
+    const toggleClasses = `${sideButtonBase} ${extraAction ? '' : 'rounded-r-md'}`;
+    const extraClasses = `${sideButtonBase} rounded-r-md`;
 
     const labelSizeClass = labelSize === 'sm' ? 'text-sm' : 'text-base';
 
@@ -174,6 +185,21 @@ export function SplitButton<T extends string>({
                 >
                     <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
+
+                {extraAction && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (!extraAction.disabled) extraAction.onClick();
+                        }}
+                        className={`${extraClasses} ${extraAction.disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+                        title={extraAction.title}
+                        disabled={extraAction.disabled}
+                    >
+                        <extraAction.icon className="w-4 h-4" />
+                    </button>
+                )}
             </div>
 
             {isOpen && (

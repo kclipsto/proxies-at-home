@@ -23,6 +23,12 @@ describe('dbUtils', () => {
             },
             writable: true,
         });
+
+        // Mock createImageBitmap
+        Object.defineProperty(global, 'createImageBitmap', {
+            value: vi.fn(async () => ({ width: 800, height: 1116, close: vi.fn() })),
+            writable: true,
+        });
     });
 
     describe('Card Management', () => {
@@ -64,17 +70,17 @@ describe('dbUtils', () => {
             expect(hash).toMatch(/^[a-f0-9]+$/);
         });
 
-        it('addCustomImage should add image and handle ref counting', async () => {
+        it('addUploadLibraryImage should add image and handle ref counting', async () => {
             const blob = new Blob(['image data'], { type: 'image/png' });
-            const { addCustomImage } = await import('./dbUtils');
+            const { addUploadLibraryImage } = await import('./dbUtils');
 
-            const id1 = await addCustomImage(blob);
+            const id1 = await addUploadLibraryImage(blob);
             const img1 = await db.images.get(id1);
             expect(img1).toBeDefined();
             expect(img1?.refCount).toBe(1);
 
             // Add same blob again
-            const id2 = await addCustomImage(blob);
+            const id2 = await addUploadLibraryImage(blob);
             expect(id2).toBe(id1);
             const img2 = await db.images.get(id1);
             expect(img2?.refCount).toBe(2);
@@ -113,12 +119,12 @@ describe('dbUtils', () => {
             expect(img?.refCount).toBe(3);
         });
 
-        it('addCustomImage should create distinct IDs with different suffixes', async () => {
-            const { addCustomImage } = await import('./dbUtils');
+        it('addUploadLibraryImage should create distinct IDs with different suffixes', async () => {
+            const { addUploadLibraryImage } = await import('./dbUtils');
             const blob = new Blob(['test image content'], { type: 'image/png' });
 
-            const id1 = await addCustomImage(blob, '-mpc');
-            const id2 = await addCustomImage(blob, '-std');
+            const id1 = await addUploadLibraryImage(blob, '-mpc');
+            const id2 = await addUploadLibraryImage(blob, '-std');
 
             expect(id1).not.toBe(id2);
             expect(id1).toContain('-mpc');
@@ -135,10 +141,10 @@ describe('dbUtils', () => {
 
         it('removeImageRef should decrement ref count and delete if 0', async () => {
             const blob = new Blob(['delete me'], { type: 'image/png' });
-            const { addCustomImage, removeImageRef } = await import('./dbUtils');
+            const { addUploadLibraryImage, removeImageRef } = await import('./dbUtils');
 
-            const id = await addCustomImage(blob);
-            await addCustomImage(blob); // refCount = 2
+            const id = await addUploadLibraryImage(blob);
+            await addUploadLibraryImage(blob); // refCount = 2
 
             await removeImageRef(id);
             const img1 = await db.images.get(id);
@@ -153,9 +159,9 @@ describe('dbUtils', () => {
     describe('Card Operations', () => {
         it('deleteCard should remove card and decrement image ref', async () => {
             const blob = new Blob(['card image'], { type: 'image/png' });
-            const { addCustomImage, addCards, deleteCard } = await import('./dbUtils');
+            const { addUploadLibraryImage, addCards, deleteCard } = await import('./dbUtils');
 
-            const imageId = await addCustomImage(blob);
+            const imageId = await addUploadLibraryImage(blob);
             await addCards([{ name: 'Delete Me', isUserUpload: true, imageId }]);
 
             const cards = await db.cards.toArray();
@@ -172,9 +178,9 @@ describe('dbUtils', () => {
 
         it('duplicateCard should copy card and increment image ref', async () => {
             const blob = new Blob(['dup image'], { type: 'image/png' });
-            const { addCustomImage, addCards, duplicateCard } = await import('./dbUtils');
+            const { addUploadLibraryImage, addCards, duplicateCard } = await import('./dbUtils');
 
-            const imageId = await addCustomImage(blob);
+            const imageId = await addUploadLibraryImage(blob);
             await addCards([{ name: 'Original', isUserUpload: true, imageId }]);
 
             const cards = await db.cards.toArray();
@@ -193,10 +199,10 @@ describe('dbUtils', () => {
         it('changeCardArtwork should update image refs and handle applyToAll', async () => {
             const blob1 = new Blob(['img1'], { type: 'image/png' });
             const blob2 = new Blob(['img2'], { type: 'image/png' });
-            const { addCustomImage, addCards, changeCardArtwork } = await import('./dbUtils');
+            const { addUploadLibraryImage, addCards, changeCardArtwork } = await import('./dbUtils');
 
-            const id1 = await addCustomImage(blob1);
-            const id2 = await addCustomImage(blob2);
+            const id1 = await addUploadLibraryImage(blob1);
+            const id2 = await addUploadLibraryImage(blob2);
 
             await addCards([
                 { name: 'Card A', isUserUpload: true, imageId: id1 },
@@ -226,8 +232,8 @@ describe('dbUtils', () => {
             expect(img1?.refCount).toBe(1); // Only Card B left
 
             const img2 = await db.images.get(id2);
-            expect(img2?.refCount).toBe(3); // 2 cards + initial addCustomImage (1) = 3? 
-            // Wait, addCustomImage sets refCount to 1.
+            expect(img2?.refCount).toBe(3); // 2 cards + initial addUploadLibraryImage (1) = 3? 
+            // Wait, addUploadLibraryImage sets refCount to 1.
             // changeCardArtwork increments by number of cards (2).
             // So 1 + 2 = 3. Correct.
         });
@@ -235,8 +241,8 @@ describe('dbUtils', () => {
 
     it('duplicateCard should rebalance if orders get too close', async () => {
         const blob = new Blob(['dup image'], { type: 'image/png' });
-        const { addCustomImage, duplicateCard } = await import('./dbUtils');
-        const imageId = await addCustomImage(blob);
+        const { addUploadLibraryImage, duplicateCard } = await import('./dbUtils');
+        const imageId = await addUploadLibraryImage(blob);
 
         // Create cards with orders very close to each other
         await db.cards.bulkAdd([
@@ -281,9 +287,9 @@ describe('dbUtils', () => {
 
     it('changeCardArtwork should handle new remote image (not in DB)', async () => {
         const blob1 = new Blob(['img1'], { type: 'image/png' });
-        const { addCustomImage, addCards, changeCardArtwork } = await import('./dbUtils');
+        const { addUploadLibraryImage, addCards, changeCardArtwork } = await import('./dbUtils');
 
-        const id1 = await addCustomImage(blob1);
+        const id1 = await addUploadLibraryImage(blob1);
         await addCards([{ name: 'Card A', isUserUpload: true, imageId: id1 }]);
 
         const cards = await db.cards.toArray();
@@ -311,8 +317,8 @@ describe('dbUtils', () => {
 
     it('changeCardArtwork should update name if provided', async () => {
         const blob = new Blob(['img'], { type: 'image/png' });
-        const { addCustomImage, addCards, changeCardArtwork } = await import('./dbUtils');
-        const id = await addCustomImage(blob);
+        const { addUploadLibraryImage, addCards, changeCardArtwork } = await import('./dbUtils');
+        const id = await addUploadLibraryImage(blob);
         await addCards([{ name: 'Old Name', isUserUpload: true, imageId: id }]);
 
         const cards = await db.cards.toArray();
@@ -355,10 +361,10 @@ describe('dbUtils', () => {
         });
 
         it('createLinkedBackCard should assign imageId to back card', async () => {
-            const { addCards, addCustomImage, createLinkedBackCard } = await import('./dbUtils');
+            const { addCards, addUploadLibraryImage, createLinkedBackCard } = await import('./dbUtils');
 
             const blob = new Blob(['back image'], { type: 'image/png' });
-            const backImageId = await addCustomImage(blob);
+            const backImageId = await addUploadLibraryImage(blob);
 
             const [frontCard] = await addCards([{ name: 'Front', isUserUpload: false }]);
             const backId = await createLinkedBackCard(frontCard.uuid, backImageId, 'Back');

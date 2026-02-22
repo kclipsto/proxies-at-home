@@ -74,6 +74,8 @@ function applyShareSettings(settings: ShareSettings): void {
     if (settings.gp) store.setGuidePlacement(settings.gp as Parameters<typeof store.setGuidePlacement>[0]);
     if (settings.cgL !== undefined) store.setCutGuideLengthMm(settings.cgL);
     if (settings.cls) store.setCutLineStyle(settings.cls as Parameters<typeof store.setCutLineStyle>[0]);
+    if (settings.rm) store.setRegistrationMarks(settings.rm as Parameters<typeof store.setRegistrationMarks>[0]);
+    if (settings.rmp !== undefined) store.setRegistrationMarksPortrait(settings.rmp);
 
     // Spacing/Position
     if (settings.spc !== undefined) store.setCardSpacingMm(settings.spc);
@@ -89,6 +91,7 @@ function applyShareSettings(settings: ShareSettings): void {
     if (settings.ait !== undefined) store.setAutoImportTokens(settings.ait);
     if (settings.mfs !== undefined) store.setMpcFuzzySearch(settings.mfs);
     if (settings.spt !== undefined) store.setShowProcessingToasts(settings.spt);
+    if (settings.dci) store.setDefaultCardbackId(settings.dci);
 
     // Sort & Filter
     if (settings.sb) store.setSortBy(settings.sb as Parameters<typeof store.setSortBy>[0]);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { inferImageSource, inferSourceFromUrl, getImageSourceSync, isMpcSource, isScryfallSource, isCustomSource } from './imageSourceUtils';
+import { inferImageSource, inferSourceFromUrl, getImageSourceSync, isMpcSource, isScryfallSource, isUploadLibrarySource } from './imageSourceUtils';
 
 // Mock the mpcAutofillApi
 vi.mock('./mpcAutofillApi', () => ({
@@ -36,17 +36,17 @@ describe('imageSourceUtils', () => {
 
         it('should detect custom upload SHA-256 hash', () => {
             const hash = 'a'.repeat(64);
-            expect(inferImageSource(hash)).toBe('custom');
+            expect(inferImageSource(hash)).toBe('upload-library');
         });
 
         it('should detect custom upload hash with -mpc suffix', () => {
             const hashWithSuffix = 'a'.repeat(64) + '-mpc';
-            expect(inferImageSource(hashWithSuffix)).toBe('custom');
+            expect(inferImageSource(hashWithSuffix)).toBe('upload-library');
         });
 
         it('should detect custom upload hash with -std suffix', () => {
             const hashWithSuffix = 'a'.repeat(64) + '-std';
-            expect(inferImageSource(hashWithSuffix)).toBe('custom');
+            expect(inferImageSource(hashWithSuffix)).toBe('upload-library');
         });
 
         it('should detect scryfall URL', () => {
@@ -87,7 +87,7 @@ describe('imageSourceUtils', () => {
 
         it('should infer source if not provided', () => {
             const hash = 'a'.repeat(64);
-            expect(getImageSourceSync(hash, undefined)).toBe('custom');
+            expect(getImageSourceSync(hash, undefined)).toBe('upload-library');
         });
     });
 
@@ -104,10 +104,10 @@ describe('imageSourceUtils', () => {
             expect(isScryfallSource(null)).toBe(false);
         });
 
-        it('isCustomSource should return true only for custom', () => {
-            expect(isCustomSource('custom')).toBe(true);
-            expect(isCustomSource('mpc')).toBe(false);
-            expect(isCustomSource(null)).toBe(false);
+        it('isUploadLibrarySource should return true only for upload-library', () => {
+            expect(isUploadLibrarySource('upload-library')).toBe(true);
+            expect(isUploadLibrarySource('mpc')).toBe(false);
+            expect(isUploadLibrarySource(null)).toBe(false);
         });
     });
 });

@@ -39,9 +39,10 @@ export function ToggleButtonGroup<T extends string>({
 }: ToggleButtonGroupProps<T>) {
     // Container classes based on orientation
     // For vertical mode, use auto-rows-fr to ensure equal button sizes
+    const colsClass = ({ 2: 'grid-cols-2', 3: 'grid-cols-3' } as Record<number, string>)[options.length] || 'grid-cols-2';
     const containerClasses = vertical
         ? 'grid grid-cols-1 auto-rows-fr rounded-lg bg-gray-100 dark:bg-gray-600 p-0.5 w-auto'
-        : 'grid grid-cols-2 rounded-lg bg-gray-100 dark:bg-gray-600 p-0.5 h-10';
+        : `grid ${colsClass} rounded-lg bg-gray-100 dark:bg-gray-600 p-0.5 h-10`;
 
     // Button classes based on orientation
     const buttonOrientationClasses = vertical

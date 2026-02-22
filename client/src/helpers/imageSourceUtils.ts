@@ -14,7 +14,7 @@ export function inferImageSource(imageId?: string): ImageSource | null {
     if (imageId.startsWith('scryfall_') || imageId.startsWith('local_')) return 'scryfall';
 
     // Check for SHA-256 hash pattern (custom uploads) - with optional suffix
-    if (/^[a-f0-9]{64}(-[a-z]+)?$/i.test(imageId)) return 'custom';
+    if (/^[a-f0-9]{64}(-[a-z]+)?$/i.test(imageId)) return 'upload-library';
 
     // Check URL patterns
     if (imageId.includes('scryfall')) return 'scryfall';
@@ -84,8 +84,8 @@ export function isScryfallSource(source?: ImageSource | null): boolean {
 }
 
 /**
- * Check if an image is a custom upload.
+ * Check if an image is a user upload.
  */
-export function isCustomSource(source?: ImageSource | null): boolean {
-    return source === 'custom';
+export function isUploadLibrarySource(source?: ImageSource | null): boolean {
+    return source === 'upload-library';
 }

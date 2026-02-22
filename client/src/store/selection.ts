@@ -195,6 +195,8 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
     isFlipped: (uuid) => get().flippedCards.has(uuid),
 
     setFlipped: (uuids, isFlipped) => {
+        console.log(`[SelectionStore] setFlipped called: uuids=${JSON.stringify(uuids)}, isFlipped=${isFlipped}`);
+        console.trace('[SelectionStore] setFlipped stack trace');
         set((state) => {
             const newFlipped = new Set(state.flippedCards);
             uuids.forEach(uuid => {

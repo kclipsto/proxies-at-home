@@ -3,8 +3,8 @@ import { Copy, Trash, Settings, Palette } from "lucide-react";
 import { useEffect } from "react";
 import { useSelectionStore } from "@/store/selection";
 import { undoableDeleteCard, undoableDeleteCardsBatch, undoableDuplicateCard, undoableDuplicateCardsBatch } from "@/helpers/undoableActions";
-import { useArtworkModalStore, useCardEditorModalStore } from "@/store";
-import { db } from "@/db";
+import { useArtworkModalStore, useCardEditorModalStore, useSettingsStore } from "@/store";
+import { db, type Image } from "@/db";
 import type { CardOption } from "@/types";
 
 interface PageViewContextMenuProps {
@@ -16,31 +16,49 @@ interface PageViewContextMenuProps {
     };
     setContextMenu: (menu: { visible: boolean; x: number; y: number; cardUuid: string | null }) => void;
     cards: CardOption[];
+    allCards: CardOption[];
     flippedCards: Set<string>;
 }
 
 /** Helper to get card with its back card and images from database */
-async function getCardWithImages(cards: CardOption[], cardUuid: string) {
-    const card = cards.find(c => c.uuid === cardUuid);
+async function getCardWithImages(allCards: CardOption[], cardUuid: string, globalDpi: number) {
+    const card = allCards.find(c => c.uuid === cardUuid);
     if (!card || !card.imageId) return null;
 
     const image = await db.images.get(card.imageId);
     const backCard = card.linkedBackId
-        ? cards.find(c => c.uuid === card.linkedBackId)
+        ? allCards.find(c => c.uuid === card.linkedBackId)
         : undefined;
-    const backImage = backCard?.imageId
-        ? await db.images.get(backCard.imageId)
-        : undefined;
+
+    let backImage: Image | undefined = undefined;
+    if (backCard?.imageId) {
+        backImage = await db.images.get(backCard.imageId);
+        if (!backImage) {
+            const cardback = await db.cardbacks.get(backCard.imageId);
+            if (cardback) {
+                backImage = {
+                    id: cardback.id,
+                    displayBlob: cardback.displayBlob,
+                    exportBlob: cardback.exportBlob,
+                    baseDisplayBlob: cardback.displayBlob,
+                    baseExportBlob: cardback.exportBlob,
+                    displayDpi: 300,
+                    exportDpi: globalDpi,
+                } as Image;
+            }
+        }
+    }
 
     return { card, image: image ?? null, backCard, backImage: backImage ?? null };
 }
 
-export function PageViewContextMenu({ contextMenu, setContextMenu, cards, flippedCards }: PageViewContextMenuProps) {
+export function PageViewContextMenu({ contextMenu, setContextMenu, cards, allCards, flippedCards }: PageViewContextMenuProps) {
     const selectedCards = useSelectionStore((state) => state.selectedCards);
     const clearSelection = useSelectionStore((state) => state.clearSelection);
     const openArtworkModal = useArtworkModalStore((state) => state.openModal);
     const openCardEditor = useCardEditorModalStore((state) => state.openModal);
     const hasSelection = selectedCards.size > 0;
+    const globalDpi = useSettingsStore((state) => state.dpi);
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {
@@ -85,7 +103,7 @@ export function PageViewContextMenu({ contextMenu, setContextMenu, cards, flippe
                         size="sm"
                         color="green"
                         onClick={async () => {
-                            const result = await getCardWithImages(cards, contextMenu.cardUuid!);
+                            const result = await getCardWithImages(allCards, contextMenu.cardUuid!, globalDpi);
                             if (result) {
                                 openCardEditor({
                                     ...result,
@@ -145,7 +163,7 @@ export function PageViewContextMenu({ contextMenu, setContextMenu, cards, flippe
                         size="sm"
                         color="green"
                         onClick={async () => {
-                            const result = await getCardWithImages(cards, contextMenu.cardUuid!);
+                            const result = await getCardWithImages(allCards, contextMenu.cardUuid!, globalDpi);
                             if (result) {
                                 openCardEditor({
                                     ...result,

@@ -35,5 +35,5 @@ export { FloatingZoomPanel } from './FloatingZoomPanel';
 export { CardArtContent } from './CardArtContent';
 export type { CardArtContentProps } from './CardArtContent';
 export * from './FilterBarShell';
-export { CardArtFilterBar } from './CardArtFilterBar';
-export type { CardArtFilterBarProps } from './CardArtFilterBar';
+export { CardArtFilterBar } from './CardArtFilterBar/CardArtFilterBar';
+export type { CardArtFilterBarProps } from './CardArtFilterBar/CardArtFilterBar';

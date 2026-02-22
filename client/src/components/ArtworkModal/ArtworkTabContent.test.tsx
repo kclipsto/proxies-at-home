@@ -38,14 +38,19 @@ vi.mock('../common', async (importOriginal) => {
     const actual = await importOriginal();
     return {
         ...actual as object,
-        CardArtContent: ({ artSource, onSelectCard }: { artSource: string; onSelectCard: (name: string, url?: string) => void }) => (
-            <div
-                data-testid={artSource === 'scryfall' ? 'scryfall-art-content' : 'mpc-art-content'}
-                onClick={() => onSelectCard('Test Card', 'test-url')}
-            >
-                {artSource === 'scryfall' ? 'CardArtContent-Scryfall' : 'CardArtContent-MPC'}
-            </div>
-        ),
+        CardArtContent: ({ artSource, onSelectCard }: { artSource: string; onSelectCard: (name: string, url?: string) => void }) => {
+            let testId = 'mpc-art-content';
+            if (artSource === 'scryfall') testId = 'scryfall-art-content';
+            if (artSource === 'upload-library') testId = 'upload-library-art-content';
+            return (
+                <div
+                    data-testid={testId}
+                    onClick={() => onSelectCard('Test Card', 'test-url')}
+                >
+                    {`CardArtContent-${artSource}`}
+                </div>
+            );
+        },
     };
 });
 

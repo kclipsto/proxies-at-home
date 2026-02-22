@@ -60,11 +60,22 @@ fi
 
 # Branch push to main - analyze commit for version bump type
 COMMIT_MSG=$(git log -1 --pretty=%B)
-echo "Commit message: $COMMIT_MSG"
-SCAN_TEXT="$COMMIT_MSG"
+echo "Latest commit message: $COMMIT_MSG"
+
+# Get all commit messages since last tag for scanning
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+if [ -n "$LAST_TAG" ]; then
+  echo "Scanning commits since $LAST_TAG..."
+  COMMIT_HISTORY=$(git log "$LAST_TAG"..HEAD --pretty=%B)
+else
+  echo "No previous tags found, scanning full history..."
+  COMMIT_HISTORY=$(git log --pretty=%B)
+fi
+
+SCAN_TEXT="$COMMIT_HISTORY"
 if [ -n "$PR_BODY" ]; then
-  echo "PR body provided for tag scanning"
-  SCAN_TEXT="$COMMIT_MSG $PR_BODY"
+  echo "PR body provided for scanning"
+  SCAN_TEXT="$COMMIT_HISTORY $PR_BODY"
 fi
 
 if [[ "$COMMIT_MSG" == *"chore: bump version"* ]]; then
